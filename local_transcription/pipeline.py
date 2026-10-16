@@ -7,6 +7,8 @@ names of the people in it, so renames and merges reach every past transcript.
 
 import json
 import os
+import re
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -345,7 +347,8 @@ def rename_meeting(out_dir, title):
     """change a meeting's title in the transcript, the note heading, and the library. the
     folder keeps its name so links to it still work."""
     out_dir = Path(out_dir)
-    title = title.strip()
+    # the date is added in front of the title, so drop one typed at the start
+    title = re.sub(r"^\d{4}-\d{2}-\d{2}[\s_-]*", "", title.strip()).strip() or title.strip()
     meta, segments, speakers, _ = load_run(out_dir)
     meta["title"] = title
     (out_dir / "run.json").write_text(json.dumps(meta, indent=2))
@@ -355,6 +358,7 @@ def rename_meeting(out_dir, title):
         summary["title"] = title
         note_path.write_text(json.dumps(summary, indent=2))
     write_outputs(out_dir, segments, speakers, meta)
+    return title
 
 
 def rename_person(person_id, new_name):
@@ -420,12 +424,52 @@ def render_note_file(out_dir, meta, segments, speakers):
     if not path.exists():
         return None
     summary = json.loads(path.read_text())
+    if summary.get("edited"):
+        # hand edits win. only the project line follows changes made in the app
+        return _update_note_project(out_dir / "note.md", library.meeting_project(out_dir.name))
     date = meta.get("date") or render.title_and_date(meta["source"])[1]
     transcript_ref = str((out_dir / "transcript.md").relative_to(OUTPUT_DIR.parent))
     markdown = notes.render_note(summary, date, segments, link_people(speakers), summary.get("owner_id"),
                                  library.meeting_project(out_dir.name), transcript_ref)
     (out_dir / "note.md").write_text(markdown)
     return out_dir / "note.md"
+
+
+def _update_note_project(note_path, project):
+    """swap the project line in an edited note's frontmatter, leaving the rest as written."""
+    if not note_path.exists():
+        return None
+    lines = note_path.read_text().split("\n")
+    closing = next((i for i, line in enumerate(lines[1:], 1) if line.strip() == "---"), 0)
+    value = f"project: {json.dumps(f'[[{project}]]', ensure_ascii=False)}" if project else "project:"
+    for i in range(1, closing):
+        if lines[i].startswith("project:"):
+            lines[i] = value
+            break
+    note_path.write_text("\n".join(lines))
+    return note_path
+
+
+def save_note_edits(out_dir, markdown):
+    """keep a hand-edited note. later re-renders leave it alone until the edits are discarded
+    or the note is rewritten."""
+    out_dir = Path(out_dir)
+    path = out_dir / "note.json"
+    summary = json.loads(path.read_text())
+    summary["edited"] = datetime.now().isoformat(timespec="seconds")
+    (out_dir / "note.md").write_text(markdown)
+    path.write_text(json.dumps(summary, indent=2))
+
+
+def discard_note_edits(out_dir):
+    """go back to the note as the model wrote it, with current names and project."""
+    out_dir = Path(out_dir)
+    path = out_dir / "note.json"
+    summary = json.loads(path.read_text())
+    summary.pop("edited", None)
+    path.write_text(json.dumps(summary, indent=2))
+    meta, segments, speakers, _ = load_run(out_dir)
+    return render_note_file(out_dir, meta, segments, speakers)
 
 
 def write_note(out_dir, backend=None, project=None, owner=None, progress=print):

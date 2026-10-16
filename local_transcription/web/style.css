@@ -223,7 +223,7 @@ td.num, th.num { text-align: right; }
   color: var(--text);
   font-size: 14px;
 }
-pre.note {
+.note {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -232,6 +232,16 @@ pre.note {
   font: 12.5px/1.5 ui-monospace, Menlo, monospace;
   tab-size: 4;
 }
+textarea.note {
+  display: block;
+  width: 100%;
+  color: var(--text);
+  resize: none;
+  overflow: hidden;
+  outline: none;
+  cursor: text;
+}
+textarea.note:focus { border-color: var(--accent); }
 tr.editing td { background: var(--accent-soft); }
 .chips {
   display: flex;

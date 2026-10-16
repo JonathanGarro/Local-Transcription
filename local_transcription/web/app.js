@@ -188,9 +188,9 @@ function renamable(el, id) {
       const value = input.value.trim();
       if (save && value && value !== before) {
         try {
-          await post(`/api/meetings/${encodeURIComponent(id)}/title`, { name: value });
-          el.textContent = value;
-          if (review?.meeting?.meeting_id === id) review.meeting.title = value;
+          const saved = (await post(`/api/meetings/${encodeURIComponent(id)}/title`, { name: value })).title;
+          el.textContent = saved;
+          if (review?.meeting?.meeting_id === id) review.meeting.title = saved;
           toast("Renamed");
         } catch (err) {
           toast(`Rename failed: ${err.message}`);
@@ -505,7 +505,52 @@ function projectPicker(input, list, projects) {
   };
 }
 
+// the note text box saves itself a moment after typing stops, and when it loses focus
+let flushNote = null;
+
+function noteEditor(text, enc, status, path) {
+  let timer = null, saved = text.value;
+  const grow = () => {
+    text.style.height = "auto";
+    text.style.height = `${text.scrollHeight + 2}px`;
+  };
+  const save = async () => {
+    clearTimeout(timer);
+    if (text.value === saved) return;
+    const value = text.value;
+    status.textContent = "Saving";
+    try {
+      await post(`/api/meetings/${enc}/note/text`, { markdown: value });
+      saved = value;
+      status.textContent = `Saved to ${path}`;
+    } catch (err) {
+      status.textContent = `Not saved: ${err.message}`;
+    }
+  };
+  text.oninput = () => {
+    grow();
+    status.textContent = "Editing";
+    clearTimeout(timer);
+    timer = setTimeout(save, 800);
+  };
+  text.onblur = save;
+  text.onkeydown = e => {
+    // tab indents like obsidian sub-bullets, cmd+s saves right away
+    if (e.key === "Tab") {
+      e.preventDefault();
+      document.execCommand("insertText", false, "\t");
+    } else if (e.key === "s" && e.metaKey) {
+      e.preventDefault();
+      save();
+    }
+  };
+  requestAnimationFrame(grow);
+  return save;
+}
+
 async function renderNote(id, body) {
+  await flushNote?.();
+  flushNote = null;
   const enc = encodeURIComponent(id);
   const [note, lookups] = await Promise.all([api(`/api/meetings/${enc}/note`), api("/api/lookups")]);
   const job = note.job;
@@ -530,16 +575,29 @@ async function renderNote(id, body) {
       </div>
       ${job ? `<div class="meta" style="margin-top:12px">${job.status === "queued" ? "Waiting for the current job" : esc(job.step)}${job.detail ? `, ${esc(job.detail)}` : ""}</div>
         <div class="bar"><div style="width:${Math.round(job.progress * 100)}%"></div></div>` : ""}
-      ${note.exists && !job ? `<div class="hint" style="margin-top:10px">Written by ${esc(note.model)} on ${esc((note.created || "").replace("T", " "))}. Changing the project updates the note without rewriting it.</div>` : ""}
+      ${note.exists && !job ? `<div class="hint" style="margin-top:10px">Written by ${esc(note.model)} on ${esc((note.created || "").replace("T", " "))}. ${note.edited ? `You edited it on ${esc(note.edited.replace("T", " "))}. Your edits are kept, and changing the project only updates its line.` : "Click the note to edit it. Changing the project updates the note without rewriting it."}</div>` : ""}
     </div>
     ${note.exists ? `<div class="tools">
         <button class="btn small" id="copy-note">Copy note</button>
         <button class="btn small" id="reveal-note">Show in Finder</button>
-        <span class="hint">${esc(note.path)}</span>
+        ${note.edited ? `<button class="btn small" id="discard-note">Discard my edits</button>` : ""}
+        <span class="hint" id="note-status">${esc(note.path)}</span>
       </div>
-      <pre class="note">${esc(note.markdown)}</pre>` : job ? "" : `<div class="empty">No note yet. Names come from the confirmed speakers, so finish the review first.</div>`}`;
+      <textarea class="note" id="note-text" spellcheck="true">${esc(note.markdown)}</textarea>` : job ? "" : `<div class="empty">No note yet. Names come from the confirmed speakers, so finish the review first.</div>`}`;
 
-  document.getElementById("write").onclick = async () => {
+  const writeButton = document.getElementById("write");
+  writeButton.onclick = async () => {
+    // rewriting replaces hand edits, so ask with a second click
+    if (note.edited && !writeButton.dataset.confirm) {
+      writeButton.dataset.confirm = "1";
+      writeButton.textContent = "Replace my edits?";
+      setTimeout(() => {
+        delete writeButton.dataset.confirm;
+        writeButton.textContent = "Rewrite note";
+      }, 4000);
+      return;
+    }
+    await flushNote?.();
     const project = document.getElementById("project").value.trim();
     try {
       await post(`/api/meetings/${enc}/note`, { backend: document.getElementById("backend").value, project: project || null });
@@ -552,14 +610,30 @@ async function renderNote(id, body) {
   projectPicker(projectInput, document.getElementById("project-list"), lookups.projects);
   projectInput.onchange = async () => {
     if (!note.exists || job) return;
+    await flushNote?.();
     await post(`/api/meetings/${enc}/project`, { name: projectInput.value.trim() });
     toast(projectInput.value.trim() ? `Filed under ${projectInput.value.trim()}` : "Project cleared");
     renderNote(id, body);
   };
   if (note.exists) {
+    const text = document.getElementById("note-text");
+    flushNote = noteEditor(text, enc, document.getElementById("note-status"), note.path);
     document.getElementById("copy-note").onclick = async () => {
-      await navigator.clipboard.writeText(note.markdown);
+      await navigator.clipboard.writeText(text.value);
       toast("Copied");
+    };
+    const discard = document.getElementById("discard-note");
+    if (discard) discard.onclick = async () => {
+      if (!discard.dataset.confirm) {
+        discard.dataset.confirm = "1";
+        discard.textContent = "Discard them?";
+        setTimeout(() => { delete discard.dataset.confirm; discard.textContent = "Discard my edits"; }, 4000);
+        return;
+      }
+      flushNote = null;
+      await post(`/api/meetings/${enc}/note/discard`, {});
+      toast("Back to the written note");
+      renderNote(id, body);
     };
     document.getElementById("reveal-note").onclick = () => post(`/api/meetings/${enc}/reveal`, {});
   }
@@ -661,6 +735,9 @@ function bindEdit(p) {
 
 // main
 function route() {
+  // save any note edits before leaving the page
+  flushNote?.();
+  flushNote = null;
   clearInterval(pollTimer);
   clearTimeout(pollTimer);
   stopAudio();

@@ -189,6 +189,10 @@ class NoteRequest(BaseModel):
     project: str | None = None
 
 
+class NoteText(BaseModel):
+    markdown: str
+
+
 class DetailsRequest(BaseModel):
     full_name: str = ""
     organization: str = ""
@@ -320,6 +324,7 @@ def create_app():
         return {"exists": path.exists(), "markdown": path.read_text() if path.exists() else "",
                 "path": str(path.relative_to(BASE_DIR)), "project": library.meeting_project(meeting_id),
                 "backend": info.get("backend"), "model": info.get("model"), "created": info.get("created"),
+                "edited": info.get("edited"),
                 "job": running[0] if running else None}
 
     @app.post("/api/meetings/{meeting_id}/note")
@@ -332,12 +337,24 @@ def create_app():
         project = request.project.strip() if request.project and request.project.strip() else None
         return jobs.add_note(meeting_id, request.backend, project)
 
+    @app.post("/api/meetings/{meeting_id}/note/text")
+    def save_note(meeting_id: str, request: NoteText):
+        out_dir = _meeting_dir(meeting_id)
+        if not (out_dir / "note.json").exists():
+            raise HTTPException(404, "this meeting has no note yet")
+        pipeline.save_note_edits(out_dir, request.markdown)
+        return {"ok": True}
+
+    @app.post("/api/meetings/{meeting_id}/note/discard")
+    def discard_note(meeting_id: str):
+        pipeline.discard_note_edits(_meeting_dir(meeting_id))
+        return note(meeting_id)
+
     @app.post("/api/meetings/{meeting_id}/title")
     def title(meeting_id: str, request: NameRequest):
         if not request.name.strip():
             raise HTTPException(400, "the title cannot be blank")
-        pipeline.rename_meeting(_meeting_dir(meeting_id), request.name)
-        return {"title": request.name.strip()}
+        return {"title": pipeline.rename_meeting(_meeting_dir(meeting_id), request.name)}
 
     @app.post("/api/meetings/{meeting_id}/project")
     def project(meeting_id: str, request: NameRequest):

@@ -623,6 +623,7 @@ async function renderNote(id, body) {
         <button class="btn ${note.archived ? "" : "primary"}" id="send-note" ${note.notes_dir ? "" : "disabled title=\"Set MEETING_NOTES_DIR in .env\""}>${note.archived ? "Send again" : "Send to Obsidian"}</button>
       </div>` : ""}
     ${note.exists ? `<div class="tools">
+        <button class="btn small" id="open-obsidian" ${note.sent_path ? "" : "disabled title=\"Send the note to Obsidian first\""}>Open in Obsidian</button>
         <button class="btn small" id="copy-note">Copy note</button>
         <button class="btn small" id="reveal-note">Show in Finder</button>
         ${note.edited ? `<button class="btn small" id="discard-note">Discard my edits</button>` : ""}
@@ -699,6 +700,8 @@ async function renderNote(id, body) {
       renderNote(id, body);
     };
     document.getElementById("reveal-note").onclick = () => post(`/api/meetings/${enc}/reveal`, {});
+    document.getElementById("open-obsidian").onclick = () =>
+      post(`/api/meetings/${enc}/open-obsidian`, {}).catch(err => toast(err.message));
   }
   if (job) {
     pollTimer = setTimeout(() => { if (document.body.contains(body)) renderNote(id, body); }, 1500);

@@ -13,6 +13,7 @@ import traceback
 import uuid
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
 
 import numpy as np
 import soundfile as sf
@@ -391,6 +392,16 @@ def create_app():
         except ValueError as err:
             raise HTTPException(400, str(err))
         return {"path": str(path), "meeting_id": out_dir.name}
+
+    @app.post("/api/meetings/{meeting_id}/open-obsidian")
+    def open_obsidian(meeting_id: str):
+        _meeting_dir(meeting_id)
+        path = library.meeting_sent_path(meeting_id)
+        if not path or not Path(path).exists():
+            raise HTTPException(404, "the note is not in the vault yet, send it first")
+        # obsidian finds the vault from the file's path
+        subprocess.run(["open", f"obsidian://open?path={quote(path, safe='')}"], check=False)
+        return {"ok": True}
 
     @app.post("/api/meetings/{meeting_id}/unarchive")
     def unarchive(meeting_id: str):

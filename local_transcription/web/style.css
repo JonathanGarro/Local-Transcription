@@ -87,6 +87,8 @@ h2 { font-size: 15px; margin: 28px 0 10px; font-weight: 600; }
   cursor: pointer;
 }
 .btn:hover { border-color: var(--muted); }
+.btn:disabled { opacity: 0.5; cursor: default; }
+.btn:disabled:hover { border-color: var(--line); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn.primary:disabled { opacity: 0.5; cursor: default; }
 .btn.small { padding: 2px 9px; font-size: 13px; }

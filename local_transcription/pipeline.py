@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from local_transcription import asr, audio, diarize, embed, match, library, merge, notes, render, vocab
+from local_transcription import asr, audio, diarize, embed, match, library, merge, notes, projects, render, vocab
 
 # config
 OUTPUT_DIR = Path(__file__).parent.parent / "outputs"
@@ -430,7 +430,7 @@ def render_note_file(out_dir, meta, segments, speakers):
 
 def write_note(out_dir, backend=None, project=None, owner=None, progress=print):
     """summarize a meeting into note.md. project is a project name, or None to let the model
-    pick from the library's projects. the owner is who the action items are for."""
+    pick from the in-progress projects. the owner is who the action items are for."""
     out_dir = Path(out_dir)
     meta, segments, speakers, _ = load_run(out_dir)
     speakers = link_people(speakers)
@@ -442,10 +442,10 @@ def write_note(out_dir, backend=None, project=None, owner=None, progress=print):
     lines = notes.transcript_lines(segments, speakers)
     attendees = [line[1:line.index("]")] for line in lines]
     terms, _ = vocab.load()
-    projects = library.lookup_names("projects")
+    choices = projects.model_projects()
 
     _log(progress, f"summarizing with the {backend} model")
-    summary = notes.summarize(lines, owner_full, date, list(dict.fromkeys(attendees)), projects, terms,
+    summary = notes.summarize(lines, owner_full, date, list(dict.fromkeys(attendees)), choices, terms,
                               backend=backend, progress=progress)
     summary["owner_id"] = owner_id
     (out_dir / "note.json").write_text(json.dumps(summary, indent=2))

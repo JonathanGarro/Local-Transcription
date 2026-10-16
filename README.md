@@ -127,6 +127,8 @@ Writes `note.md` in the Obsidian layout: frontmatter, Agenda, Discussion, Transc
 - `people` are the confirmed speakers other than you, as `[[Full Name]]` links
 - `teams` and `organizations` are looked up from those people in the library
 - `project` is the one you choose, or the model's pick from your project list
+
+Projects come from your Obsidian project index. Set `PROJECT_INDEX_DIR` in `.env` to the folder with one note per project. The app reads only the `project status` line of each note. The picker lists In-Progress projects first, then everything else from A to Z, and you can search by typing. The model only picks from In-Progress projects and ones you typed in yourself. A name that isn't in the index is still accepted.
 - the transcript block is the confirmed transcript as `[Full Name] text` lines, never retyped by the model
 
 Set people's details in the People page, or:

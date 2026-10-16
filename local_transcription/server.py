@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from local_transcription import audio, library, notes, pipeline, render
+from local_transcription import audio, library, notes, pipeline, projects, render
 
 # config
 BASE_DIR = Path(__file__).parent.parent
@@ -347,7 +347,7 @@ def create_app():
     @app.get("/api/lookups")
     def lookups():
         return {"teams": library.lookup_names("teams"), "organizations": library.lookup_names("organizations"),
-                "projects": library.lookup_names("projects"), "default_backend": notes.default_backend(),
+                "projects": projects.all_projects(), "default_backend": notes.default_backend(),
                 "claude_ready": bool(os.environ.get("ANTHROPIC_API_KEY"))}
 
     @app.post("/api/people/{person_id}/details")

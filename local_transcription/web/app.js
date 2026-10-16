@@ -456,6 +456,55 @@ async function renderTranscript(id, tab = "transcript") {
   };
 }
 
+// project search: in-progress projects first, then a to z (the server sends that order).
+// a name that is not in the list is still allowed and gets added
+function projectPicker(input, list, projects) {
+  let shown = [], active = -1;
+  const draw = () => {
+    const query = input.value.trim().toLowerCase();
+    shown = projects.filter(p => !query || p.name.toLowerCase().includes(query));
+    active = Math.min(active, shown.length - 1);
+    const live = shown.filter(p => p.status === "In-Progress");
+    const rest = shown.filter(p => p.status !== "In-Progress");
+    const row = p => {
+      const i = shown.indexOf(p);
+      return `<div class="combo-item ${i === active ? "active" : ""}" data-i="${i}">
+        <span>${esc(p.name)}</span>${p.status && p.status !== "In-Progress" ? `<span class="hint">${esc(p.status)}</span>` : ""}</div>`;
+    };
+    list.innerHTML = (live.length ? `<div class="combo-head">In progress</div>${live.map(row).join("")}` : "")
+      + (rest.length ? `<div class="combo-head">${live.length ? "Everything else" : "Projects"}</div>${rest.map(row).join("")}` : "")
+      + (query && !projects.some(p => p.name.toLowerCase() === query) ? `<div class="combo-new">Enter adds "${esc(input.value.trim())}" as a new project</div>` : "");
+    list.hidden = !list.innerHTML;
+    list.querySelector(".combo-item.active")?.scrollIntoView({ block: "nearest" });
+  };
+  const pick = p => {
+    input.value = p.name;
+    list.hidden = true;
+    input.dispatchEvent(new Event("change"));
+  };
+  input.onfocus = () => { active = -1; draw(); };
+  input.oninput = () => { active = -1; draw(); };
+  input.onblur = () => setTimeout(() => { list.hidden = true; }, 150);
+  input.onkeydown = e => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (list.hidden) draw();
+      active = Math.max(0, Math.min(shown.length - 1, active + (e.key === "ArrowDown" ? 1 : -1)));
+      draw();
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (active >= 0 && shown[active]) pick(shown[active]);
+      else { list.hidden = true; input.blur(); }
+    } else if (e.key === "Escape") {
+      list.hidden = true;
+    }
+  };
+  list.onmousedown = e => {
+    const item = e.target.closest(".combo-item");
+    if (item) { e.preventDefault(); pick(shown[+item.dataset.i]); }
+  };
+}
+
 async function renderNote(id, body) {
   const enc = encodeURIComponent(id);
   const [note, lookups] = await Promise.all([api(`/api/meetings/${enc}/note`), api("/api/lookups")]);
@@ -471,12 +520,14 @@ async function renderNote(id, body) {
           </select>
         </label>
         <label>Project
-          <input type="text" id="project" list="project-list" value="${esc(note.project || "")}"
-            placeholder="${lookups.projects.length ? "Let the model pick" : "None yet, type to add"}">
+          <span class="combo">
+            <input type="text" id="project" autocomplete="off" value="${esc(note.project || "")}"
+              placeholder="${lookups.projects.length ? "Let the model pick, or search" : "None yet, type to add"}">
+            <div class="combo-list" id="project-list" hidden></div>
+          </span>
         </label>
         <button class="btn primary" id="write" ${job ? "disabled" : ""}>${note.exists ? "Rewrite note" : "Write note"}</button>
       </div>
-      <datalist id="project-list">${lookups.projects.map(p => `<option value="${esc(p)}">`).join("")}</datalist>
       ${job ? `<div class="meta" style="margin-top:12px">${job.status === "queued" ? "Waiting for the current job" : esc(job.step)}${job.detail ? `, ${esc(job.detail)}` : ""}</div>
         <div class="bar"><div style="width:${Math.round(job.progress * 100)}%"></div></div>` : ""}
       ${note.exists && !job ? `<div class="hint" style="margin-top:10px">Written by ${esc(note.model)} on ${esc((note.created || "").replace("T", " "))}. Changing the project updates the note without rewriting it.</div>` : ""}
@@ -498,6 +549,7 @@ async function renderNote(id, body) {
     }
   };
   const projectInput = document.getElementById("project");
+  projectPicker(projectInput, document.getElementById("project-list"), lookups.projects);
   projectInput.onchange = async () => {
     if (!note.exists || job) return;
     await post(`/api/meetings/${enc}/project`, { name: projectInput.value.trim() });

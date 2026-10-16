@@ -31,6 +31,14 @@ uv run app.py              # opens the app window
 uv run app.py --browser    # or serve on http://127.0.0.1:8765 and use a browser
 ```
 
+To keep it in the Dock, build a Mac app with your own icon (any square PNG, 1024x1024 is best):
+
+```
+uv run make_app.py --icon ~/Pictures/my-icon.png
+```
+
+It goes in `~/Applications/Local Transcription.app` and just starts `app.py` from this folder. Run it again after changing the icon. Without `--icon` it uses `assets/icon.png`. The app's log is `~/Library/Logs/Local Transcription.log`.
+
 - **Inbox:** drop recordings to queue them. One file runs at a time, with live progress. Dropped files are copied into `data/`. A file that was already processed is only re-run if you confirm, because re-running replaces its confirmed names.
 - **Review:** each unknown speaker gets a few short clips with what they said, suggested names with scores, and a name field that searches existing people or creates a new one. You can also mark a speaker as the same person as another speaker (diarization split them), leave a speaker unnamed, or name them without adding the voice to their profile. Identified speakers are collapsed, with a "wrong?" link. Nothing is saved until you press Apply.
 - **Transcript:** click any line to play from there, show the file in Finder, or copy the markdown.

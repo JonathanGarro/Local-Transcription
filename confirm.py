@@ -4,6 +4,7 @@ usage:
     uv run confirm.py "outputs/<recording>"                          # use the name column in review.csv
     uv run confirm.py "outputs/<recording>" SPEAKER_01=Alex SPEAKER_00=Priya
     uv run confirm.py "outputs/<recording>" SPEAKER_01=Alex --no-enroll
+    uv run confirm.py "outputs/<recording>" --skip SPEAKER_00      # leave a speaker unnamed
 """
 
 import argparse
@@ -44,13 +45,19 @@ def main():
     parser.add_argument("pairs", nargs="*", help="SPEAKER_XX=Name")
     parser.add_argument("--no-enroll", action="store_true",
                         help="rename in the transcript only, do not touch profiles")
+    parser.add_argument("--skip", nargs="+", default=[], metavar="SPEAKER",
+                        help="leave these speakers unnamed so the meeting no longer needs review")
     args = parser.parse_args()
 
-    mapping = parse_pairs(args.pairs) if args.pairs else mapping_from_review(args.output_dir)
-    if not mapping:
+    if args.pairs:
+        mapping = parse_pairs(args.pairs)
+    else:
+        mapping = {} if args.skip else mapping_from_review(args.output_dir)
+    if not mapping and not args.skip:
         raise SystemExit("no names to confirm")
 
-    speakers, added = pipeline.apply_names(args.output_dir, mapping, enroll=not args.no_enroll)
+    speakers, added = pipeline.apply_names(args.output_dir, mapping, enroll=not args.no_enroll,
+                                           skip=args.skip)
     print(speakers[["speaker", "name", "status", "minutes"]].fillna({"name": ""}).to_string(index=False))
     for name, entry_id in added:
         print(f"added entry {entry_id} to profile {name}")

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Local Transcription</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav class="sidebar">
+    <div class="brand">Transcription</div>
+    <a href="#/inbox" data-nav="inbox">Inbox <span class="count" id="review-count"></span></a>
+    <a href="#/people" data-nav="people">People</a>
+    <div class="sidebar-foot">Runs on this Mac only</div>
+  </nav>
+  <main id="view"></main>
+  <audio id="player" preload="none"></audio>
+  <div id="toast" class="toast" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>

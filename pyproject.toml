@@ -5,14 +5,18 @@ description = "Offline meeting transcription with speaker diarization and voice 
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "fastapi==0.143.2",
     "huggingface-hub==2.2.0",
     "mlx-whisper==0.4.3",
     "numpy==2.4.6",
     "pandas==3.0.6",
     "pyannote-audio==4.0.7",
     "python-dotenv==1.2.4",
+    "python-multipart==0.0.32",
+    "pywebview==6.2.1",
     "scipy==1.17.1",
     "soundfile==0.14.0",
+    "uvicorn==0.54.0",
 ]
 
 [dependency-groups]

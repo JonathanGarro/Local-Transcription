@@ -1,7 +1,8 @@
 """end to end pipeline: normalize, diarize, transcribe, merge, match, render.
 
-the command line scripts are thin wrappers around run() and apply_names() so a gui can
-call the same functions later.
+the command line scripts and the gui are thin wrappers around the functions here. every
+meeting is registered in the library, and transcripts are always rendered from the current
+names of the people in it, so renames and merges reach every past transcript.
 """
 
 import json
@@ -10,7 +11,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from local_transcription import asr, audio, diarize, embed, match, merge, profiles, render, vocab
+from local_transcription import asr, audio, diarize, embed, match, library, merge, render, vocab
 
 # config
 OUTPUT_DIR = Path(__file__).parent.parent / "outputs"
@@ -20,8 +21,13 @@ MIC_SPEAKER = "MIC"
 DEFAULT_OWNER = "Me"
 # fewer mic words than this (a stray "um") means the owner did not take part
 MIC_MIN_WORDS = 5
-# statuses that need no review
-RESOLVED = ["matched", "confirmed", "mic"]
+# statuses that need no review. skipped speakers are left unnamed on purpose
+RESOLVED = ["matched", "confirmed", "mic", "skipped"]
+# review clips: up to this many per speaker, each this long at most, spread over the meeting
+CLIP_COUNT = 3
+CLIP_MIN_S = 2.0
+CLIP_MAX_S = 8.0
+CLIP_SPACING_S = 60.0
 
 
 # helpers
@@ -50,14 +56,46 @@ def speaker_samples(segments):
     return longest.set_index("speaker")[["start", "text"]]
 
 
+def link_people(speakers):
+    """fill person_id from names where it is missing, and names from the library where a
+    person_id exists, so renames in the library flow into the transcript."""
+    speakers = speakers.copy()
+    if "person_id" not in speakers:
+        speakers["person_id"] = None
+    current = library.person_names()
+    for i, row in speakers.iterrows():
+        person_id, name = row["person_id"], row["name"]
+        if isinstance(person_id, str) and person_id in current:
+            speakers.at[i, "name"] = current[person_id]
+        elif isinstance(name, str) and name:
+            speakers.at[i, "person_id"] = library.find_person(name)
+    return speakers
+
+
+def meeting_status(speakers):
+    return "done" if speakers["status"].isin(RESOLVED).all() else "needs review"
+
+
 def write_outputs(out_dir, segments, speakers, meta):
+    """render every output file from segments and speakers, and register the meeting.
+    this is the single place outputs are written, so filing elsewhere can hook in here."""
+    speakers = link_people(speakers)
     names = display_names(speakers, segments)
     records = segments.assign(name=segments["speaker"].map(names))
     records = records[["speaker", "name", "start", "end", "text"]]
     (out_dir / "segments.json").write_text(json.dumps(records.to_dict("records"), indent=2))
-    markdown = render.render_markdown(segments, names, meta["source"], meta.get("title"), meta.get("date"))
+    title, date = render.title_and_date(meta["source"])
+    meta = {**meta, "title": meta.get("title") or title, "date": meta.get("date") or date}
+    markdown = render.render_markdown(segments, names, meta["source"], meta["title"], meta["date"])
     (out_dir / "transcript.md").write_text(markdown)
     speakers.to_csv(out_dir / "speakers.csv", index=False)
+    minutes = round(float(segments["end"].max()) / 60, 1) if len(segments) else None
+    library.save_meeting(out_dir.name, meta, speakers, meeting_status(speakers), minutes)
+    review = out_dir / "review.csv"
+    if meeting_status(speakers) == "done":
+        review.unlink(missing_ok=True)
+    else:
+        write_review(out_dir, speakers, segments)
     return names
 
 
@@ -79,9 +117,28 @@ def load_run(out_dir):
     out_dir = Path(out_dir)
     meta = json.loads((out_dir / "run.json").read_text())
     segments = pd.DataFrame(json.loads((out_dir / "segments.json").read_text()))
-    speakers = pd.read_csv(out_dir / "speakers.csv", dtype={"name": str, "entry_id": str})
+    speakers = pd.read_csv(out_dir / "speakers.csv",
+                           dtype={"name": str, "entry_id": str, "person_id": str, "status": str})
+    if "person_id" not in speakers:
+        speakers["person_id"] = None
     vectors = dict(np.load(out_dir / "speaker_embeddings.npz"))
     return meta, segments, speakers, vectors
+
+
+def meeting_dir(meeting_id):
+    out_dir = OUTPUT_DIR / meeting_id
+    if not (out_dir / "run.json").exists():
+        raise ValueError(f"no processed meeting named {meeting_id}")
+    return out_dir
+
+
+def speaker_audio(out_dir, meta, speaker):
+    """the cleanest wav for one speaker: their own channel in split mode, else the mix."""
+    if meta.get("split"):
+        wav = out_dir / ("mic_16k.wav" if speaker == MIC_SPEAKER else "remote_16k.wav")
+        if wav.exists():
+            return wav
+    return out_dir / "audio_16k.wav"
 
 
 # main
@@ -119,7 +176,7 @@ def run(source, threshold=match.THRESHOLD, num_speakers=None, min_speakers=diari
         _log(progress, f"  {info['duration'] / 60:.1f} min, {info['channel_handling']}")
         main_wav = wav
 
-    known = profiles.load_profiles()
+    known = library.load_profiles()
     terms, replacements = vocab.load()
     prompt = vocab.build_prompt(terms, sorted(known))
 
@@ -178,6 +235,7 @@ def run(source, threshold=match.THRESHOLD, num_speakers=None, min_speakers=diari
     speakers["first_start"] = speakers["speaker"].map(talk["start"].min()).round(2)
     speakers["embedded_s"] = speakers["speaker"].map({s: round(v[1], 1) for s, v in speaker_info.items()})
     speakers["entry_id"] = None
+    speakers["person_id"] = None
     # speakers that never got a transcribed word are dropped from the outputs
     speakers = speakers[speakers["speaker"].isin(segments["speaker"])].reset_index(drop=True)
 
@@ -185,40 +243,153 @@ def run(source, threshold=match.THRESHOLD, num_speakers=None, min_speakers=diari
             "threshold": threshold, "language": detected, "prompt": prompt, "split": use_split,
             "mic_channel": mic_channel if use_split else None, "owner": owner if use_split else None}
     (out_dir / "run.json").write_text(json.dumps(meta, indent=2))
+    # a re-run replaces the meeting, so entries the previous run added are stale
+    for entry_id in library.all_entries().query("meeting_id == @out_dir.name")["entry_id"]:
+        library.remove_entry(entry_id, out_dir.name)
     write_outputs(out_dir, segments, speakers, meta)
-
-    review = None
-    if not speakers["status"].isin(RESOLVED).all():
-        review = write_review(out_dir, speakers, segments)
-    return out_dir, speakers, review
+    review = out_dir / "review.csv"
+    return out_dir, speakers, review if review.exists() else None
 
 
-def apply_names(out_dir, mapping, enroll=True):
-    """set confirmed names ({speaker: name}), re-render the transcript, and optionally add
-    each confirmed speaker's meeting embedding to that person's profile."""
+def apply_names(out_dir, mapping, enroll=True, skip=()):
+    """set confirmed names ({speaker: name}), re-render the transcript, and add each confirmed
+    speaker's meeting embedding to that person's profile. enroll is True, False, or a set of
+    speakers to enroll. speakers in skip are left unnamed and no longer need review."""
     out_dir = Path(out_dir)
     meta, segments, speakers, vectors = load_run(out_dir)
     added = []
-    for speaker, name in mapping.items():
+    for speaker in [*mapping, *skip]:
         if speaker not in set(speakers["speaker"]):
             raise ValueError(f"{speaker} is not in {out_dir.name}, see speakers.csv")
+    for speaker in [*mapping, *skip]:
         row = speakers["speaker"] == speaker
         previous = speakers.loc[row, "entry_id"].iloc[0]
         if isinstance(previous, str) and previous:
             # relabeling a speaker replaces the profile entry it added before
-            profiles.remove_entry(previous)
+            library.remove_entry(previous, out_dir.name)
             speakers.loc[row, "entry_id"] = None
+        if speaker in skip:
+            speakers.loc[row, ["name", "person_id", "status"]] = [None, None, "skipped"]
+            continue
+        name = mapping[speaker].strip()
         speakers.loc[row, "name"] = name
-        speakers.loc[row, "status"] = "confirmed"
-        if enroll and speaker in vectors:
-            entry_id = profiles.add_entry(
+        speakers.loc[row, "person_id"] = library.ensure_person(name)
+        if speakers.loc[row, "status"].iloc[0] != "mic":
+            speakers.loc[row, "status"] = "confirmed"
+        wants = enroll if isinstance(enroll, bool) else speaker in enroll
+        if wants and speaker in vectors:
+            entry_id = library.add_entry(
                 name, vectors[speaker], method="confirm", source_file=Path(meta["source"]).name,
                 source_type=meta.get("source_type", "other"),
-                seconds=speakers.loc[row, "embedded_s"].iloc[0])
+                seconds=speakers.loc[row, "embedded_s"].iloc[0],
+                meeting_id=out_dir.name, speaker=speaker)
             speakers.loc[row, "entry_id"] = entry_id
             added.append((name, entry_id))
     write_outputs(out_dir, segments, speakers, meta)
-    review = out_dir / "review.csv"
-    if speakers["status"].isin(RESOLVED).all() and review.exists():
-        review.unlink()
-    return speakers, added
+    return link_people(speakers), added
+
+
+def merge_speakers(out_dir, source, target):
+    """fold one diarized speaker into another when diarization split a person in two."""
+    out_dir = Path(out_dir)
+    meta, segments, speakers, vectors = load_run(out_dir)
+    if source == target or not {source, target} <= set(speakers["speaker"]):
+        raise ValueError(f"cannot merge {source} into {target}")
+    if MIC_SPEAKER in (source, target):
+        raise ValueError("the mic channel cannot be merged with a call speaker")
+    src = speakers[speakers["speaker"] == source].iloc[0]
+    dst_row = speakers["speaker"] == target
+    dst = speakers[dst_row].iloc[0]
+
+    # the merged voice is the duration-weighted mean of both
+    if source in vectors and target in vectors:
+        w_src, w_dst = np.nan_to_num([float(src["embedded_s"]), float(dst["embedded_s"])])
+        merged = vectors[source] * w_src + vectors[target] * w_dst
+        vectors[target] = embed.normalize(merged if w_src + w_dst else vectors[target])
+        speakers.loc[dst_row, "embedded_s"] = round(w_src + w_dst, 1)
+    vectors.pop(source, None)
+    np.savez(out_dir / "speaker_embeddings.npz", **vectors)
+    speakers.loc[dst_row, "minutes"] = round(float(np.nansum([src["minutes"], dst["minutes"]])), 1)
+    speakers.loc[dst_row, "first_start"] = min(src["first_start"], dst["first_start"])
+    for entry_id in (src["entry_id"], dst["entry_id"]):
+        if isinstance(entry_id, str) and entry_id:
+            library.remove_entry(entry_id, out_dir.name)
+    speakers.loc[dst_row, "entry_id"] = None
+    speakers = speakers[speakers["speaker"] != source].reset_index(drop=True)
+
+    segments["speaker"] = segments["speaker"].replace(source, target)
+    for name in ("words.csv", "turns.csv"):
+        table = pd.read_csv(out_dir / name)
+        table["speaker"] = table["speaker"].replace(source, target)
+        table.to_csv(out_dir / name, index=False)
+    write_outputs(out_dir, segments, speakers, meta)
+
+    # a confirmed target gets its profile entry back with the merged voice
+    if isinstance(dst["name"], str) and dst["status"] == "confirmed" and isinstance(dst["entry_id"], str):
+        apply_names(out_dir, {target: dst["name"]})
+    return target
+
+
+def rerender(meeting_ids):
+    """re-render transcripts after people were renamed or merged in the library."""
+    for meeting_id in meeting_ids:
+        out_dir = OUTPUT_DIR / meeting_id
+        if (out_dir / "run.json").exists():
+            meta, segments, speakers, _ = load_run(out_dir)
+            write_outputs(out_dir, segments, speakers, meta)
+
+
+def rename_person(person_id, new_name):
+    rerender(library.rename_person(person_id, new_name))
+
+
+def merge_people(source_id, target_id):
+    rerender(library.merge_people(source_id, target_id))
+
+
+def register_existing():
+    """add output folders made before the library existed. safe to run more than once."""
+    known = set(library.meetings().get("meeting_id", []))
+    added = [d.name for d in library.legacy_meeting_dirs() if d.name not in known]
+    rerender(added)
+    return added
+
+
+def clips(out_dir, speaker, count=CLIP_COUNT):
+    """short review clips for one speaker: their longest segments, spread over the meeting,
+    each cut to at most CLIP_MAX_S, with the words spoken inside the clip."""
+    out_dir = Path(out_dir)
+    segments = pd.DataFrame(json.loads((out_dir / "segments.json").read_text()))
+    mine = segments[segments["speaker"] == speaker]
+    mine = mine.assign(seconds=mine["end"] - mine["start"]).sort_values("seconds", ascending=False)
+    picked = []
+    for spacing in (CLIP_SPACING_S, 0.0):
+        for row in mine.itertuples():
+            if len(picked) >= count:
+                break
+            if row.seconds < CLIP_MIN_S and picked:
+                break
+            if all(abs(row.start - p["start"]) > spacing for p in picked) and \
+                    all(row.start != p["start"] for p in picked):
+                picked.append({"start": row.start, "end": min(row.end, row.start + CLIP_MAX_S)})
+    words = pd.read_csv(out_dir / "words.csv")
+    words = words[words["speaker"] == speaker]
+    for clip in picked:
+        inside = words[(words["start"] >= clip["start"] - 0.05) & (words["end"] <= clip["end"] + 0.05)]
+        clip["text"] = "".join(inside["word"].astype(str)).strip()
+        clip["start"], clip["end"] = round(clip["start"], 2), round(clip["end"], 2)
+    return sorted(picked, key=lambda c: c["start"])
+
+
+def suggestions(out_dir, speaker, count=3):
+    """closest profiles for one speaker, scored against the library as it is now."""
+    out_dir = Path(out_dir)
+    meta, _, _, vectors = load_run(out_dir)
+    if speaker not in vectors:
+        return []
+    known = library.load_profiles()
+    owner = meta.get("owner")
+    if meta.get("split") and speaker != MIC_SPEAKER:
+        known = {n: p for n, p in known.items() if n != owner}
+    scores = sorted(((float(vectors[speaker] @ vec), name) for name, (vec, _) in known.items()), reverse=True)
+    return [{"name": name, "score": round(score, 3)} for score, name in scores[:count]]

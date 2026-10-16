@@ -24,7 +24,21 @@ uv run check_setup.py --offline
 
 Accept the model terms at https://hf.co/pyannote/speaker-diarization-community-1 with the account that owns the token. After the offline check passes, uncomment `HF_HUB_OFFLINE=1` in `.env`.
 
-## Usage
+## App
+
+```
+uv run app.py              # opens the app window
+uv run app.py --browser    # or serve on http://127.0.0.1:8765 and use a browser
+```
+
+- **Inbox:** drop recordings to queue them. One file runs at a time, with live progress. Dropped files are copied into `data/`. A file that was already processed is only re-run if you confirm, because re-running replaces its confirmed names.
+- **Review:** each unknown speaker gets a few short clips with what they said, suggested names with scores, and a name field that searches existing people or creates a new one. You can also mark a speaker as the same person as another speaker (diarization split them), leave a speaker unnamed, or name them without adding the voice to their profile. Identified speakers are collapsed, with a "wrong?" link. Nothing is saved until you press Apply.
+- **Transcript:** click any line to play from there, show the file in Finder, or copy the markdown.
+- **People:** everyone in the library with meetings, minutes heard and profile audio. Renaming a person rewrites every past transcript they appear in.
+
+The server listens on 127.0.0.1 only and the page loads nothing from the internet.
+
+## Command line
 
 Put recordings in `data/`. File names like `2026-10-14 - Manager Check-In.mp3` give the transcript its date and title.
 
@@ -66,7 +80,7 @@ or name speakers directly:
 uv run confirm.py "outputs/2026-10-14 - Manager Check-In" SPEAKER_01=Alex SPEAKER_00=Priya
 ```
 
-Confirming re-renders the transcript and adds that speaker's voice from this meeting to their profile. Use `--no-enroll` to rename without touching profiles. Confirming the same speaker again replaces the entry it added before.
+Confirming re-renders the transcript and adds that speaker's voice from this meeting to their profile. Use `--no-enroll` to rename without touching profiles, or `--skip SPEAKER_00` to leave a speaker unnamed (for example a video playing on someone's side). Confirming the same speaker again replaces the entry it added before.
 
 ### Enrolling from a clip
 
@@ -81,12 +95,14 @@ The clip should contain only that person. 20 seconds or more works best.
 
 ```
 uv run manage_profiles.py list
-uv run manage_profiles.py show "Priya"          # entries with similarity to the mean
+uv run manage_profiles.py show "Priya"              # entries with similarity to the mean
+uv run manage_profiles.py rename "Katherine" "Kathryn"  # updates every past transcript
+uv run manage_profiles.py merge "Pri" "Priya"       # fold the first person into the second
 uv run manage_profiles.py remove-entry <id>
 uv run manage_profiles.py delete "Priya"
 ```
 
-Profiles live in `data/profiles/<name>/`, one `.npy` per entry plus an `index.csv`. The profile vector is the mean of the current entries, so pruning takes effect on the next run.
+People, voice entries and meetings live in `data/library.db` (SQLite). Each person has a stable id, and each voice entry records the meeting and speaker it came from. The profile vector is the mean of a person's current entries, so pruning takes effect on the next run. Deleting a person removes their entries and vacuums the database file. Past transcripts keep their name as plain text.
 
 ### Custom vocabulary
 
@@ -100,12 +116,14 @@ Every term, plus every profile name, is passed to Whisper as a spelling hint on 
 
 ## Privacy
 
-`data/`, `outputs/`, and `.env` are gitignored, so audio, transcripts, voice profiles, and the token are never committed. Deleting a profile folder removes every trace of that voice.
+`data/`, `outputs/`, and `.env` are gitignored, so audio, transcripts, voice profiles, and the token are never committed. Deleting a person removes their voice entries from `data/library.db`. Each meeting's `speaker_embeddings.npz` in `outputs/` also holds that meeting's voices, so delete the meeting folder too for a complete removal.
 
 ## Layout
 
 ```
-local_transcription/   pipeline modules (audio, diarize, asr, merge, embed, match, profiles, render, pipeline)
+local_transcription/   pipeline modules (audio, diarize, asr, merge, embed, match, library, render, pipeline)
+local_transcription/server.py, web/   local api and app pages
+app.py                 open the app window
 transcribe.py          process a recording
 confirm.py             confirm names and grow profiles
 enroll.py              add a voice sample

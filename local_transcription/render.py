@@ -24,8 +24,10 @@ def title_and_date(source):
         date = found.group(1)
         title = (stem[:found.start()] + stem[found.end():]).strip(" -_") or stem
     else:
-        date = datetime.fromtimestamp(Path(source).stat().st_mtime).date().isoformat()
-        title = stem
+        # no date in the name: use the file's modified date, or today if it has moved
+        path = Path(source)
+        stamp = datetime.fromtimestamp(path.stat().st_mtime) if path.exists() else datetime.now()
+        date, title = stamp.date().isoformat(), stem
     return title, date
 
 

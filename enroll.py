@@ -17,7 +17,7 @@ load_dotenv(BASE_DIR / ".env")
 OUTPUT_DIR = BASE_DIR / "outputs" / "enroll"
 RECOMMENDED_S = 20
 
-from local_transcription import audio, embed, profiles  # noqa: E402
+from local_transcription import audio, embed, library  # noqa: E402
 
 
 # helpers
@@ -49,8 +49,8 @@ def main():
     vector, seconds = embed.Embedder().clip(embed.load_audio(wav), start, end)
     if vector is None:
         raise SystemExit("clip is too short to embed, use at least a few seconds of speech")
-    entry_id = profiles.add_entry(args.name, vector, method="enroll", source_file=args.audio.name,
-                                  source_type=args.source, start=start, end=end, seconds=seconds)
+    entry_id = library.add_entry(args.name, vector, method="enroll", source_file=args.audio.name,
+                                 source_type=args.source, start=start, end=end, seconds=seconds)
     print(f"added entry {entry_id} to profile {args.name} ({seconds:.1f}s of audio)")
     if seconds < RECOMMENDED_S:
         print(f"note: clips of {RECOMMENDED_S}s or more give more reliable matches")

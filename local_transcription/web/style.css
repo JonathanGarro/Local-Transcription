@@ -318,3 +318,15 @@ tr.editing td { background: var(--accent-soft); }
 .diff-row.gap { background: var(--accent-soft); color: var(--accent); }
 .diff-row.gap .code { padding: 2px 0; }
 #note-diff { margin-bottom: 16px; }
+/* the note form: model, project, and the button share one height so the labels line up */
+.form input[type=text], .form select, .form .btn { height: 34px; }
+.form select {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 32px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%239a9aa0' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  cursor: pointer;
+}
+.form .chips input[type=text] { height: auto; }

@@ -1,0 +1,18 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# local audio, voice profiles, and generated files (never commit)
+data/
+outputs/
+.env
+
+# editor settings
+.idea/

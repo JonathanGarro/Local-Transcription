@@ -5,6 +5,7 @@ meeting is registered in the library, and transcripts are always rendered from t
 names of the people in it, so renames and merges reach every past transcript.
 """
 
+import difflib
 import json
 import os
 import re
@@ -18,6 +19,7 @@ from local_transcription import asr, audio, diarize, embed, match, library, merg
 
 # config
 OUTPUT_DIR = Path(__file__).parent.parent / "outputs"
+ORIGINAL_NOTE = "note_original.md"
 SAMPLE_CHARS = 160
 # in split mode the mic channel is one known person and gets this speaker id
 MIC_SPEAKER = "MIC"
@@ -432,12 +434,15 @@ def render_note_file(out_dir, meta, segments, speakers):
         return set_frontmatter(out_dir / "note.md", {
             "project": notes.wikilink(project) if project else "",
             "transcript": json.dumps(transcript_uri(out_dir), ensure_ascii=False)})
-    title, date = meeting_title(meta)
-    transcript_ref = transcript_uri(out_dir)
-    markdown = notes.render_note(summary, date, title, segments, link_people(speakers), summary.get("owner_id"),
-                                 library.meeting_project(out_dir.name), transcript_ref)
-    (out_dir / "note.md").write_text(markdown)
+    (out_dir / "note.md").write_text(generated_note(out_dir, meta, segments, speakers, summary))
     return out_dir / "note.md"
+
+
+def generated_note(out_dir, meta, segments, speakers, summary):
+    """the note as the app writes it, from the saved summary and current names."""
+    title, date = meeting_title(meta)
+    return notes.render_note(summary, date, title, segments, link_people(speakers), summary.get("owner_id"),
+                             library.meeting_project(out_dir.name), transcript_uri(out_dir))
 
 
 def meeting_title(meta):
@@ -489,6 +494,10 @@ def save_note_edits(out_dir, markdown):
     out_dir = Path(out_dir)
     path = out_dir / "note.json"
     summary = json.loads(path.read_text())
+    original = out_dir / ORIGINAL_NOTE
+    if not summary.get("edited") and (out_dir / "note.md").exists() and not original.exists():
+        # keep the note as it was before the first edit, so the changes can be shown
+        original.write_text((out_dir / "note.md").read_text())
     summary["edited"] = datetime.now().isoformat(timespec="seconds")
     (out_dir / "note.md").write_text(markdown)
     path.write_text(json.dumps(summary, indent=2))
@@ -501,8 +510,61 @@ def discard_note_edits(out_dir):
     summary = json.loads(path.read_text())
     summary.pop("edited", None)
     path.write_text(json.dumps(summary, indent=2))
+    (out_dir / ORIGINAL_NOTE).unlink(missing_ok=True)
     meta, segments, speakers, _ = load_run(out_dir)
     return render_note_file(out_dir, meta, segments, speakers)
+
+
+def _word_parts(old, new):
+    """[(text, changed)] for each side of a changed line, marking the words that differ."""
+    split = lambda line: re.findall(r"\s+|\w+|[^\w\s]", line)
+    a, b = split(old), split(new)
+    old_parts, new_parts = [], []
+    for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if i2 > i1:
+            old_parts.append(("".join(a[i1:i2]), op != "equal"))
+        if j2 > j1:
+            new_parts.append(("".join(b[j1:j2]), op != "equal"))
+    return old_parts, new_parts
+
+
+def note_diff(out_dir, context=3):
+    """what changed in an edited note, as rows of {kind, parts, old, new}. kind is ctx, del,
+    add, or gap. compares with the note before the first edit, or with a fresh render for
+    notes edited before that copy was kept. returns (rows, base)."""
+    out_dir = Path(out_dir)
+    original = out_dir / ORIGINAL_NOTE
+    if original.exists():
+        before, base = original.read_text(), "original"
+    else:
+        meta, segments, speakers, _ = load_run(out_dir)
+        summary = json.loads((out_dir / "note.json").read_text())
+        before, base = generated_note(out_dir, meta, segments, speakers, summary), "regenerated"
+    a, b = before.splitlines(), (out_dir / "note.md").read_text().splitlines()
+    rows = []
+    for group in difflib.SequenceMatcher(None, a, b, autojunk=False).get_grouped_opcodes(context):
+        if rows or group[0][1] > 0:
+            rows.append({"kind": "gap", "old": group[0][1] + 1, "new": group[0][3] + 1})
+        for op, i1, i2, j1, j2 in group:
+            if op == "equal":
+                rows += [{"kind": "ctx", "old": i1 + k + 1, "new": j1 + k + 1, "parts": [(a[i1 + k], False)]}
+                         for k in range(i2 - i1)]
+                continue
+            olds, news = a[i1:i2], b[j1:j2]
+            dels, adds = [], []
+            for k in range(max(len(olds), len(news))):
+                # pair lines up so small edits inside a line show which words changed
+                if k < len(olds) and k < len(news):
+                    old_parts, new_parts = _word_parts(olds[k], news[k])
+                else:
+                    old_parts = [(olds[k], False)] if k < len(olds) else None
+                    new_parts = [(news[k], False)] if k < len(news) else None
+                if old_parts is not None:
+                    dels.append({"kind": "del", "old": i1 + k + 1, "parts": old_parts})
+                if new_parts is not None:
+                    adds.append({"kind": "add", "new": j1 + k + 1, "parts": new_parts})
+            rows += dels + adds
+    return rows, base
 
 
 def notes_dir():
@@ -565,6 +627,7 @@ def write_note(out_dir, backend=None, project=None, owner=None, progress=print):
                               backend=backend, progress=progress)
     summary["owner_id"] = owner_id
     (out_dir / "note.json").write_text(json.dumps(summary, indent=2))
+    (out_dir / ORIGINAL_NOTE).unlink(missing_ok=True)
     if project is not None:
         library.set_meeting_project(out_dir.name, project)
     return render_note_file(out_dir, {**meta, "date": date}, segments, speakers)

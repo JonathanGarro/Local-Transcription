@@ -541,8 +541,22 @@ function projectPicker(input, list, projects) {
   };
 }
 
+// git style view of what was edited, with changed words highlighted inside each line
+function diffView(diff) {
+  const base = diff.base === "original" ? "the note before your first edit"
+    : "a fresh copy of the generated note. This note was edited before the app kept the original, so format updates since then show up too";
+  if (!diff.rows.length) return `<div class="card">No changes compared with ${base}.</div>`;
+  const sign = { add: "+", del: "-", ctx: " " };
+  const rows = diff.rows.map(r => r.kind === "gap"
+    ? `<div class="diff-row gap"><span class="ln"></span><span class="ln"></span><span class="sign"></span><span class="code">@@ line ${r.new}</span></div>`
+    : `<div class="diff-row ${r.kind}"><span class="ln">${r.old || ""}</span><span class="ln">${r.new || ""}</span><span class="sign">${sign[r.kind]}</span><span class="code">${r.parts.map(([t, changed]) => changed ? `<mark>${esc(t)}</mark>` : esc(t)).join("") || " "}</span></div>`).join("");
+  return `<div class="hint diff-summary"><span class="plus">+${diff.added}</span> <span class="minus">-${diff.removed}</span> lines, compared with ${base}.</div>
+    <div class="diff">${rows}</div>`;
+}
+
 // the note text box saves itself a moment after typing stops, and when it loses focus
 let flushNote = null;
+let noteSaved = null;
 
 function noteEditor(text, enc, status, path) {
   let timer = null, saved = text.value;
@@ -559,6 +573,7 @@ function noteEditor(text, enc, status, path) {
       await post(`/api/meetings/${enc}/note/text`, { markdown: value });
       saved = value;
       status.textContent = `Saved to ${path}`;
+      noteSaved?.();
     } catch (err) {
       status.textContent = `Not saved: ${err.message}`;
     }
@@ -587,6 +602,7 @@ function noteEditor(text, enc, status, path) {
 async function renderNote(id, body) {
   await flushNote?.();
   flushNote = null;
+  noteSaved = null;
   const enc = encodeURIComponent(id);
   const [note, lookups] = await Promise.all([api(`/api/meetings/${enc}/note`), api("/api/lookups")]);
   const job = note.job;
@@ -626,9 +642,11 @@ async function renderNote(id, body) {
         <button class="btn small" id="open-obsidian" ${note.sent_path ? "" : "disabled title=\"Send the note to Obsidian first\""}>Open in Obsidian</button>
         <button class="btn small" id="copy-note">Copy note</button>
         <button class="btn small" id="reveal-note">Show in Finder</button>
-        ${note.edited ? `<button class="btn small" id="discard-note">Discard my edits</button>` : ""}
+        ${note.edited ? `<button class="btn small" id="show-changes">Show changes</button>
+          <button class="btn small" id="discard-note">Discard my edits</button>` : ""}
         <span class="hint" id="note-status">${esc(note.path)}</span>
       </div>
+      <div id="note-diff" hidden></div>
       <textarea class="note" id="note-text" spellcheck="true">${esc(note.markdown)}</textarea>` : job ? "" : `<div class="empty">No note yet. Names come from the confirmed speakers, so finish the review first.</div>`}`;
 
   const writeButton = document.getElementById("write");
@@ -685,6 +703,21 @@ async function renderNote(id, body) {
         send.textContent = "Replace it";
         document.getElementById("send-status").textContent = `${err.message}. Click Replace it to overwrite that file, or change the heading first.`;
       }
+    };
+    const changes = document.getElementById("show-changes");
+    const panel = document.getElementById("note-diff");
+    const drawDiff = async () => { panel.innerHTML = diffView(await api(`/api/meetings/${enc}/note/diff`)); };
+    // while the changes are open they refresh each time the note saves
+    noteSaved = () => { if (!panel.hidden) drawDiff(); };
+    if (changes) changes.onclick = async () => {
+      const showing = panel.hidden;
+      if (showing) {
+        await flushNote?.();
+        await drawDiff();
+      }
+      panel.hidden = !showing;
+      changes.textContent = showing ? "Hide changes" : "Show changes";
+      changes.classList.toggle("on", showing);
     };
     const discard = document.getElementById("discard-note");
     if (discard) discard.onclick = async () => {

@@ -32,6 +32,7 @@
   }
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; }
 body {
   display: flex;
@@ -292,3 +293,28 @@ tr.editing td { background: var(--accent-soft); }
 .combo-new { color: var(--muted); font-size: 12.5px; padding: 8px; border-top: 1px solid var(--line); margin-top: 4px; }
 .card.send { display: flex; gap: 16px; align-items: center; }
 .card.send .main { flex: 1; }
+
+.diff-summary { margin-bottom: 8px; }
+.diff-summary .plus { color: var(--good); font-weight: 600; }
+.diff-summary .minus { color: var(--bad); font-weight: 600; }
+.diff {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  font: 12.5px/1.55 ui-monospace, Menlo, monospace;
+  tab-size: 4;
+}
+.diff-row { display: flex; }
+.diff-row .ln { width: 44px; flex-shrink: 0; text-align: right; padding-right: 8px; color: var(--muted); user-select: none; opacity: 0.7; }
+.diff-row .sign { width: 18px; flex-shrink: 0; text-align: center; user-select: none; }
+.diff-row .code { flex: 1; white-space: pre-wrap; word-break: break-word; padding-right: 12px; }
+.diff-row.add { background: rgba(46, 160, 67, 0.15); }
+.diff-row.add .sign { color: var(--good); }
+.diff-row.add mark { background: rgba(46, 160, 67, 0.4); color: inherit; border-radius: 2px; }
+.diff-row.del { background: rgba(248, 81, 73, 0.15); }
+.diff-row.del .sign { color: var(--bad); }
+.diff-row.del mark { background: rgba(248, 81, 73, 0.4); color: inherit; border-radius: 2px; }
+.diff-row.gap { background: var(--accent-soft); color: var(--accent); }
+.diff-row.gap .code { padding: 2px 0; }
+#note-diff { margin-bottom: 16px; }

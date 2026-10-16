@@ -374,6 +374,15 @@ def create_app():
         pipeline.save_note_edits(out_dir, request.markdown)
         return {"ok": True}
 
+    @app.get("/api/meetings/{meeting_id}/note/diff")
+    def note_diff(meeting_id: str):
+        out_dir = _meeting_dir(meeting_id)
+        if not (out_dir / "note.json").exists():
+            raise HTTPException(404, "this meeting has no note yet")
+        rows, base = pipeline.note_diff(out_dir)
+        return {"rows": rows, "base": base, "added": sum(r["kind"] == "add" for r in rows),
+                "removed": sum(r["kind"] == "del" for r in rows)}
+
     @app.post("/api/meetings/{meeting_id}/note/discard")
     def discard_note(meeting_id: str):
         pipeline.discard_note_edits(_meeting_dir(meeting_id))

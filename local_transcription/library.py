@@ -435,6 +435,24 @@ def archive_meeting(meeting_id, sent_path):
                     (_now(), str(sent_path), meeting_id))
 
 
+def rename_meeting_id(old_id, new_id):
+    """move a meeting to a new id (its output folder name), keeping its speakers and entries."""
+    with connect() as con:
+        columns = ", ".join(r["name"] for r in con.execute("pragma table_info(meetings)") if r["name"] != "meeting_id")
+        # copy, repoint, then delete, so the speaker rows never point at a missing meeting
+        con.execute(f"insert into meetings (meeting_id, {columns}) select ?, {columns} from meetings "
+                    "where meeting_id = ?", (new_id, old_id))
+        con.execute("update meeting_speakers set meeting_id = ? where meeting_id = ?", (new_id, old_id))
+        con.execute("update entries set meeting_id = ? where meeting_id = ?", (new_id, old_id))
+        con.execute("delete from meetings where meeting_id = ?", (old_id,))
+
+
+def find_meeting_by_source(source_file):
+    """the meeting made from this audio file name, if any."""
+    row = _query("select meeting_id from meetings where source_file = ?", (source_file,))
+    return row["meeting_id"].iloc[0] if len(row) else None
+
+
 def unarchive_meeting(meeting_id):
     """back to the inbox. the sent path is kept so sending again finds the same file."""
     with connect() as con:

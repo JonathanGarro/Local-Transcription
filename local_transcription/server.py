@@ -96,9 +96,9 @@ class Jobs:
         self.queue = queue.Queue()
         threading.Thread(target=self._work, daemon=True).start()
 
-    def add(self, path, source_type):
+    def add(self, path, source_type, meeting_id=None):
         return self._queue({"kind": "transcribe", "file": path.name, "path": str(path),
-                            "source_type": source_type, "meeting_id": None})
+                            "source_type": source_type, "meeting_id": meeting_id})
 
     def add_note(self, meeting_id, backend, project):
         return self._queue({"kind": "note", "file": f"Note for {meeting_id}", "meeting_id": meeting_id,
@@ -153,7 +153,8 @@ class Jobs:
         out_dir, speakers, review = pipeline.run(
             job["path"], source_type=source_type, progress=progress,
             mic_channel=CHANNELS.get(os.environ.get("MIC_CHANNEL", "left"), 0),
-            owner=os.environ.get("MIC_OWNER"))
+            owner=os.environ.get("MIC_OWNER"),
+            out_dir=pipeline.OUTPUT_DIR / job["meeting_id"] if job.get("meeting_id") else None)
         self._update(job, status="done", step="needs review" if review else "done",
                      progress=1.0, meeting_id=out_dir.name)
         self.auto_note(out_dir.name)
@@ -250,12 +251,14 @@ def create_app():
                 path = _unique_path(DATA_DIR, path.name)
             if not path.exists():
                 path.write_bytes(body)
-            already = (pipeline.OUTPUT_DIR / path.stem / "run.json").exists()
+            # sent meetings live in a folder named after their note, so look up by file too
+            meeting_id = library.find_meeting_by_source(path.name) or path.stem
+            already = (pipeline.OUTPUT_DIR / meeting_id / "run.json").exists()
             if already and not rerun:
                 # re-running would replace the confirmed names, so only do it when asked
-                skipped.append({"file": name, "reason": "already processed", "meeting_id": path.stem})
+                skipped.append({"file": name, "reason": "already processed", "meeting_id": meeting_id})
                 continue
-            queued.append(jobs.add(path, source_type)["job_id"])
+            queued.append(jobs.add(path, source_type, meeting_id if already else None)["job_id"])
         return {"queued": queued, "skipped": skipped}
 
     @app.post("/api/jobs/{job_id}/dismiss")
@@ -382,12 +385,12 @@ def create_app():
                for j in jobs.snapshot()):
             raise HTTPException(400, "the note is still being written")
         try:
-            path = pipeline.send_note(out_dir, replace=request.replace)
+            path, out_dir = pipeline.send_note(out_dir, replace=request.replace)
         except FileExistsError as err:
             raise HTTPException(409, f"{err} already exists in the meeting notes folder")
         except ValueError as err:
             raise HTTPException(400, str(err))
-        return {"path": str(path)}
+        return {"path": str(path), "meeting_id": out_dir.name}
 
     @app.post("/api/meetings/{meeting_id}/unarchive")
     def unarchive(meeting_id: str):

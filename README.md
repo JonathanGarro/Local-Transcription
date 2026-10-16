@@ -35,7 +35,7 @@ uv run app.py --browser    # or serve on http://127.0.0.1:8765 and use a browser
 - **Review:** each unknown speaker gets a few short clips with what they said, suggested names with scores, and a name field that searches existing people or creates a new one. You can also mark a speaker as the same person as another speaker (diarization split them), leave a speaker unnamed, or name them without adding the voice to their profile. Identified speakers are collapsed, with a "wrong?" link. Nothing is saved until you press Apply.
 - **Transcript:** click any line to play from there, show the file in Finder, or copy the markdown.
 - **Note:** writes the meeting note (see below), with a choice of model and project.
-- **Send to Obsidian:** after you review the note, copies it into `MEETING_NOTES_DIR` as `<date> - <heading>.md` and moves the meeting to the Archive. An existing file with that name is only replaced after a second click. **Move to Inbox** in the Archive brings a meeting back.
+- **Send to Obsidian:** after you review the note, copies it into `MEETING_NOTES_DIR` as `<date> - <heading>.md` and moves the meeting to the Archive. An existing file with that name is only replaced after a second click. The meeting's folder in `outputs/` is renamed to the same name, so it matches what you see in Obsidian. **Move to Inbox** in the Archive brings a meeting back.
 
 The flow is: drop a file in the Inbox, it is transcribed, you confirm speakers if asked, the note is written automatically with `SUMMARY_BACKEND` once every speaker is named, then you review and send it.
 - **People:** everyone in the library with their full name, organization, teams, meetings and voice clips. Edits rewrite every past transcript and note they appear in.
@@ -125,13 +125,15 @@ uv run summarize.py "outputs/2026-10-13 - Dashboard Review"
 uv run summarize.py "outputs/2026-10-13 - Dashboard Review" --backend claude --project "Customer Dashboard"
 ```
 
-Writes `note.md` in the Obsidian layout: frontmatter, Agenda, Discussion, Transcript and Action Items. The model writes the title, agenda, discussion and your top three to five action items. Code fills in the rest:
+Writes `note.md` in the Obsidian layout: frontmatter, Agenda, Discussion, Transcript and Action Items. The model writes the agenda, discussion and your top three to five action items. Code fills in the rest:
 
-- `people` are the confirmed speakers other than you, as `[[Full Name]]` links
+- the heading is `# <date> - <meeting name>`, using the name you gave the meeting (or its file name), never one the model makes up
+
+- `people` are the confirmed speakers other than you, as `[[Full Name]]` links, stored one per line the way Obsidian writes list properties
 - `teams` and `organizations` are looked up from those people in the library
-- `project` is the one you choose, or the model's pick from your project list
+- `project` is the one you pick, the model never chooses one
 
-Projects come from your Obsidian project index. Set `PROJECT_INDEX_DIR` in `.env` to the folder with one note per project. The app reads only the `project status` line of each note. The picker lists In-Progress projects first, then everything else from A to Z, and you can search by typing. The model only picks from In-Progress projects and ones you typed in yourself. A name that isn't in the index is still accepted.
+Projects come from your Obsidian project index. Set `PROJECT_INDEX_DIR` in `.env` to the folder with one note per project. The app reads only the `project status` line of each note. The picker lists In-Progress projects first, then everything else from A to Z, and you can search by typing. A name that isn't in the index is still accepted.
 - the transcript block is the confirmed transcript as `[Full Name] text` lines, never retyped by the model
 
 Set people's details in the People page, or:

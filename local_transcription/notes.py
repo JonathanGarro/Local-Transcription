@@ -1,9 +1,10 @@
 """meeting notes in the obsidian layout: frontmatter, agenda, discussion, transcript, and
 action items.
 
-a language model writes the title, agenda, discussion, and action items as json. the
-frontmatter and the transcript block are filled in by code, so the transcript is never
-retyped by the model and the people, teams, and organizations come from the library.
+a language model writes the agenda, discussion, and action items as json. the heading is
+the meeting's own title, the project is the one picked in the app, and the frontmatter and
+transcript block are filled in by code, so the transcript is never retyped by the model and
+the people, teams, and organizations come from the library.
 
 two backends: "local" runs an mlx model on this mac and nothing leaves the machine.
 "claude" sends the transcript text (never audio or voice profiles) to the anthropic api.
@@ -24,11 +25,9 @@ MAX_OUTPUT_TOKENS = 4000
 LOCAL_TEMPERATURE = 0.2
 INSTRUCTIONS = """You write meeting notes from a speaker-labeled transcript. Reply with a single JSON object and nothing else. It has these keys:
 
-"title": a short title for the meeting, at most 8 words, such as "Customer Dashboard Review with Maya". Do not include the date.
 "agenda": a few sentences describing what the meeting was about.
 "discussion": a list of topics in the order they came up. Each topic is an object {{"topic": "...", "points": ["...", "..."]}}. The points summarize the key things said, decided, or raised under that topic, one sentence each.
 "action_items": the top three to five to-dos that are specifically for {owner}, each a short imperative sentence with enough context to act on later. Use fewer if the meeting produced fewer.
-"project": {project_rule}
 
 Rules:
 - Plain text only. No bold, italics, headings, or bullet characters inside the strings.
@@ -36,9 +35,6 @@ Rules:
 - Do not invent facts that are not in the transcript.
 - The transcript comes from speech recognition. Fix obvious mis-hearings of names and terms, using the spelling list when one is given.
 - "Unknown" speakers were not identified. Refer to them by what they said rather than guessing a name."""
-PROJECT_RULE_LIST = ("the one project from this list that the meeting is mostly about, copied exactly, "
-                     "or null if none clearly fits: {projects}")
-PROJECT_RULE_NONE = "always null."
 
 
 # helpers
@@ -52,14 +48,16 @@ def default_backend():
     return backend if backend in BACKENDS else "local"
 
 
-def _wikilink(name):
-    return json.dumps(f"[[{name}]]", ensure_ascii=False)
+def wikilink(name):
+    # single quoted, as obsidian writes list properties itself
+    return "'[[" + str(name).replace("'", "''") + "]]'"
 
 
 def _yaml_list(key, values):
+    """a list property the way obsidian stores it: one '- item' line per value."""
     if not values:
         return [f"{key}:"]
-    return [f"{key}:"] + [f"  - {_wikilink(v)}" for v in values]
+    return [f"{key}:"] + [f"- {wikilink(v)}" for v in values]
 
 
 def _plain(text):
@@ -76,7 +74,7 @@ def parse_json(text):
     return json.loads(text[start:end + 1])
 
 
-def clean_summary(raw, projects):
+def clean_summary(raw):
     discussion = []
     for topic in raw.get("discussion") or []:
         if isinstance(topic, dict):
@@ -84,13 +82,8 @@ def clean_summary(raw, projects):
             discussion.append({"topic": _plain(topic.get("topic")), "points": points})
         elif _plain(topic):
             discussion.append({"topic": _plain(topic), "points": []})
-    project = raw.get("project")
-    # only accept a project the library already has
-    project = next((p for p in projects if isinstance(project, str) and p.lower() == project.strip().lower()), None)
-    return {"title": _plain(raw.get("title")) or "Meeting", "agenda": _plain(raw.get("agenda")),
-            "discussion": discussion,
-            "action_items": [_plain(a) for a in raw.get("action_items") or [] if _plain(a)],
-            "project": project}
+    return {"agenda": _plain(raw.get("agenda")), "discussion": discussion,
+            "action_items": [_plain(a) for a in raw.get("action_items") or [] if _plain(a)]}
 
 
 # people
@@ -129,9 +122,8 @@ def transcript_lines(segments, speakers):
 
 
 # models
-def build_messages(lines, owner, meeting_date, attendees, projects, terms):
-    rule = PROJECT_RULE_LIST.format(projects=json.dumps(projects)) if projects else PROJECT_RULE_NONE
-    system = INSTRUCTIONS.format(owner=owner, project_rule=rule)
+def build_messages(lines, owner, meeting_date, attendees, terms):
+    system = INSTRUCTIONS.format(owner=owner)
     header = [f"Meeting date: {meeting_date}", f"Attendees: {', '.join(attendees)}",
               f"These notes are written for {owner}."]
     if terms:
@@ -176,11 +168,11 @@ def run_claude(system, user, progress=None):
     return "".join(block.text for block in message.content if block.type == "text"), model_name
 
 
-def summarize(lines, owner, meeting_date, attendees, projects, terms, backend="local", progress=None):
+def summarize(lines, owner, meeting_date, attendees, terms, backend="local", progress=None):
     """ask the chosen model for the note sections. returns the cleaned summary dict."""
     if backend not in BACKENDS:
         raise ValueError(f"backend must be one of {BACKENDS}")
-    system, user = build_messages(lines, owner, meeting_date, attendees, projects, terms)
+    system, user = build_messages(lines, owner, meeting_date, attendees, terms)
     runner = run_local if backend == "local" else run_claude
     text, model_name = runner(system, user, progress)
     try:
@@ -193,13 +185,13 @@ def summarize(lines, owner, meeting_date, attendees, projects, terms, backend="l
             progress("  the reply was not valid json, trying once more")
         text, model_name = runner(system, user + "\n\nReply with valid JSON only.", progress)
         raw = parse_json(text)
-    summary = clean_summary(raw, projects)
+    summary = clean_summary(raw)
     summary.update(backend=backend, model=model_name, created=datetime.now().isoformat(timespec="seconds"))
     return summary
 
 
 # main
-def render_note(summary, date, segments, speakers, owner_id, project, transcript_ref):
+def render_note(summary, date, title, segments, speakers, owner_id, project, transcript_ref):
     """the note markdown. people, teams, and organizations exclude the owner, who is on
     every note."""
     people = speaker_people(speakers)
@@ -212,8 +204,8 @@ def render_note(summary, date, segments, speakers, owner_id, project, transcript
     lines = ["---", f"date: {date}"]
     lines += _yaml_list("people", names) + _yaml_list("teams", teams) + _yaml_list("organizations", orgs)
     lines += ["tags:", f"transcript: {json.dumps(transcript_ref, ensure_ascii=False)}",
-              f"project: {_wikilink(project)}" if project else "project:", "prep:", "---",
-              f"# {date} - {summary['title']}", "", "## Agenda", "", summary["agenda"], "",
+              f"project: {wikilink(project)}" if project else "project:", "prep:", "---",
+              f"# {date} - {title}", "", "## Agenda", "", summary["agenda"], "",
               "## Discussion", ""]
     for topic in summary["discussion"]:
         lines.append(f"- {topic['topic']}")

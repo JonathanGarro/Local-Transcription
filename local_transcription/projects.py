@@ -51,9 +51,3 @@ def all_projects():
         found.setdefault(name.lower(), {"name": name, "status": None})
     return sorted(found.values(), key=lambda p: (p["status"] != ACTIVE_STATUS, p["name"].lower()))
 
-
-def model_projects():
-    """the names the note model may choose from: in-progress projects and ones already used
-    in the app. completed and on-hold projects can still be picked by hand."""
-    return [p["name"] for p in all_projects()
-            if p["status"] == ACTIVE_STATUS or p["status"] is None]

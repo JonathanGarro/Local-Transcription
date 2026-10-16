@@ -603,7 +603,7 @@ async function renderNote(id, body) {
         <label>Project
           <span class="combo">
             <input type="text" id="project" autocomplete="off" value="${esc(note.project || "")}"
-              placeholder="${lookups.projects.length ? "Let the model pick, or search" : "None yet, type to add"}">
+              placeholder="${lookups.projects.length ? "Search projects" : "None yet, type to add"}">
             <div class="combo-list" id="project-list" hidden></div>
           </span>
         </label>
@@ -674,9 +674,9 @@ async function renderNote(id, body) {
       try {
         const result = await post(`/api/meetings/${enc}/note/send`, { replace });
         toast(note.archived ? "Sent again" : "Sent to Obsidian and moved to the Archive");
-        renderNote(id, body);
-        const back = view.querySelector(".crumb");
-        if (back) back.outerHTML = crumb({ archived: true });
+        // the output folder was renamed to match the note, so the meeting has a new id
+        location.hash = `${meetingLink("transcript", result.meeting_id)}/note`;
+        if (result.meeting_id === id) route();
       } catch (err) {
         if (err.status !== 409) return toast(err.message);
         // a note with this name is already in the vault, replace only on a second click

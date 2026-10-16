@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from local_transcription import asr, audio, diarize, embed, match, library, merge, notes, projects, render, vocab
+from local_transcription import asr, audio, diarize, embed, match, library, merge, notes, render, vocab
 
 # config
 OUTPUT_DIR = Path(__file__).parent.parent / "outputs"
@@ -148,14 +148,15 @@ def speaker_audio(out_dir, meta, speaker):
 # main
 def run(source, threshold=match.THRESHOLD, num_speakers=None, min_speakers=diarize.MIN_SPEAKERS,
         max_speakers=diarize.MAX_SPEAKERS, title=None, source_type="other", language=None,
-        split="auto", mic_channel=0, owner=None, progress=print):
+        split="auto", mic_channel=0, owner=None, out_dir=None, progress=print):
     """process one recording. returns (output folder, speakers dataframe, review path or None).
 
     split: "auto" uses split mode for stereo files whose channels hold unrelated sources,
     "on" forces it, "off" always downmixes. in split mode mic_channel is the owner's mic and
-    the other channel is everyone else."""
+    the other channel is everyone else. out_dir defaults to outputs/<file name>, a re-run of
+    a meeting whose folder was renamed passes its folder."""
     source = Path(source)
-    out_dir = OUTPUT_DIR / source.stem
+    out_dir = Path(out_dir) if out_dir else OUTPUT_DIR / source.stem
     out_dir.mkdir(parents=True, exist_ok=True)
     wav = out_dir / "audio_16k.wav"
     owner = owner or DEFAULT_OWNER
@@ -352,12 +353,13 @@ def rename_meeting(out_dir, title):
     meta, segments, speakers, _ = load_run(out_dir)
     meta["title"] = title
     (out_dir / "run.json").write_text(json.dumps(meta, indent=2))
-    note_path = out_dir / "note.json"
-    if note_path.exists():
-        summary = json.loads(note_path.read_text())
-        summary["title"] = title
-        note_path.write_text(json.dumps(summary, indent=2))
     write_outputs(out_dir, segments, speakers, meta)
+    note_path = out_dir / "note.md"
+    if note_path.exists() and json.loads((out_dir / "note.json").read_text()).get("edited"):
+        # an edited note is otherwise left alone, but its heading follows the meeting's name
+        date = meeting_title(meta)[1]
+        text = re.sub(r"^# .*$", lambda _: f"# {date} - {title}", note_path.read_text(), count=1, flags=re.M)
+        note_path.write_text(text)
     return title
 
 
@@ -426,29 +428,59 @@ def render_note_file(out_dir, meta, segments, speakers):
     summary = json.loads(path.read_text())
     if summary.get("edited"):
         # hand edits win. only the project line follows changes made in the app
-        return _update_note_project(out_dir / "note.md", library.meeting_project(out_dir.name))
-    date = meta.get("date") or render.title_and_date(meta["source"])[1]
-    # a file link, so it opens from the vault copy of the note too
-    transcript_ref = (out_dir / "transcript.md").resolve().as_uri()
-    markdown = notes.render_note(summary, date, segments, link_people(speakers), summary.get("owner_id"),
+        project = library.meeting_project(out_dir.name)
+        return set_frontmatter(out_dir / "note.md", {
+            "project": notes.wikilink(project) if project else "",
+            "transcript": json.dumps(transcript_uri(out_dir), ensure_ascii=False)})
+    title, date = meeting_title(meta)
+    transcript_ref = transcript_uri(out_dir)
+    markdown = notes.render_note(summary, date, title, segments, link_people(speakers), summary.get("owner_id"),
                                  library.meeting_project(out_dir.name), transcript_ref)
     (out_dir / "note.md").write_text(markdown)
     return out_dir / "note.md"
 
 
-def _update_note_project(note_path, project):
-    """swap the project line in an edited note's frontmatter, leaving the rest as written."""
+def meeting_title(meta):
+    """(title, date): the name you gave the meeting, or the one from its file name."""
+    title, date = render.title_and_date(meta["source"])
+    return meta.get("title") or title, meta.get("date") or date
+
+
+def transcript_uri(out_dir):
+    # a file link, so it opens from the vault copy of the note too
+    return (Path(out_dir) / "transcript.md").resolve().as_uri()
+
+
+def set_frontmatter(note_path, values):
+    """swap single-line frontmatter fields ({key: yaml value}) in a note, leaving the rest as
+    written. used for edited notes and for the vault copy."""
     if not note_path.exists():
         return None
     lines = note_path.read_text().split("\n")
     closing = next((i for i, line in enumerate(lines[1:], 1) if line.strip() == "---"), 0)
-    value = f"project: {json.dumps(f'[[{project}]]', ensure_ascii=False)}" if project else "project:"
     for i in range(1, closing):
-        if lines[i].startswith("project:"):
-            lines[i] = value
-            break
+        key = lines[i].partition(":")[0]
+        if key in values:
+            lines[i] = f"{key}: {values[key]}".rstrip()
     note_path.write_text("\n".join(lines))
     return note_path
+
+
+def move_meeting(out_dir, name):
+    """rename a meeting's output folder, and with it the meeting id in the library. returns the
+    new folder. a name another meeting already uses gets a number added."""
+    out_dir = Path(out_dir)
+    target, n = OUTPUT_DIR / name, 2
+    while target.exists() and target.resolve() != out_dir.resolve():
+        target = OUTPUT_DIR / f"{name} ({n})"
+        n += 1
+    if target == out_dir:
+        return out_dir
+    out_dir.rename(target)
+    library.rename_meeting_id(out_dir.name, target.name)
+    meta, segments, speakers, _ = load_run(target)
+    render_note_file(target, meta, segments, speakers)
+    return target
 
 
 def save_note_edits(out_dir, markdown):
@@ -492,8 +524,9 @@ def note_filename(out_dir):
 
 
 def send_note(out_dir, replace=False):
-    """copy note.md into the obsidian meeting notes folder and move the meeting to the archive.
-    an existing file is only replaced when asked. returns the path written."""
+    """copy note.md into the obsidian meeting notes folder, rename the output folder to match,
+    and move the meeting to the archive. an existing file is only replaced when asked. returns
+    (the note written, the meeting's folder)."""
     out_dir = Path(out_dir)
     folder = notes_dir()
     if not folder:
@@ -505,18 +538,16 @@ def send_note(out_dir, replace=False):
     target = folder / note_filename(out_dir)
     if target.exists() and not replace:
         raise FileExistsError(target.name)
-    text = (out_dir / "note.md").read_text()
-    # edited notes may still have the old relative transcript path
-    transcript = json.dumps((out_dir / "transcript.md").resolve().as_uri(), ensure_ascii=False)
-    text = re.sub(r"^transcript:.*$", f"transcript: {transcript}", text, count=1, flags=re.M)
-    target.write_text(text)
+    # the output folder takes the vault note's name, which also fixes the transcript link
+    out_dir = move_meeting(out_dir, target.stem)
+    target.write_text((out_dir / "note.md").read_text())
     library.archive_meeting(out_dir.name, target)
-    return target
+    return target, out_dir
 
 
 def write_note(out_dir, backend=None, project=None, owner=None, progress=print):
-    """summarize a meeting into note.md. project is a project name, or None to let the model
-    pick from the in-progress projects. the owner is who the action items are for."""
+    """summarize a meeting into note.md. project is a project name to file it under, or None
+    to keep the current one. the owner is who the action items are for."""
     out_dir = Path(out_dir)
     meta, segments, speakers, _ = load_run(out_dir)
     speakers = link_people(speakers)
@@ -528,17 +559,14 @@ def write_note(out_dir, backend=None, project=None, owner=None, progress=print):
     lines = notes.transcript_lines(segments, speakers)
     attendees = [line[1:line.index("]")] for line in lines]
     terms, _ = vocab.load()
-    choices = projects.model_projects()
 
     _log(progress, f"summarizing with the {backend} model")
-    summary = notes.summarize(lines, owner_full, date, list(dict.fromkeys(attendees)), choices, terms,
+    summary = notes.summarize(lines, owner_full, date, list(dict.fromkeys(attendees)), terms,
                               backend=backend, progress=progress)
     summary["owner_id"] = owner_id
     (out_dir / "note.json").write_text(json.dumps(summary, indent=2))
     if project is not None:
         library.set_meeting_project(out_dir.name, project)
-    elif summary["project"] and not library.meeting_project(out_dir.name):
-        library.set_meeting_project(out_dir.name, summary["project"])
     return render_note_file(out_dir, {**meta, "date": date}, segments, speakers)
 
 

@@ -4,9 +4,9 @@ data/library.db holds who is who. people have stable ids, so renaming a person u
 every past transcript. each voice entry keeps its own vector, plus the meeting and speaker
 it came from, so profiles can be re-averaged or pruned. the profile vector is the mean of
 a person's current entries. deleting a person vacuums the database file so no copy of the
-voice stays on disk. people also carry a full name, an organization, and any number of teams,
-which meeting notes look up when a person is tagged. projects are a plain list to file
-meetings under.
+voice stays on disk. a person's name is their full name. people also carry an organization
+and any number of teams, which meeting notes look up when a person is tagged. projects are
+a plain list to file meetings under.
 """
 
 import json
@@ -92,7 +92,7 @@ create table if not exists meeting_speakers (
 """
 # columns added after the first release, applied to older databases on open
 ADDED_COLUMNS = {
-    "people": {"full_name": "text", "org_id": "text references organizations(org_id) on delete set null"},
+    "people": {"org_id": "text references organizations(org_id) on delete set null"},
     "meetings": {"project_id": "text references projects(project_id) on delete set null",
                  "archived": "text", "sent_path": "text", "original_file": "text"},
 }
@@ -132,6 +132,7 @@ def connect():
         if not _ready:
             con.executescript(SCHEMA)
             _add_columns(con)
+            _drop_full_name(con)
             _ready = True
             _import_legacy(con)
         with con:
@@ -146,6 +147,18 @@ def _add_columns(con):
         for column, kind in columns.items():
             if column not in existing:
                 con.execute(f"alter table {table} add column {column} {kind}")
+    con.commit()
+
+
+def _drop_full_name(con):
+    # people once had a short name plus a full name. the full name becomes the name, unless
+    # another person already has it
+    if "full_name" not in {row["name"] for row in con.execute("pragma table_info(people)")}:
+        return
+    con.execute("""update people set name = full_name where full_name is not null
+                   and not exists (select 1 from people o where o.name = people.full_name
+                                   and o.person_id != people.person_id)""")
+    con.execute("alter table people drop column full_name")
     con.commit()
 
 
@@ -189,8 +202,7 @@ def person_names():
 def people_summary():
     """one row per person with entry, meeting, and audio totals."""
     people = _query("""
-        select p.person_id, p.name, p.created, coalesce(p.full_name, p.name) as full_name,
-               o.name as organization,
+        select p.person_id, p.name, p.created, o.name as organization,
                (select group_concat(t.name, ', ') from person_teams pt join teams t using (team_id)
                  where pt.person_id = p.person_id) as teams,
                (select count(*) from entries e where e.person_id = p.person_id) as entries,
@@ -218,10 +230,9 @@ def _named_id(con, table, id_column, name):
 
 
 def person_details(person_id):
-    """full name, organization, and teams for one person."""
+    """name, organization, and teams for one person."""
     with connect() as con:
-        row = con.execute("""select p.person_id, p.name, coalesce(p.full_name, p.name) as full_name,
-                             o.name as organization from people p
+        row = con.execute("""select p.person_id, p.name, o.name as organization from people p
                              left join organizations o on o.org_id = p.org_id
                              where p.person_id = ?""", (person_id,)).fetchone()
         if not row:
@@ -231,13 +242,10 @@ def person_details(person_id):
     return {**dict(row), "teams": teams}
 
 
-def set_person_details(person_id, full_name=None, organization=None, teams=None):
+def set_person_details(person_id, organization=None, teams=None):
     """update the fields notes use. blank values clear them. teams and organizations are
     created on first use, so tagging a person with a new team adds it to the library."""
     with connect() as con:
-        if full_name is not None:
-            con.execute("update people set full_name = ? where person_id = ?",
-                        (full_name.strip() or None, person_id))
         if organization is not None:
             org_id = _named_id(con, "organizations", "org_id", organization.strip()) if organization.strip() else None
             con.execute("update people set org_id = ? where person_id = ?", (org_id, person_id))
@@ -302,9 +310,8 @@ def merge_people(source_id, target_id):
         con.execute("update meeting_speakers set person_id = ? where person_id = ?", (target_id, source_id))
         con.execute("""insert or ignore into person_teams select ?, team_id from person_teams
                        where person_id = ?""", (target_id, source_id))
-        con.execute("""update people set full_name = coalesce(full_name, (select full_name from people
-                       where person_id = ?)), org_id = coalesce(org_id, (select org_id from people
-                       where person_id = ?)) where person_id = ?""", (source_id, source_id, target_id))
+        con.execute("""update people set org_id = coalesce(org_id, (select org_id from people
+                       where person_id = ?)) where person_id = ?""", (source_id, target_id))
         con.execute("delete from people where person_id = ?", (source_id,))
     return affected
 

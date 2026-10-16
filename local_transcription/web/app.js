@@ -777,12 +777,11 @@ async function renderPeople(editing = null) {
   view.innerHTML = `
     <div class="page">
       <h1>People</h1>
-      <div class="sub">Stored in data/library.db on this Mac. Notes use the full name, organization, and teams. Changes update every past transcript and note.</div>
+      <div class="sub">Stored in data/library.db on this Mac. Notes use the name, organization, and teams. Changes update every past transcript and note.</div>
       <table>
-        <tr><th>Name</th><th>Full name</th><th>Organization</th><th>Teams</th><th class="num">Meetings</th><th class="num">Voice clips</th><th>Last heard</th><th></th></tr>
+        <tr><th>Name</th><th>Organization</th><th>Teams</th><th class="num">Meetings</th><th class="num">Voice clips</th><th>Last heard</th><th></th></tr>
         ${people.map(p => p.person_id === editing ? editRow(p) : `<tr>
           <td>${esc(p.name)}</td>
-          <td>${esc(p.full_name)}</td>
           <td>${esc(p.organization || "")}</td>
           <td>${esc(p.teams || "")}</td>
           <td class="num">${p.meetings}</td>
@@ -800,10 +799,9 @@ async function renderPeople(editing = null) {
 
 function editRow(p) {
   const teams = p.teams ? p.teams.split(", ") : [];
-  return `<tr class="editing"><td colspan="8">
+  return `<tr class="editing"><td colspan="7">
     <div class="form">
       <label>Name<input type="text" id="e-name" value="${esc(p.name)}"></label>
-      <label>Full name<input type="text" id="e-full" value="${esc(p.full_name)}"></label>
       <label>Organization<input type="text" id="e-org" list="org-list" value="${esc(p.organization || "")}"></label>
     </div>
     <div class="form">
@@ -815,7 +813,7 @@ function editRow(p) {
     <div class="form">
       <button class="btn primary" id="e-save">Save</button>
       <button class="btn" id="e-cancel">Cancel</button>
-      <span class="hint">The name is what voice matching shows. The full name goes in notes as a link.</span>
+      <span class="hint">The name shows in voice matching, transcripts, and notes, where it is a link.</span>
     </div>
   </td></tr>`;
 }
@@ -850,7 +848,6 @@ function bindEdit(p) {
     try {
       if (name && name !== p.name) await post(`/api/people/${p.person_id}/rename`, { name });
       await post(`/api/people/${p.person_id}/details`, {
-        full_name: document.getElementById("e-full").value.trim(),
         organization: document.getElementById("e-org").value.trim(),
         teams
       });

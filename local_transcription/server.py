@@ -214,7 +214,6 @@ class NoteText(BaseModel):
 
 
 class DetailsRequest(BaseModel):
-    full_name: str = ""
     organization: str = ""
     teams: list[str] = []
 
@@ -465,8 +464,7 @@ def create_app():
     def details(person_id: str, request: DetailsRequest):
         if not library.person_details(person_id):
             raise HTTPException(404, "no such person")
-        library.set_person_details(person_id, full_name=request.full_name,
-                                   organization=request.organization, teams=request.teams)
+        library.set_person_details(person_id, organization=request.organization, teams=request.teams)
         pipeline.rerender_people([person_id])
         return library.person_details(person_id)
 

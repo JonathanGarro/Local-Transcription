@@ -49,7 +49,7 @@ It goes in `~/Applications/Local Transcription.app` and just starts `app.py` fro
 Once sent, the Obsidian copy is the master copy. Opening a sent note in the app loads the Obsidian version if it changed there. If you also edited it in the app, nothing is overwritten: the note says it changed in both places, **Show changes** compares the app copy with Obsidian, and you choose **Use Obsidian version** or **Send again**. Send again over a note you edited in Obsidian asks before replacing it. The app keeps what it last sent as `note_sent.md` to tell which side changed. **Move to Inbox** in the Archive brings a meeting back.
 
 The flow is: drop a file in the Inbox, it is transcribed, you confirm speakers if asked, the note is written automatically with `SUMMARY_BACKEND` once every speaker is named, then you review and send it.
-- **People:** everyone in the library with their full name, organization, teams, meetings and voice clips. Edits rewrite every past transcript and note they appear in.
+- **People:** everyone in the library with their name, organization, teams, meetings and voice clips. Edits rewrite every past transcript and note they appear in.
 
 The server listens on 127.0.0.1 only and the page loads nothing from the internet.
 
@@ -150,7 +150,7 @@ Projects come from your Obsidian project index. Set `PROJECT_INDEX_DIR` in `.env
 Set people's details in the People page, or:
 
 ```
-uv run manage_profiles.py set "Maya" --full-name "Maya Chen" --org "Northwind Foundation" --team "Operations Team"
+uv run manage_profiles.py set "Maya Chen" --org "Northwind Foundation" --team "Operations Team"
 uv run manage_profiles.py projects --add "Customer Dashboard"
 ```
 

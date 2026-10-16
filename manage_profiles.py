@@ -40,9 +40,8 @@ def main():
     merge = sub.add_parser("merge", help="merge the first person into the second")
     merge.add_argument("source")
     merge.add_argument("target")
-    details = sub.add_parser("set", help="set the full name, organization, and teams used in notes")
+    details = sub.add_parser("set", help="set the organization and teams used in notes")
     details.add_argument("name")
-    details.add_argument("--full-name")
     details.add_argument("--org", help="organization, blank to clear")
     details.add_argument("--team", action="append", help="repeat for several teams, replaces the current teams")
     details.add_argument("--no-teams", action="store_true", help="clear every team")
@@ -61,7 +60,7 @@ def main():
                 print("no people yet")
                 return
             people["profile_seconds"] = people["profile_seconds"].round()
-            columns = ["name", "full_name", "organization", "teams", "entries", "profile_seconds",
+            columns = ["name", "organization", "teams", "entries", "profile_seconds",
                        "meetings", "minutes_heard", "last_heard"]
             print(people[columns].to_string(index=False, na_rep=""))
         elif args.command == "show":
@@ -80,10 +79,10 @@ def main():
         elif args.command == "set":
             person_id = person(args.name)
             teams = [] if args.no_teams else args.team
-            library.set_person_details(person_id, full_name=args.full_name, organization=args.org, teams=teams)
+            library.set_person_details(person_id, organization=args.org, teams=teams)
             pipeline.rerender_people([person_id])
             details = library.person_details(person_id)
-            print(f"{details['full_name']}, {details['organization'] or 'no organization'}, "
+            print(f"{details['name']}, {details['organization'] or 'no organization'}, "
                   f"teams: {', '.join(details['teams']) or 'none'}")
         elif args.command == "projects":
             if args.add:

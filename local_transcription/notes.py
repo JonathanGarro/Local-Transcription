@@ -96,8 +96,7 @@ def speaker_people(speakers, owner_id=None):
         if details:
             people[row.speaker] = details
         elif isinstance(row.name, str) and row.name:
-            people[row.speaker] = {"person_id": None, "name": row.name, "full_name": row.name,
-                                   "organization": None, "teams": []}
+            people[row.speaker] = {"person_id": None, "name": row.name, "organization": None, "teams": []}
     return people
 
 
@@ -107,7 +106,7 @@ def transcript_lines(segments, speakers):
     unknown, labels, lines, previous = 0, {}, [], None
     for speaker in dict.fromkeys(segments["speaker"]):
         if speaker in people:
-            labels[speaker] = people[speaker]["full_name"]
+            labels[speaker] = people[speaker]["name"]
         else:
             unknown += 1
             labels[speaker] = f"Unknown {unknown}"
@@ -197,7 +196,7 @@ def render_note(summary, date, title, segments, speakers, owner_id, project, tra
     people = speaker_people(speakers)
     order = [s for s in dict.fromkeys(segments["speaker"]) if s in people]
     others = [people[s] for s in order if people[s]["person_id"] != owner_id]
-    names = list(dict.fromkeys(p["full_name"] for p in others))
+    names = list(dict.fromkeys(p["name"] for p in others))
     teams = list(dict.fromkeys(t for p in others for t in p["teams"]))
     orgs = list(dict.fromkeys(p["organization"] for p in others if p["organization"]))
 

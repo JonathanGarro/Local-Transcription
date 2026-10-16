@@ -761,14 +761,13 @@ def write_note(out_dir, backend=None, project=None, owner=None, progress=print):
     backend = backend or notes.default_backend()
     owner = owner or meta.get("owner") or os.environ.get("MIC_OWNER") or DEFAULT_OWNER
     owner_id = library.find_person(owner)
-    owner_full = (library.person_details(owner_id) or {}).get("full_name", owner) if owner_id else owner
     date = meta.get("date") or render.title_and_date(meta["source"])[1]
     lines = notes.transcript_lines(segments, speakers)
     attendees = [line[1:line.index("]")] for line in lines]
     terms, _ = vocab.load()
 
     _log(progress, f"summarizing with the {backend} model")
-    summary = notes.summarize(lines, owner_full, date, list(dict.fromkeys(attendees)), terms,
+    summary = notes.summarize(lines, owner, date, list(dict.fromkeys(attendees)), terms,
                               backend=backend, progress=progress)
     summary["owner_id"] = owner_id
     (out_dir / "note.json").write_text(json.dumps(summary, indent=2))
@@ -787,5 +786,5 @@ def set_project(out_dir, project):
 
 
 def rerender_people(person_ids):
-    """refresh transcripts and notes after a person's full name, team, or organization changed."""
+    """refresh transcripts and notes after a person's team or organization changed."""
     rerender(sorted({m for p in person_ids for m in library.meetings_for_person(p)}))

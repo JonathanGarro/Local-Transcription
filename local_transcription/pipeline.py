@@ -9,6 +9,7 @@ import difflib
 import json
 import os
 import re
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -22,6 +23,9 @@ OUTPUT_DIR = Path(__file__).parent.parent / "outputs"
 ORIGINAL_NOTE = "note_original.md"
 # exactly what was last sent to or loaded from obsidian, to tell which side changed since
 SENT_NOTE = "note_sent.md"
+PLAYBACK_WAVS = ["audio_16k.wav", "mic_16k.wav", "remote_16k.wav"]
+# clips load in parallel, so only one request rebuilds a meeting's audio
+_audio_lock = threading.Lock()
 SAMPLE_CHARS = 160
 # in split mode the mic channel is one known person and gets this speaker id
 MIC_SPEAKER = "MIC"
@@ -140,8 +144,77 @@ def meeting_dir(meeting_id):
     return out_dir
 
 
+def source_path(meta):
+    """the original recording. older runs store it relative to the project folder."""
+    source = Path(meta["source"])
+    return source if source.is_absolute() else OUTPUT_DIR.parent / source
+
+
+def ensure_audio(out_dir, meta=None):
+    """the playback wavs are dropped once a note is sent, rebuild them from the original
+    recording when something needs them again. takes a few seconds."""
+    out_dir = Path(out_dir)
+    meta = meta or json.loads((out_dir / "run.json").read_text())
+    wav = out_dir / "audio_16k.wav"
+    split_files = [out_dir / "mic_16k.wav", out_dir / "remote_16k.wav"] if meta.get("split") else []
+    with _audio_lock:
+        if wav.exists() and all(f.exists() for f in split_files):
+            return wav
+        source = source_path(meta)
+        if not source.exists():
+            raise ValueError(f"the original recording is missing ({source.name}), so the audio cannot be rebuilt")
+        mic_channel = meta.get("mic_channel") or 0
+        jobs = [(wav, lambda dst: audio.normalize(source, dst))]
+        jobs += [(split_files[0], lambda dst: audio.extract_channel(source, dst, mic_channel)),
+                 (split_files[1], lambda dst: audio.extract_channel(source, dst, 1 - mic_channel))] if split_files else []
+        for target, build in jobs:
+            if not target.exists():
+                # write beside the target and swap in, so a reader never sees half a file
+                partial = target.with_name(target.stem + ".partial.wav")
+                build(partial)
+                partial.replace(target)
+    return wav
+
+
+def drop_audio(out_dir):
+    """delete the playback wavs. they can be rebuilt from the original recording."""
+    freed = 0
+    for name in PLAYBACK_WAVS:
+        path = Path(out_dir) / name
+        if path.exists():
+            freed += path.stat().st_size
+            path.unlink()
+    return freed
+
+
+def rename_source(out_dir):
+    """rename the original recording in data/ to match the meeting's folder, so it is easy
+    to find next to its note. returns the new path."""
+    out_dir = Path(out_dir)
+    meta = json.loads((out_dir / "run.json").read_text())
+    source = source_path(meta)
+    if not source.exists():
+        return None
+    target, n = source.with_name(out_dir.name + source.suffix.lower()), 2
+    while target.exists() and target.resolve() != source.resolve():
+        target = source.with_name(f"{out_dir.name} ({n}){source.suffix.lower()}")
+        n += 1
+    if target == source:
+        return source
+    # pin the title and date first, since both were read from the old file name
+    title, date = meeting_title(meta)
+    source.rename(target)
+    stored = Path(meta["source"])
+    meta.update(title=title, date=date,
+                source=str(target if stored.is_absolute() else target.relative_to(OUTPUT_DIR.parent)))
+    (out_dir / "run.json").write_text(json.dumps(meta, indent=2))
+    library.rename_source_file(out_dir.name, target.name)
+    return target
+
+
 def speaker_audio(out_dir, meta, speaker):
     """the cleanest wav for one speaker: their own channel in split mode, else the mix."""
+    ensure_audio(out_dir, meta)
     if meta.get("split"):
         wav = out_dir / ("mic_16k.wav" if speaker == MIC_SPEAKER else "remote_16k.wav")
         if wav.exists():
@@ -672,6 +745,9 @@ def send_note(out_dir, replace=False):
     text = (out_dir / "note.md").read_text()
     target.write_text(text)
     (out_dir / SENT_NOTE).write_text(text)
+    # the meeting is finished: name the recording after it and drop the rebuildable wavs
+    rename_source(out_dir)
+    drop_audio(out_dir)
     library.archive_meeting(out_dir.name, target)
     return target, out_dir
 

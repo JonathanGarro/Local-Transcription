@@ -94,7 +94,7 @@ create table if not exists meeting_speakers (
 ADDED_COLUMNS = {
     "people": {"full_name": "text", "org_id": "text references organizations(org_id) on delete set null"},
     "meetings": {"project_id": "text references projects(project_id) on delete set null",
-                 "archived": "text", "sent_path": "text"},
+                 "archived": "text", "sent_path": "text", "original_file": "text"},
 }
 _ready = False
 
@@ -448,9 +448,22 @@ def rename_meeting_id(old_id, new_id):
 
 
 def find_meeting_by_source(source_file):
-    """the meeting made from this audio file name, if any."""
-    row = _query("select meeting_id from meetings where source_file = ?", (source_file,))
+    """the meeting made from this audio file name, if any. matches the name the file has now
+    or the one it had before it was renamed to match its note."""
+    row = _query("select meeting_id from meetings where source_file = ? or original_file = ?",
+                 (source_file, source_file))
     return row["meeting_id"].iloc[0] if len(row) else None
+
+
+def rename_source_file(meeting_id, new_name):
+    """record a renamed recording, keeping the first name it had so dropping it again is
+    still recognized."""
+    with connect() as con:
+        con.execute("""update meetings set original_file = coalesce(original_file, source_file),
+                       source_file = ? where meeting_id = ?""", (new_name, meeting_id))
+        old = con.execute("select original_file from meetings where meeting_id = ?", (meeting_id,)).fetchone()
+        con.execute("update entries set source_file = ? where meeting_id = ? and source_file = ?",
+                    (new_name, meeting_id, old["original_file"]))
 
 
 def unarchive_meeting(meeting_id):

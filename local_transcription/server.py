@@ -224,6 +224,9 @@ def create_app():
     app = FastAPI(title="Local Transcription", docs_url=None, redoc_url=None)
     jobs = Jobs()
     pipeline.register_existing()
+    # wavs rebuilt to replay an archived meeting are not kept between launches
+    for meeting_id in library.meetings().query("archived.notna()")["meeting_id"] if len(library.meetings()) else []:
+        pipeline.drop_audio(pipeline.OUTPUT_DIR / meeting_id)
 
     @app.get("/api/state")
     def state():
@@ -246,19 +249,26 @@ def create_app():
                 skipped.append({"file": name, "reason": "not an m4a, mp3, or wav file"})
                 continue
             body = await upload_file.read()
-            path = DATA_DIR / _dated_name(name)
-            if path.exists() and path.stat().st_size != len(body):
-                # a different recording with the same name, keep both
-                path = _unique_path(DATA_DIR, path.name)
-            if not path.exists():
-                path.write_bytes(body)
-            # sent meetings live in a folder named after their note, so look up by file too
-            meeting_id = library.find_meeting_by_source(path.name) or path.stem
+            dated = _dated_name(name)
+            # sent meetings have their folder and recording renamed after the note, so look
+            # the file up by the name it arrived with too
+            meeting_id = library.find_meeting_by_source(dated) or Path(dated).stem
             already = (pipeline.OUTPUT_DIR / meeting_id / "run.json").exists()
             if already and not rerun:
                 # re-running would replace the confirmed names, so only do it when asked
                 skipped.append({"file": name, "reason": "already processed", "meeting_id": meeting_id})
                 continue
+            path = DATA_DIR / dated
+            if already:
+                # reuse the copy already in data/, under whatever name it has now
+                kept = pipeline.source_path(json.loads((pipeline.OUTPUT_DIR / meeting_id / "run.json").read_text()))
+                if kept.exists() and kept.stat().st_size == len(body):
+                    path = kept
+            if path.exists() and path.stat().st_size != len(body):
+                # a different recording with the same name, keep both
+                path = _unique_path(DATA_DIR, path.name)
+            if not path.exists():
+                path.write_bytes(body)
             queued.append(jobs.add(path, source_type, meeting_id if already else None)["job_id"])
         return {"queued": queued, "skipped": skipped}
 
@@ -293,7 +303,10 @@ def create_app():
     def clip(meeting_id: str, speaker: str, start: float, end: float):
         out_dir = _meeting_dir(meeting_id)
         meta = pipeline.load_run(out_dir)[0]
-        wav = pipeline.speaker_audio(out_dir, meta, speaker)
+        try:
+            wav = pipeline.speaker_audio(out_dir, meta, speaker)
+        except ValueError as err:
+            raise HTTPException(404, str(err))
         rate = sf.info(str(wav)).samplerate
         samples, rate = sf.read(str(wav), start=int(max(0, start) * rate), stop=int(end * rate), dtype="float32")
         buffer = io.BytesIO()
@@ -302,7 +315,11 @@ def create_app():
 
     @app.get("/api/meetings/{meeting_id}/audio")
     def full_audio(meeting_id: str):
-        return FileResponse(_meeting_dir(meeting_id) / "audio_16k.wav", media_type="audio/wav")
+        try:
+            wav = pipeline.ensure_audio(_meeting_dir(meeting_id))
+        except ValueError as err:
+            raise HTTPException(404, str(err))
+        return FileResponse(wav, media_type="audio/wav")
 
     @app.get("/api/meetings/{meeting_id}/transcript")
     def transcript(meeting_id: str):

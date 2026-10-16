@@ -156,6 +156,20 @@ class Jobs:
             owner=os.environ.get("MIC_OWNER"))
         self._update(job, status="done", step="needs review" if review else "done",
                      progress=1.0, meeting_id=out_dir.name)
+        self.auto_note(out_dir.name)
+
+    def auto_note(self, meeting_id):
+        """summarize a meeting once every speaker is named, unless it has a note or one is queued."""
+        out_dir = pipeline.OUTPUT_DIR / meeting_id
+        if (out_dir / "note.json").exists():
+            return None
+        row = library.meetings().query("meeting_id == @meeting_id")
+        if not len(row) or row["status"].iloc[0] != "done":
+            return None
+        if any(j.get("kind") == "note" and j["meeting_id"] == meeting_id and j["status"] in ("queued", "processing")
+               for j in self.snapshot()):
+            return None
+        return self.add_note(meeting_id, notes.default_backend(), None)
 
     def _note(self, job):
         def progress(message):
@@ -189,6 +203,10 @@ class NoteRequest(BaseModel):
     project: str | None = None
 
 
+class SendRequest(BaseModel):
+    replace: bool = False
+
+
 class NoteText(BaseModel):
     markdown: str
 
@@ -207,7 +225,10 @@ def create_app():
 
     @app.get("/api/state")
     def state():
-        return {"jobs": jobs.snapshot(), "meetings": _records(library.meetings()),
+        meetings = _records(library.meetings())
+        for m in meetings:
+            m["note"] = (pipeline.OUTPUT_DIR / m["meeting_id"] / "note.json").exists()
+        return {"jobs": jobs.snapshot(), "meetings": meetings,
                 "owner": os.environ.get("MIC_OWNER")}
 
     @app.post("/api/upload")
@@ -261,6 +282,7 @@ def create_app():
         return {"meeting_id": meeting_id, "title": info.get("title"), "date": info.get("date"),
                 "status": info.get("status"), "minutes": info.get("minutes"),
                 "source_file": info.get("source_file"), "split": bool(meta.get("split")),
+                "archived": info.get("archived"),
                 "owner": meta.get("owner"), "speakers": result}
 
     @app.get("/api/meetings/{meeting_id}/clip")
@@ -307,6 +329,7 @@ def create_app():
                                      skip=[s for s in request.skip if s not in merged])
         except ValueError as err:
             raise HTTPException(400, str(err))
+        jobs.auto_note(meeting_id)
         return meeting(meeting_id)
 
     @app.post("/api/meetings/{meeting_id}/reveal")
@@ -324,7 +347,9 @@ def create_app():
         return {"exists": path.exists(), "markdown": path.read_text() if path.exists() else "",
                 "path": str(path.relative_to(BASE_DIR)), "project": library.meeting_project(meeting_id),
                 "backend": info.get("backend"), "model": info.get("model"), "created": info.get("created"),
-                "edited": info.get("edited"),
+                "edited": info.get("edited"), "sent_path": library.meeting_sent_path(meeting_id),
+                "archived": _records(library.meetings().query("meeting_id == @meeting_id"))[0].get("archived"),
+                "notes_dir": str(pipeline.notes_dir() or ""),
                 "job": running[0] if running else None}
 
     @app.post("/api/meetings/{meeting_id}/note")
@@ -349,6 +374,26 @@ def create_app():
     def discard_note(meeting_id: str):
         pipeline.discard_note_edits(_meeting_dir(meeting_id))
         return note(meeting_id)
+
+    @app.post("/api/meetings/{meeting_id}/note/send")
+    def send_note(meeting_id: str, request: SendRequest):
+        out_dir = _meeting_dir(meeting_id)
+        if any(j.get("kind") == "note" and j["meeting_id"] == meeting_id and j["status"] in ("queued", "processing")
+               for j in jobs.snapshot()):
+            raise HTTPException(400, "the note is still being written")
+        try:
+            path = pipeline.send_note(out_dir, replace=request.replace)
+        except FileExistsError as err:
+            raise HTTPException(409, f"{err} already exists in the meeting notes folder")
+        except ValueError as err:
+            raise HTTPException(400, str(err))
+        return {"path": str(path)}
+
+    @app.post("/api/meetings/{meeting_id}/unarchive")
+    def unarchive(meeting_id: str):
+        _meeting_dir(meeting_id)
+        library.unarchive_meeting(meeting_id)
+        return {"ok": True}
 
     @app.post("/api/meetings/{meeting_id}/title")
     def title(meeting_id: str, request: NameRequest):

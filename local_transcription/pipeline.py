@@ -428,7 +428,8 @@ def render_note_file(out_dir, meta, segments, speakers):
         # hand edits win. only the project line follows changes made in the app
         return _update_note_project(out_dir / "note.md", library.meeting_project(out_dir.name))
     date = meta.get("date") or render.title_and_date(meta["source"])[1]
-    transcript_ref = str((out_dir / "transcript.md").relative_to(OUTPUT_DIR.parent))
+    # a file link, so it opens from the vault copy of the note too
+    transcript_ref = (out_dir / "transcript.md").resolve().as_uri()
     markdown = notes.render_note(summary, date, segments, link_people(speakers), summary.get("owner_id"),
                                  library.meeting_project(out_dir.name), transcript_ref)
     (out_dir / "note.md").write_text(markdown)
@@ -470,6 +471,47 @@ def discard_note_edits(out_dir):
     path.write_text(json.dumps(summary, indent=2))
     meta, segments, speakers, _ = load_run(out_dir)
     return render_note_file(out_dir, meta, segments, speakers)
+
+
+def notes_dir():
+    folder = os.environ.get("MEETING_NOTES_DIR")
+    return Path(folder).expanduser() if folder else None
+
+
+def note_filename(out_dir):
+    """'2026-10-15 - Q1 Roadmap Working Group.md', from the note's heading so
+    an edited heading is respected."""
+    text = (out_dir / "note.md").read_text()
+    heading = next((line[2:].strip() for line in text.splitlines() if line.startswith("# ")), "")
+    if not heading:
+        meta = json.loads((out_dir / "run.json").read_text())
+        title, date = render.title_and_date(meta["source"])
+        heading = f"{meta.get('date') or date} - {meta.get('title') or title}"
+    # characters obsidian or the file system will not take in a name
+    return re.sub(r'[\\/:*?"<>|#^\[\]]', "-", heading).strip(" .") + ".md"
+
+
+def send_note(out_dir, replace=False):
+    """copy note.md into the obsidian meeting notes folder and move the meeting to the archive.
+    an existing file is only replaced when asked. returns the path written."""
+    out_dir = Path(out_dir)
+    folder = notes_dir()
+    if not folder:
+        raise ValueError("set MEETING_NOTES_DIR in .env to your obsidian meeting notes folder")
+    if not folder.is_dir():
+        raise ValueError(f"the meeting notes folder does not exist: {folder}")
+    if not (out_dir / "note.md").exists():
+        raise ValueError("this meeting has no note yet")
+    target = folder / note_filename(out_dir)
+    if target.exists() and not replace:
+        raise FileExistsError(target.name)
+    text = (out_dir / "note.md").read_text()
+    # edited notes may still have the old relative transcript path
+    transcript = json.dumps((out_dir / "transcript.md").resolve().as_uri(), ensure_ascii=False)
+    text = re.sub(r"^transcript:.*$", f"transcript: {transcript}", text, count=1, flags=re.M)
+    target.write_text(text)
+    library.archive_meeting(out_dir.name, target)
+    return target
 
 
 def write_note(out_dir, backend=None, project=None, owner=None, progress=print):

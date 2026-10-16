@@ -35,6 +35,9 @@ uv run app.py --browser    # or serve on http://127.0.0.1:8765 and use a browser
 - **Review:** each unknown speaker gets a few short clips with what they said, suggested names with scores, and a name field that searches existing people or creates a new one. You can also mark a speaker as the same person as another speaker (diarization split them), leave a speaker unnamed, or name them without adding the voice to their profile. Identified speakers are collapsed, with a "wrong?" link. Nothing is saved until you press Apply.
 - **Transcript:** click any line to play from there, show the file in Finder, or copy the markdown.
 - **Note:** writes the meeting note (see below), with a choice of model and project.
+- **Send to Obsidian:** after you review the note, copies it into `MEETING_NOTES_DIR` as `<date> - <heading>.md` and moves the meeting to the Archive. An existing file with that name is only replaced after a second click. **Move to Inbox** in the Archive brings a meeting back.
+
+The flow is: drop a file in the Inbox, it is transcribed, you confirm speakers if asked, the note is written automatically with `SUMMARY_BACKEND` once every speaker is named, then you review and send it.
 - **People:** everyone in the library with their full name, organization, teams, meetings and voice clips. Edits rewrite every past transcript and note they appear in.
 
 The server listens on 127.0.0.1 only and the page loads nothing from the internet.

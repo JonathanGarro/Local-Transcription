@@ -27,7 +27,9 @@ async function api(path, options = {}) {
   if (!response.ok) {
     let detail = response.statusText;
     try { detail = (await response.json()).detail || detail; } catch (e) {}
-    throw new Error(detail);
+    const error = new Error(detail);
+    error.status = response.status;
+    throw error;
   }
   return response.json();
 }
@@ -149,18 +151,23 @@ async function refreshInbox() {
   });
 
   if (renaming) return;
-  meetingsEl.innerHTML = state.meetings.length ? state.meetings.map(m => {
+  const writing = new Set(state.jobs.filter(j => j.kind === "note" && ["queued", "processing"].includes(j.status)).map(j => j.meeting_id));
+  const inbox = state.meetings.filter(m => !m.archived);
+  meetingsEl.innerHTML = inbox.length ? inbox.map(m => {
     const review = m.status !== "done";
+    const stage = review ? ["review", "needs review"] : writing.has(m.meeting_id) ? ["work", "writing note"]
+      : m.note ? ["ready", "ready to send"] : ["review", "no note yet"];
     return `<div class="item">
       <div class="main">
         <div class="title"><span class="rename" data-rename="${esc(m.meeting_id)}" title="Click to rename">${esc(m.title || m.meeting_id)}</span></div>
         <div class="meta">${esc(m.date || "")} · ${m.minutes ? Math.round(m.minutes) + " min" : ""} · ${esc(m.source_type || "")}${m.split ? " · split channels" : ""}</div>
       </div>
-      <span class="badge ${review ? "review" : "done"}">${review ? "needs review" : "done"}</span>
+      <span class="badge ${stage[0]}">${stage[1]}</span>
       <a class="btn small" href="${meetingLink("review", m.meeting_id)}">${review ? "Review" : "Speakers"}</a>
       <a class="btn small" href="${meetingLink("transcript", m.meeting_id)}">Transcript</a>
+      ${review ? "" : `<a class="btn small" href="${meetingLink("transcript", m.meeting_id)}/note">Note</a>`}
     </div>`;
-  }).join("") : `<div class="empty">No meetings yet</div>`;
+  }).join("") : `<div class="empty">${state.meetings.length ? "Nothing waiting. Sent meetings are in the Archive." : "No meetings yet"}</div>`;
   meetingsEl.querySelectorAll("[data-rename]").forEach(el => renamable(el, el.dataset.rename));
 }
 
@@ -207,8 +214,37 @@ function renamable(el, id) {
   };
 }
 
+function crumb(meeting) {
+  return meeting.archived ? `<a class="crumb" href="#/archive">Archive</a>` : `<a class="crumb" href="#/inbox">Inbox</a>`;
+}
+
+// archive
+async function renderArchive() {
+  const state = await api("/api/state");
+  const sent = state.meetings.filter(m => m.archived).sort((a, b) => (b.archived || "").localeCompare(a.archived || ""));
+  view.innerHTML = `
+    <div class="page">
+      <h1>Archive</h1>
+      <div class="sub">Meetings whose notes were sent to Obsidian.</div>
+      <div class="list">${sent.length ? sent.map(m => `<div class="item">
+        <div class="main">
+          <div class="title">${esc(m.title || m.meeting_id)}</div>
+          <div class="meta">${esc(m.date || "")} · sent ${esc((m.archived || "").slice(0, 10))} as ${esc((m.sent_path || "").split("/").pop())}</div>
+        </div>
+        <a class="btn small" href="${meetingLink("transcript", m.meeting_id)}">Transcript</a>
+        <a class="btn small" href="${meetingLink("transcript", m.meeting_id)}/note">Note</a>
+        <button class="btn small" data-unarchive="${esc(m.meeting_id)}">Move to Inbox</button>
+      </div>`).join("") : `<div class="empty">Nothing sent yet</div>`}</div>
+    </div>`;
+  view.querySelectorAll("[data-unarchive]").forEach(b => b.onclick = async () => {
+    await post(`/api/meetings/${encodeURIComponent(b.dataset.unarchive)}/unarchive`, {});
+    toast("Moved to the Inbox");
+    renderArchive();
+  });
+}
+
 function updateCount(meetings) {
-  const n = meetings.filter(m => m.status !== "done").length;
+  const n = meetings.filter(m => m.status !== "done" && !m.archived).length;
   document.getElementById("review-count").textContent = n ? n : "";
 }
 
@@ -285,7 +321,7 @@ function drawReview() {
   const count = Object.keys(review.decisions).length;
   view.innerHTML = `
     <div class="page">
-      <a class="crumb" href="#/inbox">Inbox</a>
+      ${crumb(m)}
       <h1><span data-rename="${esc(m.meeting_id)}">${esc(m.title || m.meeting_id)}</span></h1>
       <div class="sub">${esc(m.date || "")} · ${m.minutes ? Math.round(m.minutes) + " min" : ""} · ${m.speakers.length} speakers${m.split ? ` · ${esc(m.owner)} on their own channel` : ""}
         · <a href="${meetingLink("transcript", m.meeting_id)}">Transcript</a></div>
@@ -413,7 +449,7 @@ async function renderTranscript(id, tab = "transcript") {
   const [meeting, data] = await Promise.all([api(`/api/meetings/${enc}`), api(`/api/meetings/${enc}/transcript`)]);
   view.innerHTML = `
     <div class="page">
-      <a class="crumb" href="#/inbox">Inbox</a>
+      ${crumb(meeting)}
       <h1><span data-rename="${esc(id)}">${esc(meeting.title || id)}</span></h1>
       <div class="sub">${esc(meeting.date || "")} · ${esc(meeting.speakers.map(s => s.label).join(", "))}</div>
       <div class="tabs">
@@ -571,12 +607,21 @@ async function renderNote(id, body) {
             <div class="combo-list" id="project-list" hidden></div>
           </span>
         </label>
-        <button class="btn primary" id="write" ${job ? "disabled" : ""}>${note.exists ? "Rewrite note" : "Write note"}</button>
+        <button class="btn ${note.exists ? "" : "primary"}" id="write" ${job ? "disabled" : ""}>${note.exists ? "Rewrite note" : "Write note"}</button>
       </div>
       ${job ? `<div class="meta" style="margin-top:12px">${job.status === "queued" ? "Waiting for the current job" : esc(job.step)}${job.detail ? `, ${esc(job.detail)}` : ""}</div>
         <div class="bar"><div style="width:${Math.round(job.progress * 100)}%"></div></div>` : ""}
       ${note.exists && !job ? `<div class="hint" style="margin-top:10px">Written by ${esc(note.model)} on ${esc((note.created || "").replace("T", " "))}. ${note.edited ? `You edited it on ${esc(note.edited.replace("T", " "))}. Your edits are kept, and changing the project only updates its line.` : "Click the note to edit it. Changing the project updates the note without rewriting it."}</div>` : ""}
     </div>
+    ${note.exists && !job ? `<div class="card send">
+        <div class="main">
+          ${note.archived ? `<b>Sent to Obsidian</b> on ${esc(note.archived.slice(0, 10))} as ${esc((note.sent_path || "").split("/").pop())}.
+            Edits made here after that are not in the vault copy until you send again.`
+          : `<b>Review the note, then send it.</b> It is saved to ${note.notes_dir ? esc(note.notes_dir.split("/").slice(-2).join("/")) : "your meeting notes folder"} and the meeting moves to the Archive.`}
+          <div class="hint" id="send-status"></div>
+        </div>
+        <button class="btn ${note.archived ? "" : "primary"}" id="send-note" ${note.notes_dir ? "" : "disabled title=\"Set MEETING_NOTES_DIR in .env\""}>${note.archived ? "Send again" : "Send to Obsidian"}</button>
+      </div>` : ""}
     ${note.exists ? `<div class="tools">
         <button class="btn small" id="copy-note">Copy note</button>
         <button class="btn small" id="reveal-note">Show in Finder</button>
@@ -621,6 +666,24 @@ async function renderNote(id, body) {
     document.getElementById("copy-note").onclick = async () => {
       await navigator.clipboard.writeText(text.value);
       toast("Copied");
+    };
+    const send = document.getElementById("send-note");
+    if (send) send.onclick = async () => {
+      const replace = send.dataset.confirm === "1";
+      await flushNote?.();
+      try {
+        const result = await post(`/api/meetings/${enc}/note/send`, { replace });
+        toast(note.archived ? "Sent again" : "Sent to Obsidian and moved to the Archive");
+        renderNote(id, body);
+        const back = view.querySelector(".crumb");
+        if (back) back.outerHTML = crumb({ archived: true });
+      } catch (err) {
+        if (err.status !== 409) return toast(err.message);
+        // a note with this name is already in the vault, replace only on a second click
+        send.dataset.confirm = "1";
+        send.textContent = "Replace it";
+        document.getElementById("send-status").textContent = `${err.message}. Click Replace it to overwrite that file, or change the heading first.`;
+      }
     };
     const discard = document.getElementById("discard-note");
     if (discard) discard.onclick = async () => {
@@ -744,10 +807,11 @@ function route() {
   player.ontimeupdate = null;
   const [, page, id, tab] = location.hash.split("/");
   document.querySelectorAll("[data-nav]").forEach(a => a.classList.toggle(
-    "active", a.dataset.nav === (page === "people" ? "people" : "inbox")));
+    "active", a.dataset.nav === (["people", "archive"].includes(page) ? page : "inbox")));
   const run = page === "review" ? renderReview(decodeURIComponent(id))
     : page === "transcript" ? renderTranscript(decodeURIComponent(id), tab === "note" ? "note" : "transcript")
     : page === "people" ? renderPeople()
+    : page === "archive" ? renderArchive()
     : renderInbox();
   run.catch(err => { view.innerHTML = `<div class="page"><div class="card">Something went wrong: ${esc(err.message)}</div></div>`; });
 }

@@ -122,7 +122,7 @@ select { border: 1px solid var(--line); background: var(--panel); border-radius:
 
 .badge { font-size: 12px; border-radius: 6px; padding: 1px 8px; white-space: nowrap; }
 .badge.review { background: var(--warn-soft); color: var(--warn); }
-.badge.done { background: var(--good-soft); color: var(--good); }
+.badge.done, .badge.ready { background: var(--good-soft); color: var(--good); }
 .badge.work { background: var(--accent-soft); color: var(--accent); }
 .badge.failed { color: var(--bad); }
 
@@ -288,3 +288,5 @@ tr.editing td { background: var(--accent-soft); }
 .combo-item { display: flex; justify-content: space-between; gap: 10px; padding: 5px 8px; border-radius: 5px; cursor: pointer; color: var(--text); font-size: 13.5px; }
 .combo-item:hover, .combo-item.active { background: var(--accent-soft); }
 .combo-new { color: var(--muted); font-size: 12.5px; padding: 8px; border-top: 1px solid var(--line); margin-top: 4px; }
+.card.send { display: flex; gap: 16px; align-items: center; }
+.card.send .main { flex: 1; }

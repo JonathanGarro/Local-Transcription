@@ -93,7 +93,8 @@ create table if not exists meeting_speakers (
 # columns added after the first release, applied to older databases on open
 ADDED_COLUMNS = {
     "people": {"full_name": "text", "org_id": "text references organizations(org_id) on delete set null"},
-    "meetings": {"project_id": "text references projects(project_id) on delete set null"},
+    "meetings": {"project_id": "text references projects(project_id) on delete set null",
+                 "archived": "text", "sent_path": "text"},
 }
 _ready = False
 
@@ -425,6 +426,24 @@ def meetings():
     table = _query("""select m.*, pr.name as project from meetings m
                       left join projects pr using (project_id) order by m.date desc, m.updated desc""")
     return table
+
+
+def archive_meeting(meeting_id, sent_path):
+    """mark a meeting as sent to obsidian, which moves it from the inbox to the archive."""
+    with connect() as con:
+        con.execute("update meetings set archived = ?, sent_path = ? where meeting_id = ?",
+                    (_now(), str(sent_path), meeting_id))
+
+
+def unarchive_meeting(meeting_id):
+    """back to the inbox. the sent path is kept so sending again finds the same file."""
+    with connect() as con:
+        con.execute("update meetings set archived = null where meeting_id = ?", (meeting_id,))
+
+
+def meeting_sent_path(meeting_id):
+    row = _query("select sent_path from meetings where meeting_id = ?", (meeting_id,))
+    return row["sent_path"].iloc[0] if len(row) and isinstance(row["sent_path"].iloc[0], str) else None
 
 
 def meeting_speaker_rows(meeting_id):

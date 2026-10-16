@@ -20,6 +20,8 @@ from local_transcription import asr, audio, diarize, embed, match, library, merg
 # config
 OUTPUT_DIR = Path(__file__).parent.parent / "outputs"
 ORIGINAL_NOTE = "note_original.md"
+# exactly what was last sent to or loaded from obsidian, to tell which side changed since
+SENT_NOTE = "note_sent.md"
 SAMPLE_CHARS = 160
 # in split mode the mic channel is one known person and gets this speaker id
 MIC_SPEAKER = "MIC"
@@ -529,12 +531,16 @@ def _word_parts(old, new):
 
 
 def note_diff(out_dir, context=3):
-    """what changed in an edited note, as rows of {kind, parts, old, new}. kind is ctx, del,
-    add, or gap. compares with the note before the first edit, or with a fresh render for
-    notes edited before that copy was kept. returns (rows, base)."""
+    """what changed in a note, as rows of {kind, parts, old, new}. kind is ctx, del, add, or
+    gap. a sent note is compared with the obsidian copy. otherwise it is the note before the
+    first edit, or a fresh render for notes edited before that copy was kept. returns
+    (rows, base)."""
     out_dir = Path(out_dir)
     original = out_dir / ORIGINAL_NOTE
-    if original.exists():
+    vault = vault_copy(out_dir)
+    if vault and vault.exists():
+        before, base = vault.read_text(), "obsidian"
+    elif original.exists():
         before, base = original.read_text(), "original"
     else:
         meta, segments, speakers, _ = load_run(out_dir)
@@ -585,6 +591,61 @@ def note_filename(out_dir):
     return re.sub(r'[\\/:*?"<>|#^\[\]]', "-", heading).strip(" .") + ".md"
 
 
+class VaultChanged(Exception):
+    """the obsidian copy was edited after the app last sent or loaded it."""
+
+
+def vault_copy(out_dir):
+    """the note's file in the vault, if it was sent."""
+    sent = library.meeting_sent_path(Path(out_dir).name)
+    return Path(sent) if sent else None
+
+
+def _mark_edited(out_dir):
+    path = out_dir / "note.json"
+    summary = json.loads(path.read_text())
+    summary["edited"] = summary.get("edited") or datetime.now().isoformat(timespec="seconds")
+    path.write_text(json.dumps(summary, indent=2))
+
+
+def sync_from_vault(out_dir, force=False):
+    """keep a sent note's app copy in step with obsidian, which is the master copy once sent.
+    returns one of:
+      None        never sent
+      "missing"   the vault file was moved or deleted
+      "same"      the app copy matches obsidian
+      "pulled"    obsidian changed, so its version was loaded into the app
+      "app-ahead" the app copy has edits obsidian does not have yet
+      "conflict"  both changed since the last send, nothing is overwritten
+    force loads the obsidian version even over app edits."""
+    out_dir = Path(out_dir)
+    vault = vault_copy(out_dir)
+    note = out_dir / "note.md"
+    if not vault or not note.exists():
+        return None
+    if not vault.exists():
+        return "missing"
+    vault_text, app_text = vault.read_text(), note.read_text()
+    baseline = out_dir / SENT_NOTE
+    if vault_text == app_text:
+        if not baseline.exists():
+            baseline.write_text(vault_text)
+        return "same"
+    if baseline.exists():
+        sent_text = baseline.read_text()
+        vault_changed, app_changed = vault_text != sent_text, app_text != sent_text
+    else:
+        # sent before the app kept a copy, so go by which file was saved last
+        vault_changed = True
+        app_changed = note.stat().st_mtime > vault.stat().st_mtime
+    if force or (vault_changed and not app_changed):
+        note.write_text(vault_text)
+        baseline.write_text(vault_text)
+        _mark_edited(out_dir)
+        return "pulled"
+    return "conflict" if vault_changed else "app-ahead"
+
+
 def send_note(out_dir, replace=False):
     """copy note.md into the obsidian meeting notes folder, rename the output folder to match,
     and move the meeting to the archive. an existing file is only replaced when asked. returns
@@ -599,10 +660,18 @@ def send_note(out_dir, replace=False):
         raise ValueError("this meeting has no note yet")
     target = folder / note_filename(out_dir)
     if target.exists() and not replace:
-        raise FileExistsError(target.name)
+        previous = vault_copy(out_dir)
+        if not previous or previous != target:
+            raise FileExistsError(target.name)
+        # sending again over our own file is fine unless it was edited in obsidian
+        baseline = out_dir / SENT_NOTE
+        if not baseline.exists() or target.read_text() != baseline.read_text():
+            raise VaultChanged(target.name)
     # the output folder takes the vault note's name, which also fixes the transcript link
     out_dir = move_meeting(out_dir, target.stem)
-    target.write_text((out_dir / "note.md").read_text())
+    text = (out_dir / "note.md").read_text()
+    target.write_text(text)
+    (out_dir / SENT_NOTE).write_text(text)
     library.archive_meeting(out_dir.name, target)
     return target, out_dir
 

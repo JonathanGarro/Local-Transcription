@@ -542,8 +542,22 @@ function projectPicker(input, list, projects) {
 }
 
 // git style view of what was edited, with changed words highlighted inside each line
+// what the send card says about a sent note, depending on which copy changed
+function vaultMessage(note) {
+  const sent = `<b>Sent to Obsidian</b> on ${esc((note.archived || "").slice(0, 10) || "an earlier day")} as ${esc(note.sent_path.split("/").pop())}.`;
+  return {
+    same: `${sent} This matches the Obsidian copy, which is the master copy now. Edit it in Obsidian.`,
+    pulled: `${sent} The Obsidian copy had changed, so it was loaded here.`,
+    "app-ahead": `${sent} You edited it here after sending. Send again to update Obsidian, or use the Obsidian version to drop these edits. Show changes compares the two.`,
+    conflict: `${sent} <b>It changed in both places.</b> Obsidian has edits that are not here, and this copy has edits that are not in Obsidian. Show changes compares them. Use the Obsidian version to keep its edits, or send again to replace them.`,
+    missing: `${sent} The Obsidian copy was moved or deleted. Send again to put it back.`,
+  }[note.vault] || sent;
+}
+
 function diffView(diff) {
-  const base = diff.base === "original" ? "the note before your first edit"
+  if (diff.base === "obsidian" && !diff.rows.length) return `<div class="card">This matches the Obsidian copy.</div>`;
+  const base = diff.base === "obsidian" ? "the Obsidian copy (red is Obsidian, green is this copy)"
+    : diff.base === "original" ? "the note before your first edit"
     : "a fresh copy of the generated note. This note was edited before the app kept the original, so format updates since then show up too";
   if (!diff.rows.length) return `<div class="card">No changes compared with ${base}.</div>`;
   const sign = { add: "+", del: "-", ctx: " " };
@@ -631,18 +645,19 @@ async function renderNote(id, body) {
     </div>
     ${note.exists && !job ? `<div class="card send">
         <div class="main">
-          ${note.archived ? `<b>Sent to Obsidian</b> on ${esc(note.archived.slice(0, 10))} as ${esc((note.sent_path || "").split("/").pop())}.
-            Edits made here after that are not in the vault copy until you send again.`
+          ${note.sent_path ? vaultMessage(note)
           : `<b>Review the note, then send it.</b> It is saved to ${note.notes_dir ? esc(note.notes_dir.split("/").slice(-2).join("/")) : "your meeting notes folder"} and the meeting moves to the Archive.`}
           <div class="hint" id="send-status"></div>
         </div>
-        <button class="btn ${note.archived ? "" : "primary"}" id="send-note" ${note.notes_dir ? "" : "disabled title=\"Set MEETING_NOTES_DIR in .env\""}>${note.archived ? "Send again" : "Send to Obsidian"}</button>
+        ${["app-ahead", "conflict"].includes(note.vault) ? `<button class="btn" id="pull-note">Use Obsidian version</button>` : ""}
+        <button class="btn ${note.sent_path && note.vault !== "app-ahead" && note.vault !== "missing" ? "" : "primary"}" id="send-note" ${note.notes_dir ? "" : "disabled title=\"Set MEETING_NOTES_DIR in .env\""}>${note.sent_path ? "Send again" : "Send to Obsidian"}</button>
       </div>` : ""}
     ${note.exists ? `<div class="tools">
         <button class="btn small" id="open-obsidian" ${note.sent_path ? "" : "disabled title=\"Send the note to Obsidian first\""}>Open in Obsidian</button>
         <button class="btn small" id="copy-note">Copy note</button>
         <button class="btn small" id="reveal-note">Show in Finder</button>
-        ${note.edited ? `<button class="btn small" id="show-changes">Show changes</button>
+        ${note.sent_path ? `<button class="btn small" id="show-changes">Show changes</button>`
+          : note.edited ? `<button class="btn small" id="show-changes">Show changes</button>
           <button class="btn small" id="discard-note">Discard my edits</button>` : ""}
         <span class="hint" id="note-status">${esc(note.path)}</span>
       </div>
@@ -692,7 +707,7 @@ async function renderNote(id, body) {
       await flushNote?.();
       try {
         const result = await post(`/api/meetings/${enc}/note/send`, { replace });
-        toast(note.archived ? "Sent again" : "Sent to Obsidian and moved to the Archive");
+        toast(note.sent_path ? "Sent again" : "Sent to Obsidian and moved to the Archive");
         // the output folder was renamed to match the note, so the meeting has a new id
         location.hash = `${meetingLink("transcript", result.meeting_id)}/note`;
         if (result.meeting_id === id) route();
@@ -719,6 +734,21 @@ async function renderNote(id, body) {
       changes.textContent = showing ? "Hide changes" : "Show changes";
       changes.classList.toggle("on", showing);
     };
+    const pull = document.getElementById("pull-note");
+    if (pull) pull.onclick = async () => {
+      // replaces edits made here, so ask with a second click
+      if (!pull.dataset.confirm) {
+        pull.dataset.confirm = "1";
+        pull.textContent = "Replace the app copy?";
+        setTimeout(() => { delete pull.dataset.confirm; pull.textContent = "Use Obsidian version"; }, 4000);
+        return;
+      }
+      flushNote = null;
+      await post(`/api/meetings/${enc}/note/pull`, {});
+      toast("Loaded the Obsidian version");
+      renderNote(id, body);
+    };
+    if (note.vault === "pulled") toast("Loaded the newer version from Obsidian");
     const discard = document.getElementById("discard-note");
     if (discard) discard.onclick = async () => {
       if (!discard.dataset.confirm) {

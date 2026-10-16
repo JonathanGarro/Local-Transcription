@@ -347,13 +347,15 @@ def create_app():
         path, summary = out_dir / "note.md", out_dir / "note.json"
         running = [j for j in jobs.snapshot() if j.get("kind") == "note" and j["meeting_id"] == meeting_id
                    and j["status"] in ("queued", "processing")]
+        # a sent note shows what is in obsidian
+        vault = pipeline.sync_from_vault(out_dir) if summary.exists() and not running else None
         info = json.loads(summary.read_text()) if summary.exists() else {}
         return {"exists": path.exists(), "markdown": path.read_text() if path.exists() else "",
                 "path": str(path.relative_to(BASE_DIR)), "project": library.meeting_project(meeting_id),
                 "backend": info.get("backend"), "model": info.get("model"), "created": info.get("created"),
                 "edited": info.get("edited"), "sent_path": library.meeting_sent_path(meeting_id),
                 "archived": _records(library.meetings().query("meeting_id == @meeting_id"))[0].get("archived"),
-                "notes_dir": str(pipeline.notes_dir() or ""),
+                "notes_dir": str(pipeline.notes_dir() or ""), "vault": vault,
                 "job": running[0] if running else None}
 
     @app.post("/api/meetings/{meeting_id}/note")
@@ -398,9 +400,16 @@ def create_app():
             path, out_dir = pipeline.send_note(out_dir, replace=request.replace)
         except FileExistsError as err:
             raise HTTPException(409, f"{err} already exists in the meeting notes folder")
+        except pipeline.VaultChanged:
+            raise HTTPException(409, "The Obsidian copy was edited after it was sent, sending replaces those edits")
         except ValueError as err:
             raise HTTPException(400, str(err))
         return {"path": str(path), "meeting_id": out_dir.name}
+
+    @app.post("/api/meetings/{meeting_id}/note/pull")
+    def pull_note(meeting_id: str):
+        pipeline.sync_from_vault(_meeting_dir(meeting_id), force=True)
+        return note(meeting_id)
 
     @app.post("/api/meetings/{meeting_id}/open-obsidian")
     def open_obsidian(meeting_id: str):

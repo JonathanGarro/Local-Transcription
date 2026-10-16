@@ -341,6 +341,22 @@ def rerender(meeting_ids):
             write_outputs(out_dir, segments, speakers, meta)
 
 
+def rename_meeting(out_dir, title):
+    """change a meeting's title in the transcript, the note heading, and the library. the
+    folder keeps its name so links to it still work."""
+    out_dir = Path(out_dir)
+    title = title.strip()
+    meta, segments, speakers, _ = load_run(out_dir)
+    meta["title"] = title
+    (out_dir / "run.json").write_text(json.dumps(meta, indent=2))
+    note_path = out_dir / "note.json"
+    if note_path.exists():
+        summary = json.loads(note_path.read_text())
+        summary["title"] = title
+        note_path.write_text(json.dumps(summary, indent=2))
+    write_outputs(out_dir, segments, speakers, meta)
+
+
 def rename_person(person_id, new_name):
     rerender(library.rename_person(person_id, new_name))
 

@@ -247,3 +247,14 @@ tr.editing td { background: var(--accent-soft); }
 .chips input[type=text] { border: none; background: none; min-width: 180px; padding: 2px 4px; outline: none; }
 .chip { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 1px 4px 1px 8px; color: var(--text); font-size: 13px; }
 .chip button { border: none; background: none; color: var(--muted); cursor: pointer; padding: 0 4px; }
+.rename { cursor: text; border-radius: 4px; }
+.rename:hover { box-shadow: 0 0 0 4px var(--accent-soft); background: var(--accent-soft); }
+.rename-input {
+  font: inherit;
+  border: 1px solid var(--accent);
+  background: var(--bg);
+  border-radius: 5px;
+  padding: 0 6px;
+  width: min(100%, 420px);
+  outline: none;
+}

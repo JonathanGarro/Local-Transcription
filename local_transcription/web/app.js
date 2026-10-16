@@ -148,11 +148,12 @@ async function refreshInbox() {
     refreshInbox();
   });
 
+  if (renaming) return;
   meetingsEl.innerHTML = state.meetings.length ? state.meetings.map(m => {
     const review = m.status !== "done";
     return `<div class="item">
       <div class="main">
-        <div class="title">${esc(m.title || m.meeting_id)}</div>
+        <div class="title"><span class="rename" data-rename="${esc(m.meeting_id)}" title="Click to rename">${esc(m.title || m.meeting_id)}</span></div>
         <div class="meta">${esc(m.date || "")} · ${m.minutes ? Math.round(m.minutes) + " min" : ""} · ${esc(m.source_type || "")}${m.split ? " · split channels" : ""}</div>
       </div>
       <span class="badge ${review ? "review" : "done"}">${review ? "needs review" : "done"}</span>
@@ -160,6 +161,50 @@ async function refreshInbox() {
       <a class="btn small" href="${meetingLink("transcript", m.meeting_id)}">Transcript</a>
     </div>`;
   }).join("") : `<div class="empty">No meetings yet</div>`;
+  meetingsEl.querySelectorAll("[data-rename]").forEach(el => renamable(el, el.dataset.rename));
+}
+
+// click a meeting title to rename it. the inbox poll leaves the list alone while editing
+let renaming = false;
+
+function renamable(el, id) {
+  el.classList.add("rename");
+  el.title = "Click to rename";
+  el.onclick = () => {
+    if (renaming) return;
+    renaming = true;
+    const before = el.textContent;
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "rename-input";
+    input.value = before;
+    el.replaceWith(input);
+    input.focus();
+    input.select();
+    let finished = false;
+    const finish = async save => {
+      if (finished) return;
+      finished = true;
+      const value = input.value.trim();
+      if (save && value && value !== before) {
+        try {
+          await post(`/api/meetings/${encodeURIComponent(id)}/title`, { name: value });
+          el.textContent = value;
+          if (review?.meeting?.meeting_id === id) review.meeting.title = value;
+          toast("Renamed");
+        } catch (err) {
+          toast(`Rename failed: ${err.message}`);
+        }
+      }
+      input.replaceWith(el);
+      renaming = false;
+    };
+    input.onkeydown = e => {
+      if (e.key === "Enter") finish(true);
+      if (e.key === "Escape") finish(false);
+    };
+    input.onblur = () => finish(true);
+  };
 }
 
 function updateCount(meetings) {
@@ -241,7 +286,7 @@ function drawReview() {
   view.innerHTML = `
     <div class="page">
       <a class="crumb" href="#/inbox">Inbox</a>
-      <h1>${esc(m.title || m.meeting_id)}</h1>
+      <h1><span data-rename="${esc(m.meeting_id)}">${esc(m.title || m.meeting_id)}</span></h1>
       <div class="sub">${esc(m.date || "")} · ${m.minutes ? Math.round(m.minutes) + " min" : ""} · ${m.speakers.length} speakers${m.split ? ` · ${esc(m.owner)} on their own channel` : ""}
         · <a href="${meetingLink("transcript", m.meeting_id)}">Transcript</a></div>
       ${unresolved.length ? `<h2>Needs a name</h2>${unresolved.map(speakerCard).join("")}` : `<div class="card">Every speaker is named. Nothing to review.</div>`}
@@ -252,6 +297,7 @@ function drawReview() {
       <span class="hint">Names are saved only when you apply. Confirmed voices are added to that person's profile.</span>
       <button class="btn primary" id="apply" ${count ? "" : "disabled"}>Apply${count ? ` ${count} change${count > 1 ? "s" : ""}` : ""}</button>
     </div>`;
+  view.querySelectorAll("h1 [data-rename]").forEach(el => renamable(el, el.dataset.rename));
   bindReview();
 }
 
@@ -368,7 +414,7 @@ async function renderTranscript(id, tab = "transcript") {
   view.innerHTML = `
     <div class="page">
       <a class="crumb" href="#/inbox">Inbox</a>
-      <h1>${esc(meeting.title || id)}</h1>
+      <h1><span data-rename="${esc(id)}">${esc(meeting.title || id)}</span></h1>
       <div class="sub">${esc(meeting.date || "")} · ${esc(meeting.speakers.map(s => s.label).join(", "))}</div>
       <div class="tabs">
         <a href="${meetingLink("transcript", id)}" class="${tab === "transcript" ? "active" : ""}">Transcript</a>
@@ -377,6 +423,7 @@ async function renderTranscript(id, tab = "transcript") {
       </div>
       <div id="tab"></div>
     </div>`;
+  view.querySelectorAll("h1 [data-rename]").forEach(el => renamable(el, el.dataset.rename));
   const body = document.getElementById("tab");
   if (tab === "note") return renderNote(id, body);
 

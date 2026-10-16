@@ -11,6 +11,7 @@ import subprocess
 import threading
 import traceback
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -20,7 +21,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from local_transcription import audio, library, notes, pipeline
+from local_transcription import audio, library, notes, pipeline, render
 
 # config
 BASE_DIR = Path(__file__).parent.parent
@@ -61,6 +62,21 @@ def _meeting_dir(meeting_id):
         return pipeline.meeting_dir(meeting_id)
     except ValueError as err:
         raise HTTPException(404, str(err))
+
+
+def _dated_name(name):
+    """'2026-10-16 - Zoom Call.mp3' stays as it is. a date elsewhere in the name moves to the
+    front, and a name with no date gets today's."""
+    path = Path(name)
+    found = render.DATE_PATTERN.search(path.stem)
+    if found and found.start() == 0:
+        return name
+    if found:
+        parts = [path.stem[:found.start()].strip(" -_"), path.stem[found.end():].strip(" -_")]
+        date, rest = found.group(1), " ".join(p for p in parts if p)
+    else:
+        date, rest = datetime.now().date().isoformat(), path.stem.strip(" -_")
+    return f"{date} - {rest}{path.suffix}" if rest else f"{date}{path.suffix}"
 
 
 def _unique_path(folder, name):
@@ -203,10 +219,10 @@ def create_app():
                 skipped.append({"file": name, "reason": "not an m4a, mp3, or wav file"})
                 continue
             body = await upload_file.read()
-            path = DATA_DIR / name
+            path = DATA_DIR / _dated_name(name)
             if path.exists() and path.stat().st_size != len(body):
                 # a different recording with the same name, keep both
-                path = _unique_path(DATA_DIR, name)
+                path = _unique_path(DATA_DIR, path.name)
             if not path.exists():
                 path.write_bytes(body)
             already = (pipeline.OUTPUT_DIR / path.stem / "run.json").exists()
@@ -315,6 +331,13 @@ def create_app():
             raise HTTPException(400, "add ANTHROPIC_API_KEY to .env and restart the app to use Claude")
         project = request.project.strip() if request.project and request.project.strip() else None
         return jobs.add_note(meeting_id, request.backend, project)
+
+    @app.post("/api/meetings/{meeting_id}/title")
+    def title(meeting_id: str, request: NameRequest):
+        if not request.name.strip():
+            raise HTTPException(400, "the title cannot be blank")
+        pipeline.rename_meeting(_meeting_dir(meeting_id), request.name)
+        return {"title": request.name.strip()}
 
     @app.post("/api/meetings/{meeting_id}/project")
     def project(meeting_id: str, request: NameRequest):

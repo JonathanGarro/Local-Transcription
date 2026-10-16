@@ -6,12 +6,13 @@ names of the people in it, so renames and merges reach every past transcript.
 """
 
 import json
+import os
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from local_transcription import asr, audio, diarize, embed, match, library, merge, render, vocab
+from local_transcription import asr, audio, diarize, embed, match, library, merge, notes, render, vocab
 
 # config
 OUTPUT_DIR = Path(__file__).parent.parent / "outputs"
@@ -91,6 +92,7 @@ def write_outputs(out_dir, segments, speakers, meta):
     speakers.to_csv(out_dir / "speakers.csv", index=False)
     minutes = round(float(segments["end"].max()) / 60, 1) if len(segments) else None
     library.save_meeting(out_dir.name, meta, speakers, meeting_status(speakers), minutes)
+    render_note_file(out_dir, meta, segments, speakers)
     review = out_dir / "review.csv"
     if meeting_status(speakers) == "done":
         review.unlink(missing_ok=True)
@@ -393,3 +395,59 @@ def suggestions(out_dir, speaker, count=3):
         known = {n: p for n, p in known.items() if n != owner}
     scores = sorted(((float(vectors[speaker] @ vec), name) for name, (vec, _) in known.items()), reverse=True)
     return [{"name": name, "score": round(score, 3)} for score, name in scores[:count]]
+
+
+# notes
+def render_note_file(out_dir, meta, segments, speakers):
+    """rewrite note.md from the saved summary, if this meeting has one."""
+    path = out_dir / "note.json"
+    if not path.exists():
+        return None
+    summary = json.loads(path.read_text())
+    date = meta.get("date") or render.title_and_date(meta["source"])[1]
+    transcript_ref = str((out_dir / "transcript.md").relative_to(OUTPUT_DIR.parent))
+    markdown = notes.render_note(summary, date, segments, link_people(speakers), summary.get("owner_id"),
+                                 library.meeting_project(out_dir.name), transcript_ref)
+    (out_dir / "note.md").write_text(markdown)
+    return out_dir / "note.md"
+
+
+def write_note(out_dir, backend=None, project=None, owner=None, progress=print):
+    """summarize a meeting into note.md. project is a project name, or None to let the model
+    pick from the library's projects. the owner is who the action items are for."""
+    out_dir = Path(out_dir)
+    meta, segments, speakers, _ = load_run(out_dir)
+    speakers = link_people(speakers)
+    backend = backend or notes.default_backend()
+    owner = owner or meta.get("owner") or os.environ.get("MIC_OWNER") or DEFAULT_OWNER
+    owner_id = library.find_person(owner)
+    owner_full = (library.person_details(owner_id) or {}).get("full_name", owner) if owner_id else owner
+    date = meta.get("date") or render.title_and_date(meta["source"])[1]
+    lines = notes.transcript_lines(segments, speakers)
+    attendees = [line[1:line.index("]")] for line in lines]
+    terms, _ = vocab.load()
+    projects = library.lookup_names("projects")
+
+    _log(progress, f"summarizing with the {backend} model")
+    summary = notes.summarize(lines, owner_full, date, list(dict.fromkeys(attendees)), projects, terms,
+                              backend=backend, progress=progress)
+    summary["owner_id"] = owner_id
+    (out_dir / "note.json").write_text(json.dumps(summary, indent=2))
+    if project is not None:
+        library.set_meeting_project(out_dir.name, project)
+    elif summary["project"] and not library.meeting_project(out_dir.name):
+        library.set_meeting_project(out_dir.name, summary["project"])
+    return render_note_file(out_dir, {**meta, "date": date}, segments, speakers)
+
+
+def set_project(out_dir, project):
+    """file a meeting under a project (blank clears it) and refresh its note."""
+    out_dir = Path(out_dir)
+    library.set_meeting_project(out_dir.name, project)
+    meta, segments, speakers, _ = load_run(out_dir)
+    return render_note_file(out_dir, meta, segments, speakers)
+
+
+def rerender_people(person_ids):
+    """refresh transcripts and notes after a person's full name, team, or organization changed."""
+    rerender(sorted({m for p in person_ids for m in library.meetings_for_person(p)}))

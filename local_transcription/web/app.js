@@ -360,99 +360,217 @@ async function applyReview() {
   }
 }
 
-// transcript
-async function renderTranscript(id) {
+// transcript and note
+async function renderTranscript(id, tab = "transcript") {
   view.innerHTML = `<div class="page"><div class="empty">Loading transcript</div></div>`;
-  const [meeting, data] = await Promise.all([
-    api(`/api/meetings/${encodeURIComponent(id)}`), api(`/api/meetings/${encodeURIComponent(id)}/transcript`)
-  ]);
+  const enc = encodeURIComponent(id);
+  const [meeting, data] = await Promise.all([api(`/api/meetings/${enc}`), api(`/api/meetings/${enc}/transcript`)]);
   view.innerHTML = `
     <div class="page">
       <a class="crumb" href="#/inbox">Inbox</a>
       <h1>${esc(meeting.title || id)}</h1>
       <div class="sub">${esc(meeting.date || "")} · ${esc(meeting.speakers.map(s => s.label).join(", "))}</div>
-      <div class="tools">
-        <button class="btn small" id="reveal">Show in Finder</button>
-        <button class="btn small" id="copy">Copy markdown</button>
-        <a class="btn small" href="${meetingLink("review", id)}">Speakers</a>
-        <span class="hint">Click a line to play from there</span>
+      <div class="tabs">
+        <a href="${meetingLink("transcript", id)}" class="${tab === "transcript" ? "active" : ""}">Transcript</a>
+        <a href="${meetingLink("transcript", id)}/note" class="${tab === "note" ? "active" : ""}">Note</a>
+        <a href="${meetingLink("review", id)}">Speakers</a>
       </div>
-      <div id="turns">${data.turns.map((t, i) => `
-        <div class="turn" data-i="${i}" data-start="${t.start}" data-end="${t.end}">
-          <div class="who">${esc(t.name)}<span class="at">${fmtTime(t.start)}</span></div>
-          <div>${esc(t.text)}</div>
-        </div>`).join("")}</div>
+      <div id="tab"></div>
     </div>`;
-  const src = `/api/meetings/${encodeURIComponent(id)}/audio`;
-  view.querySelectorAll(".turn").forEach(el => el.onclick = () => {
+  const body = document.getElementById("tab");
+  if (tab === "note") return renderNote(id, body);
+
+  body.innerHTML = `
+    <div class="tools">
+      <button class="btn small" id="reveal">Show in Finder</button>
+      <button class="btn small" id="copy">Copy markdown</button>
+      <span class="hint">Click a line to play from there</span>
+    </div>
+    <div id="turns">${data.turns.map((t, i) => `
+      <div class="turn" data-i="${i}" data-start="${t.start}" data-end="${t.end}">
+        <div class="who">${esc(t.name)}<span class="at">${fmtTime(t.start)}</span></div>
+        <div>${esc(t.text)}</div>
+      </div>`).join("")}</div>`;
+  const src = `/api/meetings/${enc}/audio`;
+  body.querySelectorAll(".turn").forEach(el => el.onclick = () => {
     if (!player.src.endsWith(src)) player.src = src;
     player.currentTime = Number(el.dataset.start);
     player.play();
   });
   player.ontimeupdate = () => {
     const now = player.currentTime;
-    view.querySelectorAll(".turn").forEach(el => el.classList.toggle(
+    body.querySelectorAll(".turn").forEach(el => el.classList.toggle(
       "current", !player.paused && now >= Number(el.dataset.start) && now < Number(el.dataset.end) + 0.5));
   };
-  document.getElementById("reveal").onclick = () => post(`/api/meetings/${encodeURIComponent(id)}/reveal`);
+  document.getElementById("reveal").onclick = () => post(`/api/meetings/${enc}/reveal`);
   document.getElementById("copy").onclick = async () => {
     await navigator.clipboard.writeText(data.markdown);
     toast("Copied");
   };
 }
 
+async function renderNote(id, body) {
+  const enc = encodeURIComponent(id);
+  const [note, lookups] = await Promise.all([api(`/api/meetings/${enc}/note`), api("/api/lookups")]);
+  const job = note.job;
+  const backend = note.backend || lookups.default_backend;
+  body.innerHTML = `
+    <div class="card">
+      <div class="form">
+        <label>Model
+          <select id="backend">
+            <option value="local" ${backend === "local" ? "selected" : ""}>Local, on this Mac</option>
+            <option value="claude" ${backend === "claude" ? "selected" : ""} ${lookups.claude_ready ? "" : "disabled"}>Claude API, sends the transcript text${lookups.claude_ready ? "" : " (needs ANTHROPIC_API_KEY)"}</option>
+          </select>
+        </label>
+        <label>Project
+          <input type="text" id="project" list="project-list" value="${esc(note.project || "")}"
+            placeholder="${lookups.projects.length ? "Let the model pick" : "None yet, type to add"}">
+        </label>
+        <button class="btn primary" id="write" ${job ? "disabled" : ""}>${note.exists ? "Rewrite note" : "Write note"}</button>
+      </div>
+      <datalist id="project-list">${lookups.projects.map(p => `<option value="${esc(p)}">`).join("")}</datalist>
+      ${job ? `<div class="meta" style="margin-top:12px">${job.status === "queued" ? "Waiting for the current job" : esc(job.step)}${job.detail ? `, ${esc(job.detail)}` : ""}</div>
+        <div class="bar"><div style="width:${Math.round(job.progress * 100)}%"></div></div>` : ""}
+      ${note.exists && !job ? `<div class="hint" style="margin-top:10px">Written by ${esc(note.model)} on ${esc((note.created || "").replace("T", " "))}. Changing the project updates the note without rewriting it.</div>` : ""}
+    </div>
+    ${note.exists ? `<div class="tools">
+        <button class="btn small" id="copy-note">Copy note</button>
+        <button class="btn small" id="reveal-note">Show in Finder</button>
+        <span class="hint">${esc(note.path)}</span>
+      </div>
+      <pre class="note">${esc(note.markdown)}</pre>` : job ? "" : `<div class="empty">No note yet. Names come from the confirmed speakers, so finish the review first.</div>`}`;
+
+  document.getElementById("write").onclick = async () => {
+    const project = document.getElementById("project").value.trim();
+    try {
+      await post(`/api/meetings/${enc}/note`, { backend: document.getElementById("backend").value, project: project || null });
+      renderNote(id, body);
+    } catch (err) {
+      toast(err.message);
+    }
+  };
+  const projectInput = document.getElementById("project");
+  projectInput.onchange = async () => {
+    if (!note.exists || job) return;
+    await post(`/api/meetings/${enc}/project`, { name: projectInput.value.trim() });
+    toast(projectInput.value.trim() ? `Filed under ${projectInput.value.trim()}` : "Project cleared");
+    renderNote(id, body);
+  };
+  if (note.exists) {
+    document.getElementById("copy-note").onclick = async () => {
+      await navigator.clipboard.writeText(note.markdown);
+      toast("Copied");
+    };
+    document.getElementById("reveal-note").onclick = () => post(`/api/meetings/${enc}/reveal`, {});
+  }
+  if (job) {
+    pollTimer = setTimeout(() => { if (document.body.contains(body)) renderNote(id, body); }, 1500);
+  }
+}
+
 // people
-async function renderPeople() {
-  const people = await api("/api/people");
+async function renderPeople(editing = null) {
+  const [people, lookups] = await Promise.all([api("/api/people"), api("/api/lookups")]);
   view.innerHTML = `
     <div class="page">
       <h1>People</h1>
-      <div class="sub">Voice profiles stored in data/library.db on this Mac. Renaming updates every past transcript.</div>
+      <div class="sub">Stored in data/library.db on this Mac. Notes use the full name, organization, and teams. Changes update every past transcript and note.</div>
       <table>
-        <tr><th>Name</th><th class="num">Meetings</th><th class="num">Minutes heard</th><th class="num">Profile audio</th><th>Sources</th><th>Last heard</th><th></th></tr>
-        ${people.map(p => `<tr>
-          <td data-name="${p.person_id}">${esc(p.name)}</td>
+        <tr><th>Name</th><th>Full name</th><th>Organization</th><th>Teams</th><th class="num">Meetings</th><th class="num">Voice clips</th><th>Last heard</th><th></th></tr>
+        ${people.map(p => p.person_id === editing ? editRow(p) : `<tr>
+          <td>${esc(p.name)}</td>
+          <td>${esc(p.full_name)}</td>
+          <td>${esc(p.organization || "")}</td>
+          <td>${esc(p.teams || "")}</td>
           <td class="num">${p.meetings}</td>
-          <td class="num">${Math.round(p.minutes_heard)}</td>
-          <td class="num">${p.entries} clip${p.entries === 1 ? "" : "s"}, ${Math.round(p.profile_seconds / 60 * 10) / 10} min</td>
-          <td>${esc((p.sources || "").replaceAll(",", ", "))}</td>
+          <td class="num" title="${Math.round(p.profile_seconds / 60 * 10) / 10} min of audio">${p.entries}</td>
           <td>${esc(p.last_heard || "")}</td>
-          <td><button class="link" data-rename="${p.person_id}">Rename</button></td>
+          <td><button class="link" data-edit="${p.person_id}">Edit</button></td>
         </tr>`).join("")}
       </table>
+      <datalist id="org-list">${lookups.organizations.map(o => `<option value="${esc(o)}">`).join("")}</datalist>
+      <datalist id="team-list">${lookups.teams.map(t => `<option value="${esc(t)}">`).join("")}</datalist>
     </div>`;
-  view.querySelectorAll("[data-rename]").forEach(b => b.onclick = () => {
-    const cell = view.querySelector(`[data-name="${b.dataset.rename}"]`);
-    const old = cell.textContent;
-    cell.innerHTML = `<input type="text" value="${esc(old)}" style="width:140px"> <button class="btn small">Save</button>`;
-    const input = cell.querySelector("input");
-    input.focus();
-    const save = async () => {
-      const name = input.value.trim();
-      if (!name || name === old) return renderPeople();
-      try {
-        await post(`/api/people/${b.dataset.rename}/rename`, { name });
-        toast(`Renamed to ${name}. Transcripts updated.`);
-      } catch (err) {
-        toast(err.message);
-      }
+  view.querySelectorAll("[data-edit]").forEach(b => b.onclick = () => renderPeople(b.dataset.edit));
+  if (editing) bindEdit(people.find(p => p.person_id === editing));
+}
+
+function editRow(p) {
+  const teams = p.teams ? p.teams.split(", ") : [];
+  return `<tr class="editing"><td colspan="8">
+    <div class="form">
+      <label>Name<input type="text" id="e-name" value="${esc(p.name)}"></label>
+      <label>Full name<input type="text" id="e-full" value="${esc(p.full_name)}"></label>
+      <label>Organization<input type="text" id="e-org" list="org-list" value="${esc(p.organization || "")}"></label>
+    </div>
+    <div class="form">
+      <label>Teams
+        <span class="chips" id="e-teams">${teams.map(t => `<span class="chip">${esc(t)}<button data-remove="${esc(t)}" title="Remove">x</button></span>`).join("")}
+          <input type="text" id="e-team" list="team-list" placeholder="Add a team, then Enter"></span>
+      </label>
+    </div>
+    <div class="form">
+      <button class="btn primary" id="e-save">Save</button>
+      <button class="btn" id="e-cancel">Cancel</button>
+      <span class="hint">The name is what voice matching shows. The full name goes in notes as a link.</span>
+    </div>
+  </td></tr>`;
+}
+
+function bindEdit(p) {
+  let teams = p.teams ? p.teams.split(", ") : [];
+  const chips = document.getElementById("e-teams");
+  const teamInput = document.getElementById("e-team");
+  const drawChips = () => {
+    chips.querySelectorAll(".chip").forEach(c => c.remove());
+    teams.forEach(t => {
+      const chip = document.createElement("span");
+      chip.className = "chip";
+      chip.innerHTML = `${esc(t)}<button title="Remove">x</button>`;
+      chip.querySelector("button").onclick = () => { teams = teams.filter(x => x !== t); drawChips(); };
+      chips.insertBefore(chip, teamInput);
+    });
+  };
+  const addTeam = () => {
+    const team = teamInput.value.trim();
+    if (team && !teams.some(t => t.toLowerCase() === team.toLowerCase())) teams.push(team);
+    teamInput.value = "";
+    drawChips();
+  };
+  drawChips();
+  teamInput.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); addTeam(); } };
+  teamInput.onchange = addTeam;
+  document.getElementById("e-cancel").onclick = () => renderPeople();
+  document.getElementById("e-save").onclick = async () => {
+    addTeam();
+    const name = document.getElementById("e-name").value.trim();
+    try {
+      if (name && name !== p.name) await post(`/api/people/${p.person_id}/rename`, { name });
+      await post(`/api/people/${p.person_id}/details`, {
+        full_name: document.getElementById("e-full").value.trim(),
+        organization: document.getElementById("e-org").value.trim(),
+        teams
+      });
+      toast("Saved. Transcripts and notes updated.");
       renderPeople();
-    };
-    cell.querySelector("button").onclick = save;
-    input.onkeydown = e => { if (e.key === "Enter") save(); if (e.key === "Escape") renderPeople(); };
-  });
+    } catch (err) {
+      toast(err.message);
+    }
+  };
 }
 
 // main
 function route() {
   clearInterval(pollTimer);
+  clearTimeout(pollTimer);
   stopAudio();
   player.ontimeupdate = null;
-  const [, page, id] = location.hash.split("/");
+  const [, page, id, tab] = location.hash.split("/");
   document.querySelectorAll("[data-nav]").forEach(a => a.classList.toggle(
     "active", a.dataset.nav === (page === "people" ? "people" : "inbox")));
   const run = page === "review" ? renderReview(decodeURIComponent(id))
-    : page === "transcript" ? renderTranscript(decodeURIComponent(id))
+    : page === "transcript" ? renderTranscript(decodeURIComponent(id), tab === "note" ? "note" : "transcript")
     : page === "people" ? renderPeople()
     : renderInbox();
   run.catch(err => { view.innerHTML = `<div class="page"><div class="card">Something went wrong: ${esc(err.message)}</div></div>`; });

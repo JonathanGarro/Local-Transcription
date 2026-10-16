@@ -5,6 +5,9 @@ usage:
     uv run manage_profiles.py show "Priya"
     uv run manage_profiles.py rename "Katherine" "Kathryn"       # updates every past transcript
     uv run manage_profiles.py merge "Pri" "Priya"            # fold the first person into the second
+    uv run manage_profiles.py set "Maya" --full-name "Maya Chen" --org "Northwind Foundation" --team "Operations Team"
+    uv run manage_profiles.py projects                         # list projects
+    uv run manage_profiles.py projects --add "Customer Dashboard"
     uv run manage_profiles.py remove-entry 3f9a1c2b7d
     uv run manage_profiles.py delete "Priya"
 """
@@ -37,6 +40,14 @@ def main():
     merge = sub.add_parser("merge", help="merge the first person into the second")
     merge.add_argument("source")
     merge.add_argument("target")
+    details = sub.add_parser("set", help="set the full name, organization, and teams used in notes")
+    details.add_argument("name")
+    details.add_argument("--full-name")
+    details.add_argument("--org", help="organization, blank to clear")
+    details.add_argument("--team", action="append", help="repeat for several teams, replaces the current teams")
+    details.add_argument("--no-teams", action="store_true", help="clear every team")
+    projects = sub.add_parser("projects", help="list or add projects")
+    projects.add_argument("--add")
     remove = sub.add_parser("remove-entry", help="delete one entry by id")
     remove.add_argument("entry_id")
     delete = sub.add_parser("delete", help="delete a person and all their voice entries")
@@ -50,7 +61,9 @@ def main():
                 print("no people yet")
                 return
             people["profile_seconds"] = people["profile_seconds"].round()
-            print(people.drop(columns=["person_id", "created"]).to_string(index=False, na_rep=""))
+            columns = ["name", "full_name", "organization", "teams", "entries", "profile_seconds",
+                       "meetings", "minutes_heard", "last_heard"]
+            print(people[columns].to_string(index=False, na_rep=""))
         elif args.command == "show":
             table = library.entry_similarities(person(args.name))
             if table.empty:
@@ -64,6 +77,18 @@ def main():
         elif args.command == "merge":
             pipeline.merge_people(person(args.source), person(args.target))
             print(f"merged {args.source} into {args.target} and updated their transcripts")
+        elif args.command == "set":
+            person_id = person(args.name)
+            teams = [] if args.no_teams else args.team
+            library.set_person_details(person_id, full_name=args.full_name, organization=args.org, teams=teams)
+            pipeline.rerender_people([person_id])
+            details = library.person_details(person_id)
+            print(f"{details['full_name']}, {details['organization'] or 'no organization'}, "
+                  f"teams: {', '.join(details['teams']) or 'none'}")
+        elif args.command == "projects":
+            if args.add:
+                library.ensure_project(args.add)
+            print("\n".join(library.lookup_names("projects")) or "no projects yet")
         elif args.command == "remove-entry":
             name = library.remove_entry(args.entry_id)
             print(f"removed {args.entry_id} from {name}" if name else f"no entry {args.entry_id}")

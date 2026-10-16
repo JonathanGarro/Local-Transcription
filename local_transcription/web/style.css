@@ -208,3 +208,42 @@ td.num, th.num { text-align: right; }
   border-radius: 8px;
   font-size: 13px;
 }
+
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 18px; }
+.tabs a { color: var(--muted); padding: 6px 12px; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tabs a.active { color: var(--text); border-bottom-color: var(--accent); }
+.form { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; margin-bottom: 10px; }
+.form label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 12.5px; }
+.form input[type=text], .form select {
+  border: 1px solid var(--line);
+  background: var(--bg);
+  border-radius: 7px;
+  padding: 5px 10px;
+  min-width: 200px;
+  color: var(--text);
+  font-size: 14px;
+}
+pre.note {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  white-space: pre-wrap;
+  font: 12.5px/1.5 ui-monospace, Menlo, monospace;
+  tab-size: 4;
+}
+tr.editing td { background: var(--accent-soft); }
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  border-radius: 7px;
+  padding: 4px 6px;
+  min-width: 420px;
+}
+.chips input[type=text] { border: none; background: none; min-width: 180px; padding: 2px 4px; outline: none; }
+.chip { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 1px 4px 1px 8px; color: var(--text); font-size: 13px; }
+.chip button { border: none; background: none; color: var(--muted); cursor: pointer; padding: 0 4px; }

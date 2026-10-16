@@ -4,6 +4,7 @@ jobs never compete for the gpu.
 """
 
 import io
+import json
 import os
 import queue
 import subprocess
@@ -19,7 +20,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from local_transcription import audio, library, pipeline
+from local_transcription import audio, library, notes, pipeline
 
 # config
 BASE_DIR = Path(__file__).parent.parent
@@ -30,6 +31,9 @@ CHANNELS = {"left": 0, "right": 1}
 # progress messages from pipeline.run, in order, mapped to a share of the job
 STEPS = {"analyzing audio": 0.02, "diarizing": 0.10, "transcribing": 0.35,
          "transcribing mic": 0.75, "matching speakers": 0.88}
+# note jobs, the token count moves the bar between writing and done
+NOTE_STEPS = {"summarizing": 0.05, "loading": 0.10, "sending": 0.30, "writing the summary": 0.25}
+NOTE_EXPECTED_TOKENS = 1500
 
 
 # helpers
@@ -77,9 +81,16 @@ class Jobs:
         threading.Thread(target=self._work, daemon=True).start()
 
     def add(self, path, source_type):
-        job = {"job_id": uuid.uuid4().hex[:8], "file": path.name, "path": str(path),
-               "source_type": source_type, "status": "queued", "step": "waiting",
-               "progress": 0.0, "error": None, "meeting_id": None}
+        return self._queue({"kind": "transcribe", "file": path.name, "path": str(path),
+                            "source_type": source_type, "meeting_id": None})
+
+    def add_note(self, meeting_id, backend, project):
+        return self._queue({"kind": "note", "file": f"Note for {meeting_id}", "meeting_id": meeting_id,
+                            "backend": backend, "project": project})
+
+    def _queue(self, fields):
+        job = {"job_id": uuid.uuid4().hex[:8], "status": "queued", "step": "waiting",
+               "progress": 0.0, "error": None, **fields}
         with self.lock:
             self.items.append(job)
         self.queue.put(job)
@@ -101,29 +112,48 @@ class Jobs:
         while True:
             job = self.queue.get()
             self._update(job, status="processing", step="starting")
-
-            def progress(message, job=job):
-                share = _step_share(message.strip())
-                if message.startswith("  "):
-                    self._update(job, detail=message.strip())
-                elif share is not None:
-                    self._update(job, step=message, progress=share)
-
             try:
-                source_type = job["source_type"]
-                if source_type == "auto":
-                    info = audio.analyze(job["path"])
-                    source_type = "zoom" if audio.is_split(info) else "plaud" if info["channels"] == 1 else "other"
-                    self._update(job, source_type=source_type)
-                out_dir, speakers, review = pipeline.run(
-                    job["path"], source_type=source_type, progress=progress,
-                    mic_channel=CHANNELS.get(os.environ.get("MIC_CHANNEL", "left"), 0),
-                    owner=os.environ.get("MIC_OWNER"))
-                self._update(job, status="done", step="needs review" if review else "done",
-                             progress=1.0, meeting_id=out_dir.name)
+                if job["kind"] == "note":
+                    self._note(job)
+                else:
+                    self._transcribe(job)
             except Exception as err:
                 traceback.print_exc()
                 self._update(job, status="failed", step="failed", error=str(err) or type(err).__name__)
+
+    def _transcribe(self, job):
+        def progress(message):
+            share = _step_share(message.strip())
+            if message.startswith("  "):
+                self._update(job, detail=message.strip())
+            elif share is not None:
+                self._update(job, step=message, progress=share)
+
+        source_type = job["source_type"]
+        if source_type == "auto":
+            info = audio.analyze(job["path"])
+            source_type = "zoom" if audio.is_split(info) else "plaud" if info["channels"] == 1 else "other"
+            self._update(job, source_type=source_type)
+        out_dir, speakers, review = pipeline.run(
+            job["path"], source_type=source_type, progress=progress,
+            mic_channel=CHANNELS.get(os.environ.get("MIC_CHANNEL", "left"), 0),
+            owner=os.environ.get("MIC_OWNER"))
+        self._update(job, status="done", step="needs review" if review else "done",
+                     progress=1.0, meeting_id=out_dir.name)
+
+    def _note(self, job):
+        def progress(message):
+            text = message.strip()
+            if text.endswith("tokens written"):
+                written = int(text.split()[0])
+                self._update(job, detail=text, progress=min(0.95, 0.25 + 0.7 * written / NOTE_EXPECTED_TOKENS))
+                return
+            share = next((v for k, v in NOTE_STEPS.items() if text.startswith(k)), None)
+            self._update(job, step=text, **({"progress": share} if share is not None else {}))
+
+        pipeline.write_note(pipeline.meeting_dir(job["meeting_id"]), backend=job["backend"],
+                            project=job["project"], progress=progress)
+        self._update(job, status="done", step="done", progress=1.0)
 
 
 class ApplyRequest(BaseModel):
@@ -135,6 +165,18 @@ class ApplyRequest(BaseModel):
 
 class NameRequest(BaseModel):
     name: str
+
+
+class NoteRequest(BaseModel):
+    backend: str = "local"
+    # None lets the model suggest one of the library's projects
+    project: str | None = None
+
+
+class DetailsRequest(BaseModel):
+    full_name: str = ""
+    organization: str = ""
+    teams: list[str] = []
 
 
 # main
@@ -251,6 +293,48 @@ def create_app():
     def reveal(meeting_id: str):
         subprocess.run(["open", "-R", str(_meeting_dir(meeting_id) / "transcript.md")], check=False)
         return {"ok": True}
+
+    @app.get("/api/meetings/{meeting_id}/note")
+    def note(meeting_id: str):
+        out_dir = _meeting_dir(meeting_id)
+        path, summary = out_dir / "note.md", out_dir / "note.json"
+        running = [j for j in jobs.snapshot() if j.get("kind") == "note" and j["meeting_id"] == meeting_id
+                   and j["status"] in ("queued", "processing")]
+        info = json.loads(summary.read_text()) if summary.exists() else {}
+        return {"exists": path.exists(), "markdown": path.read_text() if path.exists() else "",
+                "path": str(path.relative_to(BASE_DIR)), "project": library.meeting_project(meeting_id),
+                "backend": info.get("backend"), "model": info.get("model"), "created": info.get("created"),
+                "job": running[0] if running else None}
+
+    @app.post("/api/meetings/{meeting_id}/note")
+    def write_note(meeting_id: str, request: NoteRequest):
+        _meeting_dir(meeting_id)
+        if request.backend not in notes.BACKENDS:
+            raise HTTPException(400, f"unknown backend {request.backend}")
+        if request.backend == "claude" and not os.environ.get("ANTHROPIC_API_KEY"):
+            raise HTTPException(400, "add ANTHROPIC_API_KEY to .env and restart the app to use Claude")
+        project = request.project.strip() if request.project and request.project.strip() else None
+        return jobs.add_note(meeting_id, request.backend, project)
+
+    @app.post("/api/meetings/{meeting_id}/project")
+    def project(meeting_id: str, request: NameRequest):
+        pipeline.set_project(_meeting_dir(meeting_id), request.name)
+        return {"project": library.meeting_project(meeting_id)}
+
+    @app.get("/api/lookups")
+    def lookups():
+        return {"teams": library.lookup_names("teams"), "organizations": library.lookup_names("organizations"),
+                "projects": library.lookup_names("projects"), "default_backend": notes.default_backend(),
+                "claude_ready": bool(os.environ.get("ANTHROPIC_API_KEY"))}
+
+    @app.post("/api/people/{person_id}/details")
+    def details(person_id: str, request: DetailsRequest):
+        if not library.person_details(person_id):
+            raise HTTPException(404, "no such person")
+        library.set_person_details(person_id, full_name=request.full_name,
+                                   organization=request.organization, teams=request.teams)
+        pipeline.rerender_people([person_id])
+        return library.person_details(person_id)
 
     @app.get("/api/people")
     def people():

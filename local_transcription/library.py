@@ -4,7 +4,9 @@ data/library.db holds who is who. people have stable ids, so renaming a person u
 every past transcript. each voice entry keeps its own vector, plus the meeting and speaker
 it came from, so profiles can be re-averaged or pruned. the profile vector is the mean of
 a person's current entries. deleting a person vacuums the database file so no copy of the
-voice stays on disk.
+voice stays on disk. people also carry a full name, an organization, and any number of teams,
+which meeting notes look up when a person is tagged. projects are a plain list to file
+meetings under.
 """
 
 import json
@@ -60,6 +62,24 @@ create table if not exists meetings (
     status text,
     updated text
 );
+create table if not exists teams (
+    team_id text primary key,
+    name text not null unique collate nocase
+);
+create table if not exists organizations (
+    org_id text primary key,
+    name text not null unique collate nocase
+);
+create table if not exists person_teams (
+    person_id text not null references people(person_id) on delete cascade,
+    team_id text not null references teams(team_id) on delete cascade,
+    primary key (person_id, team_id)
+);
+create table if not exists projects (
+    project_id text primary key,
+    name text not null unique collate nocase,
+    created text not null
+);
 create table if not exists meeting_speakers (
     meeting_id text not null references meetings(meeting_id) on delete cascade,
     speaker text not null,
@@ -70,6 +90,11 @@ create table if not exists meeting_speakers (
     primary key (meeting_id, speaker)
 );
 """
+# columns added after the first release, applied to older databases on open
+ADDED_COLUMNS = {
+    "people": {"full_name": "text", "org_id": "text references organizations(org_id) on delete set null"},
+    "meetings": {"project_id": "text references projects(project_id) on delete set null"},
+}
 _ready = False
 
 
@@ -105,12 +130,22 @@ def connect():
     try:
         if not _ready:
             con.executescript(SCHEMA)
+            _add_columns(con)
             _ready = True
             _import_legacy(con)
         with con:
             yield con
     finally:
         con.close()
+
+
+def _add_columns(con):
+    for table, columns in ADDED_COLUMNS.items():
+        existing = {row["name"] for row in con.execute(f"pragma table_info({table})")}
+        for column, kind in columns.items():
+            if column not in existing:
+                con.execute(f"alter table {table} add column {column} {kind}")
+    con.commit()
 
 
 def _query(sql, params=()):
@@ -139,7 +174,8 @@ def ensure_person(name, con=None):
     if row:
         return row["person_id"]
     person_id = _new_id()
-    con.execute("insert into people values (?, ?, ?)", (person_id, name, _now()))
+    con.execute("insert into people (person_id, name, created) values (?, ?, ?)",
+                (person_id, name, _now()))
     return person_id
 
 
@@ -152,7 +188,10 @@ def person_names():
 def people_summary():
     """one row per person with entry, meeting, and audio totals."""
     people = _query("""
-        select p.person_id, p.name, p.created,
+        select p.person_id, p.name, p.created, coalesce(p.full_name, p.name) as full_name,
+               o.name as organization,
+               (select group_concat(t.name, ', ') from person_teams pt join teams t using (team_id)
+                 where pt.person_id = p.person_id) as teams,
                (select count(*) from entries e where e.person_id = p.person_id) as entries,
                (select coalesce(sum(seconds), 0) from entries e where e.person_id = p.person_id) as profile_seconds,
                (select group_concat(distinct source_type) from entries e where e.person_id = p.person_id) as sources,
@@ -162,8 +201,82 @@ def people_summary():
                  where ms.person_id = p.person_id) as minutes_heard,
                (select max(m.date) from meeting_speakers ms join meetings m using (meeting_id)
                  where ms.person_id = p.person_id) as last_heard
-        from people p order by p.name collate nocase""")
+        from people p left join organizations o on o.org_id = p.org_id
+        order by p.name collate nocase""")
     return people
+
+
+def _named_id(con, table, id_column, name):
+    # id for a name in a lookup table, creating the row if needed
+    row = con.execute(f"select {id_column} from {table} where name = ?", (name,)).fetchone()
+    if row:
+        return row[id_column]
+    new_id = _new_id()
+    con.execute(f"insert into {table} ({id_column}, name) values (?, ?)", (new_id, name))
+    return new_id
+
+
+def person_details(person_id):
+    """full name, organization, and teams for one person."""
+    with connect() as con:
+        row = con.execute("""select p.person_id, p.name, coalesce(p.full_name, p.name) as full_name,
+                             o.name as organization from people p
+                             left join organizations o on o.org_id = p.org_id
+                             where p.person_id = ?""", (person_id,)).fetchone()
+        if not row:
+            return None
+        teams = [r["name"] for r in con.execute("""select t.name from person_teams pt
+                 join teams t using (team_id) where pt.person_id = ? order by t.name""", (person_id,))]
+    return {**dict(row), "teams": teams}
+
+
+def set_person_details(person_id, full_name=None, organization=None, teams=None):
+    """update the fields notes use. blank values clear them. teams and organizations are
+    created on first use, so tagging a person with a new team adds it to the library."""
+    with connect() as con:
+        if full_name is not None:
+            con.execute("update people set full_name = ? where person_id = ?",
+                        (full_name.strip() or None, person_id))
+        if organization is not None:
+            org_id = _named_id(con, "organizations", "org_id", organization.strip()) if organization.strip() else None
+            con.execute("update people set org_id = ? where person_id = ?", (org_id, person_id))
+        if teams is not None:
+            con.execute("delete from person_teams where person_id = ?", (person_id,))
+            for team in dict.fromkeys(t.strip() for t in teams if t.strip()):
+                con.execute("insert or ignore into person_teams values (?, ?)",
+                            (person_id, _named_id(con, "teams", "team_id", team)))
+
+
+def lookup_names(table):
+    """every name in teams, organizations, or projects, sorted."""
+    if table not in ("teams", "organizations", "projects"):
+        raise ValueError(f"no lookup table {table}")
+    names = _query(f"select name from {table} order by name collate nocase")
+    return list(names["name"]) if len(names) else []
+
+
+def ensure_project(name):
+    with connect() as con:
+        row = con.execute("select project_id from projects where name = ?", (name.strip(),)).fetchone()
+        if row:
+            return row["project_id"]
+        project_id = _new_id()
+        con.execute("insert into projects values (?, ?, ?)", (project_id, name.strip(), _now()))
+    return project_id
+
+
+def set_meeting_project(meeting_id, project_name):
+    """file a meeting under a project, or clear it with a blank name."""
+    project_id = ensure_project(project_name) if project_name and project_name.strip() else None
+    with connect() as con:
+        con.execute("update meetings set project_id = ? where meeting_id = ?", (project_id, meeting_id))
+
+
+def meeting_project(meeting_id):
+    with connect() as con:
+        row = con.execute("""select pr.name from meetings m join projects pr using (project_id)
+                             where m.meeting_id = ?""", (meeting_id,)).fetchone()
+    return row["name"] if row else None
 
 
 def rename_person(person_id, new_name):
@@ -186,6 +299,11 @@ def merge_people(source_id, target_id):
     with connect() as con:
         con.execute("update entries set person_id = ? where person_id = ?", (target_id, source_id))
         con.execute("update meeting_speakers set person_id = ? where person_id = ?", (target_id, source_id))
+        con.execute("""insert or ignore into person_teams select ?, team_id from person_teams
+                       where person_id = ?""", (target_id, source_id))
+        con.execute("""update people set full_name = coalesce(full_name, (select full_name from people
+                       where person_id = ?)), org_id = coalesce(org_id, (select org_id from people
+                       where person_id = ?)) where person_id = ?""", (source_id, source_id, target_id))
         con.execute("delete from people where person_id = ?", (source_id,))
     return affected
 
@@ -284,7 +402,8 @@ def remove_entry(entry_id, meeting_id=None):
 def save_meeting(meeting_id, meta, speakers, status, minutes=None):
     """record a processed meeting and who spoke in it."""
     with connect() as con:
-        con.execute("""insert into meetings values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        con.execute("""insert into meetings (meeting_id, title, date, source_file, source_type,
+                       split, minutes, status, updated) values (?, ?, ?, ?, ?, ?, ?, ?, ?)
                        on conflict(meeting_id) do update set title = excluded.title,
                        date = excluded.date, source_file = excluded.source_file,
                        source_type = excluded.source_type, split = excluded.split,
@@ -303,7 +422,8 @@ def save_meeting(meeting_id, meta, speakers, status, minutes=None):
 
 def meetings():
     """every processed meeting, newest first."""
-    table = _query("select * from meetings order by date desc, updated desc")
+    table = _query("""select m.*, pr.name as project from meetings m
+                      left join projects pr using (project_id) order by m.date desc, m.updated desc""")
     return table
 
 

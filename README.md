@@ -34,7 +34,8 @@ uv run app.py --browser    # or serve on http://127.0.0.1:8765 and use a browser
 - **Inbox:** drop recordings to queue them. One file runs at a time, with live progress. Dropped files are copied into `data/`. A file that was already processed is only re-run if you confirm, because re-running replaces its confirmed names.
 - **Review:** each unknown speaker gets a few short clips with what they said, suggested names with scores, and a name field that searches existing people or creates a new one. You can also mark a speaker as the same person as another speaker (diarization split them), leave a speaker unnamed, or name them without adding the voice to their profile. Identified speakers are collapsed, with a "wrong?" link. Nothing is saved until you press Apply.
 - **Transcript:** click any line to play from there, show the file in Finder, or copy the markdown.
-- **People:** everyone in the library with meetings, minutes heard and profile audio. Renaming a person rewrites every past transcript they appear in.
+- **Note:** writes the meeting note (see below), with a choice of model and project.
+- **People:** everyone in the library with their full name, organization, teams, meetings and voice clips. Edits rewrite every past transcript and note they appear in.
 
 The server listens on 127.0.0.1 only and the page loads nothing from the internet.
 
@@ -114,9 +115,44 @@ GAL prep = gal prep, galprep
 
 Every term, plus every profile name, is passed to Whisper as a spelling hint on each 28 second chunk. Variants after `=` are replaced with the term in the final transcript (case-insensitive, whole words), which catches anything the hint misses. The file is under `data/`, so it is never committed.
 
+## Meeting notes
+
+```
+uv run summarize.py "outputs/2026-10-13 - Dashboard Review"
+uv run summarize.py "outputs/2026-10-13 - Dashboard Review" --backend claude --project "Customer Dashboard"
+```
+
+Writes `note.md` in the Obsidian layout: frontmatter, Agenda, Discussion, Transcript and Action Items. The model writes the title, agenda, discussion and your top three to five action items. Code fills in the rest:
+
+- `people` are the confirmed speakers other than you, as `[[Full Name]]` links
+- `teams` and `organizations` are looked up from those people in the library
+- `project` is the one you choose, or the model's pick from your project list
+- the transcript block is the confirmed transcript as `[Full Name] text` lines, never retyped by the model
+
+Set people's details in the People page, or:
+
+```
+uv run manage_profiles.py set "Maya" --full-name "Maya Chen" --org "Northwind Foundation" --team "Operations Team"
+uv run manage_profiles.py projects --add "Customer Dashboard"
+```
+
+Two backends, chosen per note or with `SUMMARY_BACKEND` in `.env`:
+
+| | local (default) | claude |
+|---|---|---|
+| Model | Qwen3-30B-A3B Instruct, 4-bit MLX (17 GB download) | `claude-opus-5-5`, override with `CLAUDE_MODEL` |
+| Data | nothing leaves the Mac | transcript text goes to the Anthropic API, never audio or voice profiles |
+| Needs | the model in the Hugging Face cache | `ANTHROPIC_API_KEY` in `.env` |
+
+To download the local model once, run with the hub online:
+
+```
+HF_HUB_OFFLINE=0 uv run python -c "from huggingface_hub import snapshot_download; snapshot_download('mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit')"
+```
+
 ## Privacy
 
-`data/`, `outputs/`, and `.env` are gitignored, so audio, transcripts, voice profiles, and the token are never committed. Deleting a person removes their voice entries from `data/library.db`. Each meeting's `speaker_embeddings.npz` in `outputs/` also holds that meeting's voices, so delete the meeting folder too for a complete removal.
+`data/`, `outputs/`, and `.env` are gitignored, so audio, transcripts, voice profiles, and the token are never committed. The only step that can send anything off the Mac is a note written with the claude backend, and only when you choose it. Deleting a person removes their voice entries from `data/library.db`. Each meeting's `speaker_embeddings.npz` in `outputs/` also holds that meeting's voices, so delete the meeting folder too for a complete removal.
 
 ## Layout
 
@@ -126,6 +162,7 @@ local_transcription/server.py, web/   local api and app pages
 app.py                 open the app window
 transcribe.py          process a recording
 confirm.py             confirm names and grow profiles
+summarize.py           write an obsidian meeting note
 enroll.py              add a voice sample
 manage_profiles.py     list, prune, delete profiles
 check_setup.py         verify ffmpeg, token, and models

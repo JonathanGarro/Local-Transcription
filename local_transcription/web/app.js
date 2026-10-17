@@ -840,7 +840,7 @@ async function renderPeople(editing = null) {
       <table>
         <tr><th>Name</th><th>Organizations</th><th>Teams</th><th class="num">Meetings</th><th class="num">Voice clips</th><th>Last heard</th><th></th></tr>
         ${people.map(p => p.person_id === editing ? editRow(p) : `<tr>
-          <td>${esc(p.name)}</td>
+          <td><button class="link expand" data-person="${p.person_id}" aria-expanded="false">${esc(p.name)}</button></td>
           <td>${esc(p.organizations || "")}</td>
           <td>${esc(p.teams || "")}</td>
           <td class="num">${p.meetings}</td>
@@ -853,7 +853,39 @@ async function renderPeople(editing = null) {
       <datalist id="team-list">${lookups.teams.map(t => `<option value="${esc(t)}">`).join("")}</datalist>
     </div>`;
   view.querySelectorAll("[data-edit]").forEach(b => b.onclick = () => renderPeople(b.dataset.edit));
+  view.querySelectorAll("[data-person]").forEach(b => b.onclick = () => togglePerson(b));
   if (editing) bindEdit(people.find(p => p.person_id === editing));
+}
+
+const TAGGED = { confirmed: "confirmed", matched: "voice match", mic: "mic", imported: "from note", skipped: "left unnamed" };
+
+// the meetings a person is tagged in, in a row that opens under theirs
+async function togglePerson(button) {
+  const row = button.closest("tr");
+  if (row.nextElementSibling?.classList.contains("meetings-row")) {
+    row.nextElementSibling.remove();
+    button.setAttribute("aria-expanded", "false");
+    return;
+  }
+  button.setAttribute("aria-expanded", "true");
+  const detail = document.createElement("tr");
+  detail.className = "meetings-row";
+  detail.innerHTML = `<td colspan="7"><div class="empty">Loading</div></td>`;
+  row.after(detail);
+  const meetings = await api(`/api/people/${button.dataset.person}/meetings`);
+  // imported notes without a processed recording only have the note to open
+  const link = m => meetingLink(m.source_type === "obsidian" ? "imported" : "transcript", m.meeting_id);
+  detail.firstElementChild.innerHTML = meetings.length ? `<table class="inner">
+      <tr><th>Date</th><th>Meeting</th><th>Project</th><th>Tagged by</th><th class="num">Minutes</th></tr>
+      ${meetings.map(m => `<tr>
+        <td>${esc(m.date || "")}</td>
+        <td><a href="${link(m)}">${esc(m.title || m.meeting_id)}</a>${m.meeting_status === "needs review"
+          ? ` <span class="badge review">needs review</span>` : ""}</td>
+        <td>${esc(m.project || "")}</td>
+        <td>${esc((m.status || "").split(",").map(s => TAGGED[s] || s).join(", "))}</td>
+        <td class="num">${m.minutes ? Math.round(m.minutes * 10) / 10 : ""}</td>
+      </tr>`).join("")}
+    </table>` : `<div class="empty">Not tagged in any meetings yet</div>`;
 }
 
 function editRow(p) {

@@ -493,6 +493,18 @@ def meetings_for_person(person_id):
     return list(table["meeting_id"]) if len(table) else []
 
 
+def person_meetings(person_id):
+    """the meetings a person is tagged in, newest first, with how they were tagged."""
+    return _query("""
+        select m.meeting_id, m.title, m.date, m.source_type, m.status as meeting_status, pr.name as project,
+               group_concat(distinct ms.status) as status, sum(ms.minutes) as minutes
+        from meeting_speakers ms join meetings m using (meeting_id)
+        left join projects pr using (project_id)
+        where ms.person_id = ?
+        group by m.meeting_id
+        order by m.date desc, m.updated desc""", (person_id,))
+
+
 def delete_meeting(meeting_id):
     with connect() as con:
         con.execute("delete from meetings where meeting_id = ?", (meeting_id,))

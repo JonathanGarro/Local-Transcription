@@ -491,6 +491,10 @@ def create_app():
     def people():
         return _records(library.people_summary())
 
+    @app.get("/api/people/{person_id}/meetings")
+    def person_meetings(person_id: str):
+        return _records(library.person_meetings(person_id))
+
     @app.post("/api/people/{person_id}/rename")
     def rename(person_id: str, request: NameRequest):
         try:

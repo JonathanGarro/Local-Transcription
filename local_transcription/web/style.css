@@ -338,3 +338,7 @@ tr.editing td { background: var(--accent-soft); }
   cursor: pointer;
 }
 .form .chips input[type=text] { height: auto; }
+.expand { text-align: left; font: inherit; }
+tr.meetings-row > td { padding: 0; }
+table.inner { font-size: 13px; border: none; border-radius: 0; background: var(--bg); }
+table.inner td, table.inner th { padding: 6px 14px; }

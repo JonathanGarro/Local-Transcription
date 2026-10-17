@@ -178,6 +178,15 @@ uv run import_obsidian.py    # reads MEETING_NOTES_DIR from .env
 
 Each note becomes an archived meeting with no recording. The note stays in the vault and the app reads it from there, so edit it in Obsidian. The `people` and `project` in its frontmatter are linked to the library, so the People page counts those meetings too. Names the library does not know are listed and left unlinked. Notes the app sent itself are skipped, and running it again only adds new notes.
 
+Imported notes that link to a Plaud recording can then be reprocessed here, so their voices can be confirmed and added to profiles. This needs the Plaud CLI (`@plaud-ai/cli` on npm), logged in:
+
+```
+uv run import_plaud.py "2026-10-13 - Customer Dashboard Review with Maya"
+uv run import_plaud.py --next 5    # the newest imported meetings not yet processed
+```
+
+The audio is downloaded into `data/` and runs through the usual pipeline into the same meeting, which keeps its Obsidian note and stays in the Archive with a Review button. Review suggests names from the note first: Plaud's transcript has timestamps and Plaud's speaker labels, the note has the same text with the names you fixed, so lining the two up names each Plaud label, and timing carries that name to the speakers found here. Labels the note leaves as `Speaker 3` fall back to voice matching.
+
 ## Privacy
 
 `data/`, `outputs/`, and `.env` are gitignored, so audio, transcripts, voice profiles, and the token are never committed. The only step that can send anything off the Mac is a note written with the claude backend, and only when you choose it. Deleting a person removes their voice entries from `data/library.db`. Each meeting's `speaker_embeddings.npz` in `outputs/` also holds that meeting's voices, so delete the meeting folder too for a complete removal.
@@ -192,6 +201,7 @@ transcribe.py          process a recording
 confirm.py             confirm names and grow profiles
 summarize.py           write an obsidian meeting note
 import_obsidian.py     import older obsidian notes into the archive
+import_plaud.py        reprocess imported notes from their plaud recordings
 enroll.py              add a voice sample
 manage_profiles.py     list, prune, delete profiles
 check_setup.py         verify ffmpeg, token, and models

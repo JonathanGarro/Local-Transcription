@@ -161,9 +161,10 @@ class Jobs:
         self.auto_note(out_dir.name)
 
     def auto_note(self, meeting_id):
-        """summarize a meeting once every speaker is named, unless it has a note or one is queued."""
+        """summarize a meeting once every speaker is named, unless it has a note or one is queued.
+        a meeting imported from obsidian already has its note there."""
         out_dir = pipeline.OUTPUT_DIR / meeting_id
-        if (out_dir / "note.json").exists():
+        if (out_dir / "note.json").exists() or library.meeting_sent_path(meeting_id):
             return None
         row = library.meetings().query("meeting_id == @meeting_id")
         if not len(row) or row["status"].iloc[0] != "done":
@@ -295,8 +296,8 @@ def create_app():
         return {"meeting_id": meeting_id, "title": info.get("title"), "date": info.get("date"),
                 "status": info.get("status"), "minutes": info.get("minutes"),
                 "source_file": info.get("source_file"), "split": bool(meta.get("split")),
-                "archived": info.get("archived"),
-                "owner": meta.get("owner"), "speakers": result}
+                "archived": info.get("archived"), "sent_path": info.get("sent_path"),
+                "note": (out_dir / "note.json").exists(), "owner": meta.get("owner"), "speakers": result}
 
     @app.get("/api/meetings/{meeting_id}/clip")
     def clip(meeting_id: str, speaker: str, start: float, end: float):
@@ -429,8 +430,8 @@ def create_app():
 
     @app.get("/api/meetings/{meeting_id}/imported")
     def imported(meeting_id: str):
-        # a meeting imported from obsidian has no folder here, its note is read from the vault
-        row = library.meetings().query("meeting_id == @meeting_id and source_type == 'obsidian'")
+        # a meeting imported from obsidian has its note only in the vault, so it is read from there
+        row = library.meetings().query("meeting_id == @meeting_id and sent_path.notna()")
         if not len(row):
             raise HTTPException(404, f"no imported meeting named {meeting_id}")
         info = _records(row)[0]
@@ -438,7 +439,8 @@ def create_app():
         people = library.meeting_speaker_rows(meeting_id)
         names = library.person_names()
         return {**info, "people": sorted(names[p] for p in people.get("person_id", []) if p in names),
-                "markdown": path.read_text() if path.exists() else None}
+                "markdown": path.read_text() if path.exists() else None,
+                "processed": (pipeline.OUTPUT_DIR / meeting_id / "run.json").exists()}
 
     @app.post("/api/meetings/{meeting_id}/open-obsidian")
     def open_obsidian(meeting_id: str):

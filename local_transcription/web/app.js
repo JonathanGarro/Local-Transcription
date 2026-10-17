@@ -231,7 +231,8 @@ async function renderArchive() {
       <div class="list" id="archive-list"></div>
     </div>`;
   const list = document.getElementById("archive-list");
-  // imported notes have no recording, so only the note opens
+  // imported notes have no recording, so only the note opens. once their recording is
+  // processed they have a transcript and speakers, but the note stays the obsidian one
   const row = m => m.source_type === "obsidian" ? `<div class="item">
       <div class="main">
         <div class="title">${esc(m.title || m.meeting_id)}</div>
@@ -241,11 +242,15 @@ async function renderArchive() {
     </div>` : `<div class="item">
       <div class="main">
         <div class="title">${esc(m.title || m.meeting_id)}</div>
-        <div class="meta">${esc(m.date || "")} · sent ${esc((m.archived || "").slice(0, 10))} as ${esc((m.sent_path || "").split("/").pop())}${m.project ? ` · ${esc(m.project)}` : ""}</div>
+        <div class="meta">${esc(m.date || "")} · ${m.note ? `sent ${esc((m.archived || "").slice(0, 10))} as ${esc((m.sent_path || "").split("/").pop())}`
+          : "imported from Obsidian, recording processed here"}${m.project ? ` · ${esc(m.project)}` : ""}</div>
       </div>
+      ${m.status !== "done" ? `<span class="badge review">needs review</span>
+        <a class="btn small" href="${meetingLink("review", m.meeting_id)}">Review</a>` : ""}
       <a class="btn small" href="${meetingLink("transcript", m.meeting_id)}">Transcript</a>
-      <a class="btn small" href="${meetingLink("transcript", m.meeting_id)}/note">Note</a>
-      <button class="btn small" data-unarchive="${esc(m.meeting_id)}">Move to Inbox</button>
+      ${m.note ? `<a class="btn small" href="${meetingLink("transcript", m.meeting_id)}/note">Note</a>
+        <button class="btn small" data-unarchive="${esc(m.meeting_id)}">Move to Inbox</button>`
+        : `<a class="btn small" href="${meetingLink("imported", m.meeting_id)}">Note</a>`}
     </div>`;
   const draw = () => {
     const query = (document.getElementById("archive-filter")?.value || "").trim().toLowerCase();
@@ -275,7 +280,9 @@ async function renderImported(id) {
       <div class="tools">
         <button class="btn small" id="open-obsidian">Open in Obsidian</button>
         <button class="btn small" id="copy-note" ${m.markdown == null ? "disabled" : ""}>Copy note</button>
-        <span class="hint">Imported from Obsidian with no recording. Edit it in Obsidian.</span>
+        ${m.processed ? `<a class="btn small" href="${meetingLink("transcript", id)}">Transcript</a>
+          <a class="btn small" href="${meetingLink("review", id)}">Speakers</a>` : ""}
+        <span class="hint">${m.processed ? "Imported from Obsidian, recording processed here." : "Imported from Obsidian with no recording."} Edit the note in Obsidian.</span>
       </div>
       ${m.markdown == null ? `<div class="card">The note was moved or deleted in Obsidian: ${esc(m.sent_path)}</div>`
         : `<textarea class="note" id="note-text" readonly>${esc(m.markdown)}</textarea>`}
@@ -338,7 +345,7 @@ function speakerCard(spk) {
     </div>`).join("");
   const others = review.meeting.speakers.filter(s => s.speaker !== spk.speaker && s.speaker !== "MIC");
   const suggestions = spk.suggestions.filter(s => s.score > 0.3).map(s =>
-    `<button class="btn small ${d?.type === "name" && d.name === s.name ? "on" : ""}" data-suggest="${spk.speaker}" data-name="${esc(s.name)}">${esc(s.name)} <span class="hint">${pct(s.score)}</span></button>`).join("");
+    `<button class="btn small ${d?.type === "name" && d.name === s.name ? "on" : ""}" data-suggest="${spk.speaker}" data-name="${esc(s.name)}">${esc(s.name)} <span class="hint">${s.source === "note" ? `from note ${pct(s.score)}` : pct(s.score)}</span></button>`).join("");
   const typed = d?.type === "name" ? d.name : "";
   return `<div class="card ${d ? "decided" : ""}" id="card-${spk.speaker}">
     ${head}
@@ -501,7 +508,7 @@ async function renderTranscript(id, tab = "transcript") {
       <div class="sub">${esc(meeting.date || "")} · ${esc(meeting.speakers.map(s => s.label).join(", "))}</div>
       <div class="tabs">
         <a href="${meetingLink("transcript", id)}" class="${tab === "transcript" ? "active" : ""}">Transcript</a>
-        <a href="${meetingLink("transcript", id)}/note" class="${tab === "note" ? "active" : ""}">Note</a>
+        <a href="${!meeting.note && meeting.sent_path ? meetingLink("imported", id) : `${meetingLink("transcript", id)}/note`}" class="${tab === "note" ? "active" : ""}">Note</a>
         <a href="${meetingLink("review", id)}">Speakers</a>
       </div>
       <div id="tab"></div>

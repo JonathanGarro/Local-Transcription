@@ -23,6 +23,8 @@ OUTPUT_DIR = Path(__file__).parent.parent / "outputs"
 ORIGINAL_NOTE = "note_original.md"
 # exactly what was last sent to or loaded from obsidian, to tell which side changed since
 SENT_NOTE = "note_sent.md"
+# names an imported meeting's obsidian note suggests for each speaker, see plaud.py
+NOTE_NAMES = "note_names.json"
 PLAYBACK_WAVS = ["audio_16k.wav", "mic_16k.wav", "remote_16k.wav"]
 # clips load in parallel, so only one request rebuilds a meeting's audio
 _audio_lock = threading.Lock()
@@ -483,17 +485,23 @@ def clips(out_dir, speaker, count=CLIP_COUNT):
 
 
 def suggestions(out_dir, speaker, count=3):
-    """closest profiles for one speaker, scored against the library as it is now."""
+    """closest profiles for one speaker, scored against the library as it is now. a name
+    suggested by the meeting's obsidian note comes first."""
     out_dir = Path(out_dir)
     meta, _, _, vectors = load_run(out_dir)
+    from_note = []
+    note_names = out_dir / NOTE_NAMES
+    if note_names.exists() and speaker in (suggested := json.loads(note_names.read_text())):
+        from_note = [{"name": suggested[speaker]["name"], "score": suggested[speaker]["share"], "source": "note"}]
     if speaker not in vectors:
-        return []
+        return from_note
     known = library.load_profiles()
     owner = meta.get("owner")
     if meta.get("split") and speaker != MIC_SPEAKER:
         known = {n: p for n, p in known.items() if n != owner}
-    scores = sorted(((float(vectors[speaker] @ vec), name) for name, (vec, _) in known.items()), reverse=True)
-    return [{"name": name, "score": round(score, 3)} for score, name in scores[:count]]
+    scores = sorted(((float(vectors[speaker] @ vec), name) for name, (vec, _) in known.items()
+                     if not any(s["name"] == name for s in from_note)), reverse=True)
+    return from_note + [{"name": name, "score": round(score, 3)} for score, name in scores[:count]]
 
 
 # notes

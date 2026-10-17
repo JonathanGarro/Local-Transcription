@@ -427,9 +427,21 @@ def create_app():
         pipeline.sync_from_vault(_meeting_dir(meeting_id), force=True)
         return note(meeting_id)
 
+    @app.get("/api/meetings/{meeting_id}/imported")
+    def imported(meeting_id: str):
+        # a meeting imported from obsidian has no folder here, its note is read from the vault
+        row = library.meetings().query("meeting_id == @meeting_id and source_type == 'obsidian'")
+        if not len(row):
+            raise HTTPException(404, f"no imported meeting named {meeting_id}")
+        info = _records(row)[0]
+        path = Path(info["sent_path"])
+        people = library.meeting_speaker_rows(meeting_id)
+        names = library.person_names()
+        return {**info, "people": sorted(names[p] for p in people.get("person_id", []) if p in names),
+                "markdown": path.read_text() if path.exists() else None}
+
     @app.post("/api/meetings/{meeting_id}/open-obsidian")
     def open_obsidian(meeting_id: str):
-        _meeting_dir(meeting_id)
         path = library.meeting_sent_path(meeting_id)
         if not path or not Path(path).exists():
             raise HTTPException(404, "the note is not in the vault yet, send it first")

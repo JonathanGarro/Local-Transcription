@@ -428,6 +428,19 @@ def save_meeting(meeting_id, meta, speakers, status, minutes=None):
                          _none(row.score), _none(row.minutes)))
 
 
+def save_imported_meeting(meeting_id, title, date, note_path, person_ids):
+    """record a meeting known only from its obsidian note, with no recording. it goes straight
+    to the archive, and the people the note names are linked as its speakers."""
+    with connect() as con:
+        con.execute("""insert into meetings (meeting_id, title, date, source_type, status, updated,
+                       archived, sent_path) values (?, ?, ?, 'obsidian', 'imported', ?, ?, ?)""",
+                    (meeting_id, title, date, _now(), _now(), str(note_path)))
+        for person_id in dict.fromkeys(person_ids):
+            # no diarized speaker ids without a recording, so the person stands in
+            con.execute("""insert into meeting_speakers (meeting_id, speaker, person_id, status)
+                           values (?, ?, ?, 'imported')""", (meeting_id, person_id, person_id))
+
+
 def meetings():
     """every processed meeting, newest first."""
     table = _query("""select m.*, pr.name as project from meetings m

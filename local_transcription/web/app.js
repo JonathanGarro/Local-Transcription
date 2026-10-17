@@ -221,26 +221,73 @@ function crumb(meeting) {
 // archive
 async function renderArchive() {
   const state = await api("/api/state");
-  const sent = state.meetings.filter(m => m.archived).sort((a, b) => (b.archived || "").localeCompare(a.archived || ""));
+  const sent = state.meetings.filter(m => m.archived)
+    .sort((a, b) => (b.date || "").localeCompare(a.date || "") || (b.archived || "").localeCompare(a.archived || ""));
   view.innerHTML = `
     <div class="page">
       <h1>Archive</h1>
-      <div class="sub">Meetings whose notes were sent to Obsidian.</div>
-      <div class="list">${sent.length ? sent.map(m => `<div class="item">
-        <div class="main">
-          <div class="title">${esc(m.title || m.meeting_id)}</div>
-          <div class="meta">${esc(m.date || "")} · sent ${esc((m.archived || "").slice(0, 10))} as ${esc((m.sent_path || "").split("/").pop())}</div>
-        </div>
-        <a class="btn small" href="${meetingLink("transcript", m.meeting_id)}">Transcript</a>
-        <a class="btn small" href="${meetingLink("transcript", m.meeting_id)}/note">Note</a>
-        <button class="btn small" data-unarchive="${esc(m.meeting_id)}">Move to Inbox</button>
-      </div>`).join("") : `<div class="empty">Nothing sent yet</div>`}</div>
+      <div class="sub">Meetings whose notes were sent to Obsidian, and notes imported from it.</div>
+      ${sent.length ? `<div class="tools"><input type="text" id="archive-filter" placeholder="Filter by title or project"></div>` : ""}
+      <div class="list" id="archive-list"></div>
     </div>`;
-  view.querySelectorAll("[data-unarchive]").forEach(b => b.onclick = async () => {
-    await post(`/api/meetings/${encodeURIComponent(b.dataset.unarchive)}/unarchive`, {});
-    toast("Moved to the Inbox");
-    renderArchive();
-  });
+  const list = document.getElementById("archive-list");
+  // imported notes have no recording, so only the note opens
+  const row = m => m.source_type === "obsidian" ? `<div class="item">
+      <div class="main">
+        <div class="title">${esc(m.title || m.meeting_id)}</div>
+        <div class="meta">${esc(m.date || "")} · imported from Obsidian${m.project ? ` · ${esc(m.project)}` : ""}</div>
+      </div>
+      <a class="btn small" href="${meetingLink("imported", m.meeting_id)}">Note</a>
+    </div>` : `<div class="item">
+      <div class="main">
+        <div class="title">${esc(m.title || m.meeting_id)}</div>
+        <div class="meta">${esc(m.date || "")} · sent ${esc((m.archived || "").slice(0, 10))} as ${esc((m.sent_path || "").split("/").pop())}${m.project ? ` · ${esc(m.project)}` : ""}</div>
+      </div>
+      <a class="btn small" href="${meetingLink("transcript", m.meeting_id)}">Transcript</a>
+      <a class="btn small" href="${meetingLink("transcript", m.meeting_id)}/note">Note</a>
+      <button class="btn small" data-unarchive="${esc(m.meeting_id)}">Move to Inbox</button>
+    </div>`;
+  const draw = () => {
+    const query = (document.getElementById("archive-filter")?.value || "").trim().toLowerCase();
+    const shown = sent.filter(m => !query || `${m.title} ${m.project || ""}`.toLowerCase().includes(query));
+    list.innerHTML = shown.length ? shown.map(row).join("")
+      : `<div class="empty">${sent.length ? "No matches" : "Nothing sent yet"}</div>`;
+    list.querySelectorAll("[data-unarchive]").forEach(b => b.onclick = async () => {
+      await post(`/api/meetings/${encodeURIComponent(b.dataset.unarchive)}/unarchive`, {});
+      toast("Moved to the Inbox");
+      renderArchive();
+    });
+  };
+  const filter = document.getElementById("archive-filter");
+  if (filter) filter.oninput = draw;
+  draw();
+}
+
+// a note imported from obsidian, read from the vault. obsidian is the only copy, so it is not editable here
+async function renderImported(id) {
+  const enc = encodeURIComponent(id);
+  const m = await api(`/api/meetings/${enc}/imported`);
+  view.innerHTML = `
+    <div class="page">
+      <a class="crumb" href="#/archive">Archive</a>
+      <h1>${esc(m.title || id)}</h1>
+      <div class="sub">${esc(m.date || "")}${m.people.length ? ` · ${esc(m.people.join(", "))}` : ""}${m.project ? ` · ${esc(m.project)}` : ""}</div>
+      <div class="tools">
+        <button class="btn small" id="open-obsidian">Open in Obsidian</button>
+        <button class="btn small" id="copy-note" ${m.markdown == null ? "disabled" : ""}>Copy note</button>
+        <span class="hint">Imported from Obsidian with no recording. Edit it in Obsidian.</span>
+      </div>
+      ${m.markdown == null ? `<div class="card">The note was moved or deleted in Obsidian: ${esc(m.sent_path)}</div>`
+        : `<textarea class="note" id="note-text" readonly>${esc(m.markdown)}</textarea>`}
+    </div>`;
+  const text = document.getElementById("note-text");
+  if (text) requestAnimationFrame(() => { text.style.height = `${text.scrollHeight + 2}px`; });
+  document.getElementById("open-obsidian").onclick = () =>
+    post(`/api/meetings/${enc}/open-obsidian`, {}).catch(err => toast(err.message));
+  document.getElementById("copy-note").onclick = async () => {
+    await navigator.clipboard.writeText(m.markdown);
+    toast("Copied");
+  };
 }
 
 function updateCount(meetings) {
@@ -870,9 +917,10 @@ function route() {
   player.ontimeupdate = null;
   const [, page, id, tab] = location.hash.split("/");
   document.querySelectorAll("[data-nav]").forEach(a => a.classList.toggle(
-    "active", a.dataset.nav === (["people", "archive"].includes(page) ? page : "inbox")));
+    "active", a.dataset.nav === (["people", "archive"].includes(page) ? page : page === "imported" ? "archive" : "inbox")));
   const run = page === "review" ? renderReview(decodeURIComponent(id))
     : page === "transcript" ? renderTranscript(decodeURIComponent(id), tab === "note" ? "note" : "transcript")
+    : page === "imported" ? renderImported(decodeURIComponent(id))
     : page === "people" ? renderPeople()
     : page === "archive" ? renderArchive()
     : renderInbox();

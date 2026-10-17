@@ -60,9 +60,11 @@ class Embedder:
         """duration-weighted mean of normalized chunk embeddings over (start, end) spans."""
         from pyannote.core import Segment
 
+        duration = audio["waveform"].shape[-1] / audio["sample_rate"]
         vectors, weights = [], []
         for start, end in spans:
-            for a, b in chunks(start, end):
+            # turn ends rounded past the last sample cannot be cropped
+            for a, b in chunks(start, min(end, duration)):
                 vectors.append(normalize(self.inference.crop(audio, Segment(a, b))))
                 weights.append(b - a)
         if not vectors:
@@ -79,6 +81,8 @@ class Embedder:
     def speakers(self, audio, turns):
         """one embedding per diarized speaker from its longest exclusive turns.
         returns {speaker: (vector, seconds_used)}."""
+        duration = audio["waveform"].shape[-1] / audio["sample_rate"]
+        turns = turns.assign(end=turns["end"].clip(upper=duration))
         turns = turns.assign(seconds=turns["end"] - turns["start"])
         result = {}
         for speaker, group in turns.groupby("speaker"):

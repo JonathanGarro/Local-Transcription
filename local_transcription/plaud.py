@@ -188,6 +188,23 @@ def suggest_from_note(out_dir, note_path):
     return suggested
 
 
+def check_mic(out_dir):
+    """in split mode the mic side is taken to be the owner. when the note says someone else
+    spoke there, such as a colleague sharing the mic, it goes back to review instead. returns
+    the note's name for it then, else None."""
+    out_dir = Path(out_dir)
+    note_names = out_dir / pipeline.NOTE_NAMES
+    meta, segments, speakers, _ = pipeline.load_run(out_dir)
+    suggested = json.loads(note_names.read_text()).get(pipeline.MIC_SPEAKER) if note_names.exists() else None
+    row = speakers["speaker"] == pipeline.MIC_SPEAKER
+    if not suggested or not row.any() or speakers.loc[row, "status"].iloc[0] != "mic" \
+            or suggested["name"] == speakers.loc[row, "name"].iloc[0]:
+        return None
+    speakers.loc[row, ["name", "person_id", "status"]] = [None, None, "unknown"]
+    pipeline.write_outputs(out_dir, segments, speakers, meta)
+    return suggested["name"]
+
+
 # main
 def reprocess(meeting_id, progress=print):
     """download an imported meeting's plaud recording, run it through the pipeline into the
@@ -210,4 +227,6 @@ def reprocess(meeting_id, progress=print):
     # some plaud uploads are stereo zoom recordings, which split mode handles as the app does
     pipeline.run(source, source_type="plaud", title=title, out_dir=out_dir, progress=progress,
                  owner=os.environ.get("MIC_OWNER"), mic_channel=1 if os.environ.get("MIC_CHANNEL") == "right" else 0)
-    return out_dir, suggest_from_note(out_dir, note_path)
+    suggested = suggest_from_note(out_dir, note_path)
+    check_mic(out_dir)
+    return out_dir, suggested

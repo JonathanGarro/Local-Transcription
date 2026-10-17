@@ -215,8 +215,10 @@ def check_mic(out_dir):
     meta, segments, speakers, _ = pipeline.load_run(out_dir)
     suggested = json.loads(note_names.read_text()).get(pipeline.MIC_SPEAKER) if note_names.exists() else None
     row = speakers["speaker"] == pipeline.MIC_SPEAKER
+    # a mic side left with no lines of the note has nothing to review
     if not suggested or not row.any() or speakers.loc[row, "status"].iloc[0] != "mic" \
-            or suggested["name"] == speakers.loc[row, "name"].iloc[0]:
+            or suggested["name"] == speakers.loc[row, "name"].iloc[0] \
+            or not (segments["speaker"] == pipeline.MIC_SPEAKER).any():
         return None
     speakers.loc[row, ["name", "person_id", "status"]] = [None, None, "unknown"]
     pipeline.write_outputs(out_dir, segments, speakers, meta)

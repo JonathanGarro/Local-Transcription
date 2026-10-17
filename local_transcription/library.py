@@ -4,9 +4,10 @@ data/library.db holds who is who. people have stable ids, so renaming a person u
 every past transcript. each voice entry keeps its own vector, plus the meeting and speaker
 it came from, so profiles can be re-averaged or pruned. the profile vector is the mean of
 a person's current entries. deleting a person vacuums the database file so no copy of the
-voice stays on disk. a person's name is their full name. people also carry an organization
-and any number of teams, which meeting notes look up when a person is tagged. projects are
-a plain list to file meetings under.
+voice stays on disk. a person's name is their full name. their teams and organizations,
+which meeting notes look up when a person is tagged, live in their obsidian note and are
+read through directory. the older teams and organizations tables here are no longer used.
+projects are a plain list to file meetings under.
 """
 
 import json
@@ -20,6 +21,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from local_transcription import directory
 from local_transcription.embed import normalize
 
 # config
@@ -202,9 +204,7 @@ def person_names():
 def people_summary():
     """one row per person with entry, meeting, and audio totals."""
     people = _query("""
-        select p.person_id, p.name, p.created, o.name as organization,
-               (select group_concat(t.name, ', ') from person_teams pt join teams t using (team_id)
-                 where pt.person_id = p.person_id) as teams,
+        select p.person_id, p.name, p.created,
                (select count(*) from entries e where e.person_id = p.person_id) as entries,
                (select coalesce(sum(seconds), 0) from entries e where e.person_id = p.person_id) as profile_seconds,
                (select group_concat(distinct source_type) from entries e where e.person_id = p.person_id) as sources,
@@ -214,46 +214,33 @@ def people_summary():
                  where ms.person_id = p.person_id) as minutes_heard,
                (select max(m.date) from meeting_speakers ms join meetings m using (meeting_id)
                  where ms.person_id = p.person_id) as last_heard
-        from people p left join organizations o on o.org_id = p.org_id
+        from people p
         order by p.name collate nocase""")
+    if len(people):
+        # teams and organizations come from obsidian, joined like the other text columns
+        index = directory.all_details()
+        found = [directory.details(name, index) for name in people["name"]]
+        people.insert(3, "organizations", [", ".join(d["organizations"]) for d in found])
+        people.insert(4, "teams", [", ".join(d["teams"]) for d in found])
     return people
 
 
-def _named_id(con, table, id_column, name):
-    # id for a name in a lookup table, creating the row if needed
-    row = con.execute(f"select {id_column} from {table} where name = ?", (name,)).fetchone()
-    if row:
-        return row[id_column]
-    new_id = _new_id()
-    con.execute(f"insert into {table} ({id_column}, name) values (?, ?)", (new_id, name))
-    return new_id
-
-
 def person_details(person_id):
-    """name, organization, and teams for one person."""
+    """name, organizations, and teams for one person, the last two from their obsidian note."""
     with connect() as con:
-        row = con.execute("""select p.person_id, p.name, o.name as organization from people p
-                             left join organizations o on o.org_id = p.org_id
-                             where p.person_id = ?""", (person_id,)).fetchone()
-        if not row:
-            return None
-        teams = [r["name"] for r in con.execute("""select t.name from person_teams pt
-                 join teams t using (team_id) where pt.person_id = ? order by t.name""", (person_id,))]
-    return {**dict(row), "teams": teams}
+        row = con.execute("select person_id, name from people where person_id = ?", (person_id,)).fetchone()
+    if not row:
+        return None
+    return {**dict(row), **directory.details(row["name"])}
 
 
-def set_person_details(person_id, organization=None, teams=None):
-    """update the fields notes use. blank values clear them. teams and organizations are
-    created on first use, so tagging a person with a new team adds it to the library."""
-    with connect() as con:
-        if organization is not None:
-            org_id = _named_id(con, "organizations", "org_id", organization.strip()) if organization.strip() else None
-            con.execute("update people set org_id = ? where person_id = ?", (org_id, person_id))
-        if teams is not None:
-            con.execute("delete from person_teams where person_id = ?", (person_id,))
-            for team in dict.fromkeys(t.strip() for t in teams if t.strip()):
-                con.execute("insert or ignore into person_teams values (?, ?)",
-                            (person_id, _named_id(con, "teams", "team_id", team)))
+def set_person_details(person_id, organizations=None, teams=None):
+    """write the fields notes use into the person's obsidian note. None leaves one as it is,
+    an empty list clears it."""
+    details = person_details(person_id)
+    if not details:
+        raise ValueError("no such person")
+    directory.save(details["name"], teams=teams, organizations=organizations)
 
 
 def lookup_names(table):

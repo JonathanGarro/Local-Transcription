@@ -22,7 +22,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from local_transcription import audio, library, notes, pipeline, projects, render
+from local_transcription import audio, directory, library, notes, pipeline, projects, render
 
 # config
 BASE_DIR = Path(__file__).parent.parent
@@ -215,7 +215,7 @@ class NoteText(BaseModel):
 
 
 class DetailsRequest(BaseModel):
-    organization: str = ""
+    organizations: list[str] = []
     teams: list[str] = []
 
 
@@ -470,7 +470,7 @@ def create_app():
 
     @app.get("/api/lookups")
     def lookups():
-        return {"teams": library.lookup_names("teams"), "organizations": library.lookup_names("organizations"),
+        return {"teams": directory.lookup_names("teams"), "organizations": directory.lookup_names("organizations"),
                 "projects": projects.all_projects(), "default_backend": notes.default_backend(),
                 "claude_ready": bool(os.environ.get("ANTHROPIC_API_KEY"))}
 
@@ -478,7 +478,10 @@ def create_app():
     def details(person_id: str, request: DetailsRequest):
         if not library.person_details(person_id):
             raise HTTPException(404, "no such person")
-        library.set_person_details(person_id, organization=request.organization, teams=request.teams)
+        try:
+            library.set_person_details(person_id, organizations=request.organizations, teams=request.teams)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
         pipeline.rerender_people([person_id])
         return library.person_details(person_id)
 

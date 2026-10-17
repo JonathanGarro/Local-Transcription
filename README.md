@@ -49,7 +49,7 @@ It goes in `~/Applications/Local Transcription.app` and just starts `app.py` fro
 Once sent, the Obsidian copy is the master copy. Opening a sent note in the app loads the Obsidian version if it changed there. If you also edited it in the app, nothing is overwritten: the note says it changed in both places, **Show changes** compares the app copy with Obsidian, and you choose **Use Obsidian version** or **Send again**. Send again over a note you edited in Obsidian asks before replacing it. The app keeps what it last sent as `note_sent.md` to tell which side changed. **Move to Inbox** in the Archive brings a meeting back.
 
 The flow is: drop a file in the Inbox, it is transcribed, you confirm speakers if asked, the note is written automatically with `SUMMARY_BACKEND` once every speaker is named, then you review and send it.
-- **People:** everyone in the library with their name, organization, teams, meetings and voice clips. Edits rewrite every past transcript and note they appear in.
+- **People:** everyone in the library with their name, organizations, teams, meetings and voice clips. Organizations and teams are read from and saved to each person's Obsidian note. Edits rewrite every past transcript and note they appear in.
 
 The server listens on 127.0.0.1 only and the page loads nothing from the internet.
 
@@ -141,13 +141,13 @@ Writes `note.md` in the Obsidian layout: frontmatter, Agenda, Discussion, Transc
 - the heading is `# <date> - <meeting name>`, using the name you gave the meeting (or its file name), never one the model makes up
 
 - `people` are the confirmed speakers other than you, as `[[Full Name]]` links, stored one per line the way Obsidian writes list properties
-- `teams` and `organizations` are looked up from those people in the library
+- `teams` and `organizations` are looked up from those people's notes in Obsidian
 - `project` is the one you pick, the model never chooses one
 
 Projects come from your Obsidian project index. Set `PROJECT_INDEX_DIR` in `.env` to the folder with one note per project. The app reads only the `project status` line of each note. The picker lists In-Progress projects first, then everything else from A to Z, and you can search by typing. A name that isn't in the index is still accepted.
 - the transcript block is the confirmed transcript as `[Full Name] text` lines, never retyped by the model
 
-Set people's details in the People page, or:
+Obsidian is the source of truth for teams and organizations. Set `PEOPLE_DIR` in `.env` to the folder with one note per person, named by their full name. The app reads the `teams` and `organizations` properties of a person's note each time a note or the People page needs them, so a change in Obsidian shows up on the next note. Saving them in the People page, or with the command below, writes those two properties back into the note and leaves the rest of it alone. Someone with no note yet gets one in the vault's Person layout. The pickers suggest the notes in the `Teams` and `Organizations` folders next to `PEOPLE_DIR`. The app matches a person to a note by name, so rename people in both places, renaming the note in Obsidian so its links follow.
 
 ```
 uv run manage_profiles.py set "Maya Chen" --org "Northwind Foundation" --team "Operations Team"

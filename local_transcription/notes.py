@@ -4,7 +4,7 @@ action items.
 a language model writes the agenda, discussion, and action items as json. the heading is
 the meeting's own title, the project is the one picked in the app, and the frontmatter and
 transcript block are filled in by code, so the transcript is never retyped by the model and
-the people, teams, and organizations come from the library.
+the people come from the library and their teams and organizations from obsidian.
 
 two backends: "local" runs an mlx model on this mac and nothing leaves the machine.
 "claude" sends the transcript text (never audio or voice profiles) to the anthropic api.
@@ -96,7 +96,7 @@ def speaker_people(speakers, owner_id=None):
         if details:
             people[row.speaker] = details
         elif isinstance(row.name, str) and row.name:
-            people[row.speaker] = {"person_id": None, "name": row.name, "organization": None, "teams": []}
+            people[row.speaker] = {"person_id": None, "name": row.name, "organizations": [], "teams": []}
     return people
 
 
@@ -198,7 +198,7 @@ def render_note(summary, date, title, segments, speakers, owner_id, project, tra
     others = [people[s] for s in order if people[s]["person_id"] != owner_id]
     names = list(dict.fromkeys(p["name"] for p in others))
     teams = list(dict.fromkeys(t for p in others for t in p["teams"]))
-    orgs = list(dict.fromkeys(p["organization"] for p in others if p["organization"]))
+    orgs = list(dict.fromkeys(o for p in others for o in p["organizations"]))
 
     lines = ["---", f"date: {date}"]
     lines += _yaml_list("people", names) + _yaml_list("teams", teams) + _yaml_list("organizations", orgs)

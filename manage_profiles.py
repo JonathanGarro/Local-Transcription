@@ -5,7 +5,7 @@ usage:
     uv run manage_profiles.py show "Priya"
     uv run manage_profiles.py rename "Katherine" "Kathryn"       # updates every past transcript
     uv run manage_profiles.py merge "Pri" "Priya"            # fold the first person into the second
-    uv run manage_profiles.py set "Maya" --full-name "Maya Chen" --org "Northwind Foundation" --team "Operations Team"
+    uv run manage_profiles.py set "Maya Chen" --org "Northwind Foundation" --team "Operations Team"   # writes her obsidian note
     uv run manage_profiles.py projects                         # list projects
     uv run manage_profiles.py projects --add "Customer Dashboard"
     uv run manage_profiles.py remove-entry 3f9a1c2b7d
@@ -13,10 +13,17 @@ usage:
 """
 
 import argparse
+from pathlib import Path
 
 import pandas as pd
+from dotenv import load_dotenv
 
-from local_transcription import library, pipeline
+# config
+BASE_DIR = Path(__file__).parent
+# values already set in the shell take precedence over .env
+load_dotenv(BASE_DIR / ".env")
+
+from local_transcription import library, pipeline  # noqa: E402
 
 
 # helpers
@@ -40,9 +47,10 @@ def main():
     merge = sub.add_parser("merge", help="merge the first person into the second")
     merge.add_argument("source")
     merge.add_argument("target")
-    details = sub.add_parser("set", help="set the organization and teams used in notes")
+    details = sub.add_parser("set", help="set the organizations and teams used in notes, in the person's obsidian note")
     details.add_argument("name")
-    details.add_argument("--org", help="organization, blank to clear")
+    details.add_argument("--org", action="append", help="repeat for several organizations, replaces the current ones")
+    details.add_argument("--no-orgs", action="store_true", help="clear every organization")
     details.add_argument("--team", action="append", help="repeat for several teams, replaces the current teams")
     details.add_argument("--no-teams", action="store_true", help="clear every team")
     projects = sub.add_parser("projects", help="list or add projects")
@@ -60,7 +68,7 @@ def main():
                 print("no people yet")
                 return
             people["profile_seconds"] = people["profile_seconds"].round()
-            columns = ["name", "organization", "teams", "entries", "profile_seconds",
+            columns = ["name", "organizations", "teams", "entries", "profile_seconds",
                        "meetings", "minutes_heard", "last_heard"]
             print(people[columns].to_string(index=False, na_rep=""))
         elif args.command == "show":
@@ -79,10 +87,11 @@ def main():
         elif args.command == "set":
             person_id = person(args.name)
             teams = [] if args.no_teams else args.team
-            library.set_person_details(person_id, organization=args.org, teams=teams)
+            orgs = [] if args.no_orgs else args.org
+            library.set_person_details(person_id, organizations=orgs, teams=teams)
             pipeline.rerender_people([person_id])
             details = library.person_details(person_id)
-            print(f"{details['name']}, {details['organization'] or 'no organization'}, "
+            print(f"{details['name']}, organizations: {', '.join(details['organizations']) or 'none'}, "
                   f"teams: {', '.join(details['teams']) or 'none'}")
         elif args.command == "projects":
             if args.add:

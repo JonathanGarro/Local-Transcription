@@ -831,12 +831,12 @@ async function renderPeople(editing = null) {
   view.innerHTML = `
     <div class="page">
       <h1>People</h1>
-      <div class="sub">Stored in data/library.db on this Mac. Notes use the name, organization, and teams. Changes update every past transcript and note.</div>
+      <div class="sub">Names and voices are stored in data/library.db on this Mac. Organizations and teams come from each person's note in Obsidian, and saving them here writes them there. Changes update every past transcript and note.</div>
       <table>
-        <tr><th>Name</th><th>Organization</th><th>Teams</th><th class="num">Meetings</th><th class="num">Voice clips</th><th>Last heard</th><th></th></tr>
+        <tr><th>Name</th><th>Organizations</th><th>Teams</th><th class="num">Meetings</th><th class="num">Voice clips</th><th>Last heard</th><th></th></tr>
         ${people.map(p => p.person_id === editing ? editRow(p) : `<tr>
           <td>${esc(p.name)}</td>
-          <td>${esc(p.organization || "")}</td>
+          <td>${esc(p.organizations || "")}</td>
           <td>${esc(p.teams || "")}</td>
           <td class="num">${p.meetings}</td>
           <td class="num" title="${Math.round(p.profile_seconds / 60 * 10) / 10} min of audio">${p.entries}</td>
@@ -852,15 +852,19 @@ async function renderPeople(editing = null) {
 }
 
 function editRow(p) {
-  const teams = p.teams ? p.teams.split(", ") : [];
   return `<tr class="editing"><td colspan="7">
     <div class="form">
       <label>Name<input type="text" id="e-name" value="${esc(p.name)}"></label>
-      <label>Organization<input type="text" id="e-org" list="org-list" value="${esc(p.organization || "")}"></label>
+    </div>
+    <div class="form">
+      <label>Organizations
+        <span class="chips" id="e-orgs">
+          <input type="text" id="e-org" list="org-list" placeholder="Add an organization, then Enter"></span>
+      </label>
     </div>
     <div class="form">
       <label>Teams
-        <span class="chips" id="e-teams">${teams.map(t => `<span class="chip">${esc(t)}<button data-remove="${esc(t)}" title="Remove">x</button></span>`).join("")}
+        <span class="chips" id="e-teams">
           <input type="text" id="e-team" list="team-list" placeholder="Add a team, then Enter"></span>
       </label>
     </div>
@@ -872,39 +876,48 @@ function editRow(p) {
   </td></tr>`;
 }
 
-function bindEdit(p) {
-  let teams = p.teams ? p.teams.split(", ") : [];
-  const chips = document.getElementById("e-teams");
-  const teamInput = document.getElementById("e-team");
-  const drawChips = () => {
+// a list of chips with a text box that adds one on Enter. returns { values, add }
+function bindChips(chipsId, inputId, initial) {
+  const state = { values: initial ? initial.split(", ") : [] };
+  const chips = document.getElementById(chipsId);
+  const input = document.getElementById(inputId);
+  const draw = () => {
     chips.querySelectorAll(".chip").forEach(c => c.remove());
-    teams.forEach(t => {
+    state.values.forEach(v => {
       const chip = document.createElement("span");
       chip.className = "chip";
-      chip.innerHTML = `${esc(t)}<button title="Remove">x</button>`;
-      chip.querySelector("button").onclick = () => { teams = teams.filter(x => x !== t); drawChips(); };
-      chips.insertBefore(chip, teamInput);
+      chip.innerHTML = `${esc(v)}<button title="Remove">x</button>`;
+      chip.querySelector("button").onclick = () => { state.values = state.values.filter(x => x !== v); draw(); };
+      chips.insertBefore(chip, input);
     });
   };
-  const addTeam = () => {
-    const team = teamInput.value.trim();
-    if (team && !teams.some(t => t.toLowerCase() === team.toLowerCase())) teams.push(team);
-    teamInput.value = "";
-    drawChips();
+  state.add = () => {
+    const value = input.value.trim();
+    if (value && !state.values.some(v => v.toLowerCase() === value.toLowerCase())) state.values.push(value);
+    input.value = "";
+    draw();
   };
-  drawChips();
-  teamInput.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); addTeam(); } };
-  teamInput.onchange = addTeam;
+  draw();
+  input.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); state.add(); } };
+  input.onchange = state.add;
+  return state;
+}
+
+function bindEdit(p) {
+  const orgs = bindChips("e-orgs", "e-org", p.organizations);
+  const teams = bindChips("e-teams", "e-team", p.teams);
   document.getElementById("e-cancel").onclick = () => renderPeople();
   document.getElementById("e-save").onclick = async () => {
-    addTeam();
+    orgs.add();
+    teams.add();
     const name = document.getElementById("e-name").value.trim();
     try {
-      if (name && name !== p.name) await post(`/api/people/${p.person_id}/rename`, { name });
+      // details first, so they land in the note under the current name
       await post(`/api/people/${p.person_id}/details`, {
-        organization: document.getElementById("e-org").value.trim(),
-        teams
+        organizations: orgs.values,
+        teams: teams.values
       });
+      if (name && name !== p.name) await post(`/api/people/${p.person_id}/rename`, { name });
       toast("Saved. Transcripts and notes updated.");
       renderPeople();
     } catch (err) {

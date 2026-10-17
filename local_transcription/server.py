@@ -224,9 +224,11 @@ def create_app():
     app = FastAPI(title="Local Transcription", docs_url=None, redoc_url=None)
     jobs = Jobs()
     pipeline.register_existing()
-    # wavs rebuilt to replay an archived meeting are not kept between launches
+    # wavs rebuilt to replay an archived meeting are not kept between launches. a meeting with
+    # no run.json yet is still being processed, by import_plaud.py say, and needs its wavs
     for meeting_id in library.meetings().query("archived.notna()")["meeting_id"] if len(library.meetings()) else []:
-        pipeline.drop_audio(pipeline.OUTPUT_DIR / meeting_id)
+        if (pipeline.OUTPUT_DIR / meeting_id / "run.json").exists():
+            pipeline.drop_audio(pipeline.OUTPUT_DIR / meeting_id)
 
     @app.get("/api/state")
     def state():

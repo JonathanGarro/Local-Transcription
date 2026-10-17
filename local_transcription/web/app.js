@@ -174,7 +174,8 @@ async function refreshInbox() {
 // click a meeting title to rename it. the inbox poll leaves the list alone while editing
 let renaming = false;
 
-function renamable(el, id) {
+// onSaved runs after a rename, for pages that show the title elsewhere too
+function renamable(el, id, onSaved) {
   el.classList.add("rename");
   el.title = "Click to rename";
   el.onclick = () => {
@@ -195,10 +196,13 @@ function renamable(el, id) {
       const value = input.value.trim();
       if (save && value && value !== before) {
         try {
+          // save note typing first, or it would write the old heading back over the new one
+          await flushNote?.();
           const saved = (await post(`/api/meetings/${encodeURIComponent(id)}/title`, { name: value })).title;
           el.textContent = saved;
           if (review?.meeting?.meeting_id === id) review.meeting.title = saved;
           toast("Renamed");
+          onSaved?.();
         } catch (err) {
           toast(`Rename failed: ${err.message}`);
         }
@@ -513,7 +517,8 @@ async function renderTranscript(id, tab = "transcript") {
       </div>
       <div id="tab"></div>
     </div>`;
-  view.querySelectorAll("h1 [data-rename]").forEach(el => renamable(el, el.dataset.rename));
+  // the transcript and note headings carry the title, so reload the tab after a rename
+  view.querySelectorAll("h1 [data-rename]").forEach(el => renamable(el, el.dataset.rename, route));
   const body = document.getElementById("tab");
   if (tab === "note") return renderNote(id, body);
 

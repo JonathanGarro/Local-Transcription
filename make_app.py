@@ -69,8 +69,10 @@ def make_icns(png, target):
 
 def launcher_script():
     # exec keeps one process, so the dock shows one icon for the app
+    # apps opened from finder get a bare PATH, so add homebrew for ffmpeg and ffprobe
     python = BASE_DIR / ".venv" / "bin" / "python"
     return f"""#!/bin/bash
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 cd "{BASE_DIR}" || exit 1
 exec "{python}" app.py >> "{LOG_FILE}" 2>&1
 """

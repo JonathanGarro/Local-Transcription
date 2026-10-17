@@ -183,6 +183,7 @@ Imported notes that link to a Plaud recording can then be reprocessed here, so t
 ```
 uv run import_plaud.py "2026-10-13 - Customer Dashboard Review with Maya"
 uv run import_plaud.py --next 5    # the newest imported meetings not yet processed
+uv run import_plaud.py --hours 4   # newest first, starting no new meeting after 4 hours
 ```
 
 The audio is downloaded into `data/` and runs through the usual pipeline into the same meeting, which keeps its Obsidian note and stays in the Archive with a Review button. Review suggests names from the note first: Plaud's transcript has timestamps and Plaud's speaker labels, the note has the same text with the names you fixed, so lining the two up names each Plaud label, and timing carries that name to the speakers found here. Labels the note leaves as `Speaker 3` fall back to voice matching.

@@ -41,6 +41,8 @@ CLIP_COUNT = 3
 CLIP_MIN_S = 2.0
 CLIP_MAX_S = 8.0
 CLIP_SPACING_S = 60.0
+# words shown for a clip when the transcript has no word timings, about CLIP_MAX_S of speech
+CLIP_WORDS = 20
 
 
 # helpers
@@ -227,13 +229,15 @@ def speaker_audio(out_dir, meta, speaker):
 # main
 def run(source, threshold=match.THRESHOLD, num_speakers=None, min_speakers=diarize.MIN_SPEAKERS,
         max_speakers=diarize.MAX_SPEAKERS, title=None, source_type="other", language=None,
-        split="auto", mic_channel=0, owner=None, out_dir=None, progress=print):
+        split="auto", mic_channel=0, owner=None, out_dir=None, transcript=None, progress=print):
     """process one recording. returns (output folder, speakers dataframe, review path or None).
 
     split: "auto" uses split mode for stereo files whose channels hold unrelated sources,
     "on" forces it, "off" always downmixes. in split mode mic_channel is the owner's mic and
     the other channel is everyone else. out_dir defaults to outputs/<file name>, a re-run of
-    a meeting whose folder was renamed passes its folder."""
+    a meeting whose folder was renamed passes its folder. transcript replaces transcription
+    for a recording whose transcript already exists: a function from the speaker turns to
+    segments (speaker, start, end, text)."""
     source = Path(source)
     out_dir = Path(out_dir) if out_dir else OUTPUT_DIR / source.stem
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -267,16 +271,22 @@ def run(source, threshold=match.THRESHOLD, num_speakers=None, min_speakers=diari
     _log(progress, "diarizing")
     turns, exclusive, _ = diarize.diarize(main_wav, min_speakers, max_speakers, num_speakers)
 
-    _log(progress, "transcribing")
-    words, detected = asr.transcribe_mlx(main_wav, language=language,
-                                         regions=diarize.speech_regions(turns), prompt=prompt)
-    words = merge.assign_words(words, exclusive)
-    words = merge.smooth_islands(merge.snap_to_sentences(words))
-    segments = merge.words_to_segments(words)
-
-    mic_regions = []
-    if use_split:
-        mic_regions = audio.energy_regions(mic_wav)
+    mic_regions = audio.energy_regions(mic_wav) if use_split else []
+    if transcript is not None:
+        # only who spoke when is needed, the words come with the transcript
+        detected = language
+        if mic_regions:
+            mic_turns = pd.DataFrame(mic_regions, columns=["start", "end"]).assign(speaker=MIC_SPEAKER)
+            exclusive = pd.concat([exclusive, mic_turns[["speaker", "start", "end"]]], ignore_index=True)
+        words = pd.DataFrame(columns=["word", "start", "end", "probability", "speaker"])
+        segments = transcript(exclusive)
+    else:
+        _log(progress, "transcribing")
+        words, detected = asr.transcribe_mlx(main_wav, language=language,
+                                             regions=diarize.speech_regions(turns), prompt=prompt)
+        words = merge.assign_words(words, exclusive)
+        words = merge.smooth_islands(merge.snap_to_sentences(words))
+        segments = merge.words_to_segments(words)
         if mic_regions:
             _log(progress, f"transcribing {owner}'s mic")
             mic_words, _ = asr.transcribe_mlx(mic_wav, language=detected, regions=mic_regions, prompt=prompt)
@@ -291,9 +301,9 @@ def run(source, threshold=match.THRESHOLD, num_speakers=None, min_speakers=diari
             segments = segments.sort_values("start").reset_index(drop=True)
             mic_turns = pd.DataFrame(mic_regions, columns=["start", "end"]).assign(speaker=MIC_SPEAKER)
             exclusive = pd.concat([exclusive, mic_turns[["speaker", "start", "end"]]], ignore_index=True)
+        segments["text"] = segments["text"].map(lambda t: vocab.apply(t, replacements))
     words.to_csv(out_dir / "words.csv", index=False)
     exclusive.to_csv(out_dir / "turns.csv", index=False)
-    segments["text"] = segments["text"].map(lambda t: vocab.apply(t, replacements))
 
     _log(progress, "matching speakers")
     embedder = embed.Embedder()
@@ -480,6 +490,11 @@ def clips(out_dir, speaker, count=CLIP_COUNT):
     for clip in picked:
         inside = words[(words["start"] >= clip["start"] - 0.05) & (words["end"] <= clip["end"] + 0.05)]
         clip["text"] = "".join(inside["word"].astype(str)).strip()
+        if not clip["text"]:
+            # a transcript that came without word timings: the start of the line, about as
+            # much as fits in the clip
+            line = mine[mine["start"] == clip["start"]]["text"]
+            clip["text"] = " ".join(str(line.iloc[0]).split()[:CLIP_WORDS]) + "..." if len(line) else ""
         clip["start"], clip["end"] = round(clip["start"], 2), round(clip["end"], 2)
     return sorted(picked, key=lambda c: c["start"])
 

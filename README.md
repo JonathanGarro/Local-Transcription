@@ -186,7 +186,11 @@ uv run import_plaud.py --next 5    # the newest imported meetings not yet proces
 uv run import_plaud.py --hours 4   # newest first, starting no new meeting after 4 hours
 ```
 
-The audio is downloaded into `data/` and runs through the usual pipeline into the same meeting, which keeps its Obsidian note and stays in the Archive with a Review button. Review suggests names from the note first: Plaud's transcript has timestamps and Plaud's speaker labels, the note has the same text with the names you fixed, so lining the two up names each Plaud label, and timing carries that name to the speakers found here. Labels the note leaves as `Speaker 3` fall back to voice matching.
+The audio is downloaded into `data/` and runs into the same meeting, which keeps its Obsidian note and stays in the Archive with a Review button. The recording is not transcribed again. The note already has the transcript with the names you fixed, and Plaud's copy of it has timestamps, so lining the two up gives each note line its time. The app's Transcript tab reads like the note and still plays from any line, and only who spoke when is worked out from the audio, for voice profiles. Review suggests names from the note first, by how each speaker's turns overlap the named lines. Lines the note leaves as `Speaker 3` fall back to voice matching. Meetings reprocessed before this can take the note's transcript without reprocessing:
+
+```
+uv run import_plaud.py --retime
+```
 
 ## Privacy
 

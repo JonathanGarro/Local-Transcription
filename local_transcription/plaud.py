@@ -1,11 +1,12 @@
 """reprocess meetings imported from obsidian using their original plaud recordings.
 
-the audio is downloaded with the plaud cli and runs through the normal pipeline into the
-imported meeting's id, so the meeting keeps its obsidian note. the names in that note then
-suggest who each new speaker is: plaud's transcript has timestamps and plaud's speaker
-labels, the note has the same text with the names fixed by hand. aligning the two texts
-gives each plaud label a name, and timing overlap carries that name to the speakers found
-here. suggestions still need confirming in review, nothing is enrolled on its own.
+the audio is downloaded with the plaud cli and runs through the pipeline into the imported
+meeting's id, so the meeting keeps its obsidian note. the recording is not transcribed
+again: the note already has the transcript, with the names fixed by hand, and plaud's copy
+of it has the timestamps. lining the two up times each note line, so the app's transcript
+reads like the note and still plays from any line. only who spoke when is worked out here,
+for voice profiles, and the note's names are suggested for each speaker by how their turns
+overlap the lines. suggestions still need confirming in review, nothing is enrolled on its own.
 """
 
 import difflib
@@ -20,7 +21,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from local_transcription import library, obsidian, pipeline
+from local_transcription import library, merge, obsidian, pipeline
 
 # config
 PLAUD_TRANSCRIPT = "plaud_transcript.txt"
@@ -30,8 +31,6 @@ PLAUD_LINE = re.compile(r"^\[([\d:]+) - ([\d:]+)\] ([^:]+): ?(.*)$")
 NOTE_LINE = re.compile(r"^\[([^\]]+)\]:? ?(.*)$")
 # labels that name nobody
 GENERIC_LABEL = re.compile(r"^(speaker[ _]?\d+|unknown( \d+)?)$", re.IGNORECASE)
-# a plaud label takes a name only when most of its aligned words agree
-LABEL_MIN_SHARE = 0.6
 # a speaker here is suggested a name when most of its overlapping time agrees
 SPEAKER_MIN_SHARE = 0.5
 
@@ -132,43 +131,50 @@ def _person(label):
     return fits[0] if len(fits) == 1 else None
 
 
-def label_names(plaud, note):
-    """{plaud label: name}. plaud labels that already are a known name keep it. the rest take
-    the name the note gives the same words, when the alignment mostly agrees."""
-    # one lookup per label, not per word
-    person = functools.lru_cache(maxsize=None)(_person)
-    plaud_words = [(w, label) for label, text in zip(plaud["label"], plaud["text"]) for w in _words(text)]
-    note_words = [(w, label) for label, text in note for w in _words(text)]
-    matcher = difflib.SequenceMatcher(None, [w for w, _ in plaud_words], [w for w, _ in note_words], autojunk=False)
-    votes = {}
+def timed_lines(plaud, note):
+    """the note's transcript lines with plaud's times, as rows of start, end, label, text. the
+    note was made from plaud's transcript, so each note line takes the times of the plaud
+    lines its words line up with, and a line too edited to line up sits between its
+    neighbours. a note with no transcript block uses plaud's own lines."""
+    if not note:
+        return plaud.copy()
+    plaud_words, plaud_index = [], []
+    for i, text in enumerate(plaud["text"]):
+        for word in _words(text):
+            plaud_words.append(word)
+            plaud_index.append(i)
+    note_words, note_index = [], []
+    for j, (_, text) in enumerate(note):
+        for word in _words(text):
+            note_words.append(word)
+            note_index.append(j)
+    matcher = difflib.SequenceMatcher(None, plaud_words, note_words, autojunk=False)
+    hits = {}
     for block in matcher.get_matching_blocks():
         for k in range(block.size):
-            name = person(note_words[block.b + k][1])
-            if name:
-                votes.setdefault(plaud_words[block.a + k][1], Counter())[name] += 1
-    names = {}
-    for label in plaud["label"].unique():
-        own = person(label)
-        if own:
-            names[label] = own
-        elif label in votes:
-            name, count = votes[label].most_common(1)[0]
-            if count / sum(votes[label].values()) >= LABEL_MIN_SHARE:
-                names[label] = name
-    return names
+            hits.setdefault(note_index[block.b + k], set()).add(plaud_index[block.a + k])
+    rows = []
+    for j, (label, text) in enumerate(note):
+        matched = plaud.iloc[sorted(hits[j])] if j in hits else None
+        rows.append({"start": matched["start"].min() if matched is not None else None,
+                     "end": matched["end"].max() if matched is not None else None,
+                     "label": label, "text": text})
+    lines = pd.DataFrame(rows, columns=["start", "end", "label", "text"])
+    lines["start"] = lines["start"].fillna(lines["end"].shift().ffill()).fillna(0)
+    lines["end"] = lines["end"].fillna(lines["start"].shift(-1).bfill()).fillna(lines["start"])
+    return lines
 
 
-def speaker_names(segments, plaud, names):
-    """{speaker: {name, share}} for the speakers found here, from how their time overlaps
-    plaud lines whose label has a name."""
-    named = plaud.assign(name=plaud["label"].map(names))
+def speaker_names(turns, lines):
+    """{speaker: {name, share}} for the speakers found here, from how their turns overlap
+    lines whose label names someone."""
     result = {}
-    for speaker, mine in segments.groupby("speaker"):
+    for speaker, mine in turns.groupby("speaker"):
         overlap = Counter()
-        for seg in mine.itertuples():
-            hits = named[(named["start"] < seg.end) & (named["end"] > seg.start)]
+        for turn in mine.itertuples():
+            hits = lines[(lines["start"] < turn.end) & (lines["end"] > turn.start)]
             for line in hits.itertuples():
-                seconds = min(seg.end, line.end) - max(seg.start, line.start)
+                seconds = min(turn.end, line.end) - max(turn.start, line.start)
                 overlap[line.name if isinstance(line.name, str) else None] += max(seconds, 0)
         total = sum(overlap.values())
         best = next(((n, s) for n, s in overlap.most_common() if n), None)
@@ -177,15 +183,27 @@ def speaker_names(segments, plaud, names):
     return result
 
 
-def suggest_from_note(out_dir, note_path):
-    """write the note's suggested names for each speaker. returns them."""
-    out_dir = Path(out_dir)
-    plaud = plaud_lines(out_dir / PLAUD_TRANSCRIPT)
-    note = note_lines(Path(note_path).read_text(encoding="utf-8", errors="replace"))
-    segments = pd.DataFrame(json.loads((out_dir / "segments.json").read_text()))
-    suggested = speaker_names(segments, plaud, label_names(plaud, note)) if len(plaud) and note else {}
-    (out_dir / pipeline.NOTE_NAMES).write_text(json.dumps(suggested, indent=2))
-    return suggested
+def note_segments(lines, turns):
+    """the note's lines as pipeline segments, and the names they suggest for each speaker.
+    a line goes to the speaker its name points at, so the transcript reads like the note, or
+    else to the speaker whose turns overlap it most. returns (segments, suggestions)."""
+    person = functools.lru_cache(maxsize=None)(_person)
+    lines = lines.assign(name=[person(label) for label in lines["label"]])
+    suggested = speaker_names(turns, lines)
+    by_name = {}
+    for speaker, guess in suggested.items():
+        by_name.setdefault(guess["name"], []).append(speaker)
+    overlapping = merge.assign_words(lines[["start", "end"]], turns)["speaker"]
+    speakers = [by_name[n][0] if len(by_name.get(n, [])) == 1 else s for n, s in zip(lines["name"], overlapping)]
+    segments = pd.DataFrame({"speaker": speakers, "start": lines["start"].astype(float),
+                             "end": lines["end"].astype(float), "text": lines["text"].str.strip()})
+    return segments, suggested
+
+
+def _meeting_lines(out_dir, note_path):
+    # the note's transcript timed by plaud's, the lines every transcript here is built from
+    plaud = plaud_lines(Path(out_dir) / PLAUD_TRANSCRIPT)
+    return timed_lines(plaud, note_lines(Path(note_path).read_text(encoding="utf-8", errors="replace")))
 
 
 def check_mic(out_dir):
@@ -207,8 +225,10 @@ def check_mic(out_dir):
 
 # main
 def reprocess(meeting_id, progress=print):
-    """download an imported meeting's plaud recording, run it through the pipeline into the
-    same meeting, and suggest names from its note. returns (output folder, suggestions)."""
+    """download an imported meeting's plaud recording and run it through the pipeline into
+    the same meeting. the transcript is the note's, so only who spoke when is worked out
+    here, and the note's names are suggested for each speaker. returns (output folder,
+    suggestions)."""
     note_path = library.meeting_sent_path(meeting_id)
     link = plaud_link(note_path) if note_path and Path(note_path).exists() else None
     if not link:
@@ -223,10 +243,41 @@ def reprocess(meeting_id, progress=print):
         progress("downloading from plaud")
         source = download_audio(plaud_id, data_dir, meeting_id)
     save_transcript(plaud_id, out_dir / PLAUD_TRANSCRIPT)
+    lines = _meeting_lines(out_dir, note_path)
+    found = {}
+
+    def transcript(turns):
+        segments, found["suggested"] = note_segments(lines, turns)
+        return segments
+
     title = library.meetings().query("meeting_id == @meeting_id")["title"].iloc[0]
-    # some plaud uploads are stereo zoom recordings, which split mode handles as the app does
+    # some plaud uploads are stereo zoom recordings, which split mode handles as the app does.
+    # with no transcript to reuse, the recording is transcribed here
     pipeline.run(source, source_type="plaud", title=title, out_dir=out_dir, progress=progress,
-                 owner=os.environ.get("MIC_OWNER"), mic_channel=1 if os.environ.get("MIC_CHANNEL") == "right" else 0)
-    suggested = suggest_from_note(out_dir, note_path)
+                 owner=os.environ.get("MIC_OWNER"), mic_channel=1 if os.environ.get("MIC_CHANNEL") == "right" else 0,
+                 transcript=transcript if len(lines) else None)
+    suggested = found.get("suggested", {})
+    (out_dir / pipeline.NOTE_NAMES).write_text(json.dumps(suggested, indent=2))
     check_mic(out_dir)
     return out_dir, suggested
+
+
+def retime(meeting_id):
+    """swap the transcript of a meeting reprocessed before transcripts came from the note for
+    the note's, keeping its speakers and every confirmed name. returns the suggestions."""
+    out_dir = pipeline.OUTPUT_DIR / meeting_id
+    note_path = library.meeting_sent_path(meeting_id)
+    if not (out_dir / PLAUD_TRANSCRIPT).exists() or not note_path or not Path(note_path).exists():
+        raise ValueError(f"{meeting_id} was not reprocessed from plaud, or its note is gone")
+    lines = _meeting_lines(out_dir, note_path)
+    if not len(lines):
+        raise ValueError(f"{meeting_id} has no transcript lines in its note or from plaud")
+    meta, _, speakers, _ = pipeline.load_run(out_dir)
+    segments, suggested = note_segments(lines, pd.read_csv(out_dir / "turns.csv"))
+    # unnamed speakers left with no lines have nothing to review. named ones keep their
+    # confirmations and profile entries
+    speakers = speakers[speakers["speaker"].isin(segments["speaker"]) | speakers["status"].isin(pipeline.RESOLVED)]
+    pipeline.write_outputs(out_dir, segments, speakers.reset_index(drop=True), meta)
+    (out_dir / pipeline.NOTE_NAMES).write_text(json.dumps(suggested, indent=2))
+    check_mic(out_dir)
+    return suggested

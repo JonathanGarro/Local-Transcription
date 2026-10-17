@@ -5,6 +5,7 @@ usage:
     uv run import_plaud.py "2026-10-13 - Customer Dashboard Review with Maya"
     uv run import_plaud.py --next 5      # the newest imported meetings not yet processed
     uv run import_plaud.py --hours 4     # keep going through the newest until 4 hours have passed
+    uv run import_plaud.py --retime      # give meetings done before the note's transcript was used that transcript
 
 each meeting then needs review in the app, where names from its note are suggested first.
 """
@@ -39,6 +40,12 @@ def waiting(count=None):
     return picked
 
 
+def reprocessed():
+    """meetings already run from their plaud recording."""
+    meetings = library.meetings().query("source_type == 'plaud'")["meeting_id"]
+    return [m for m in meetings if (pipeline.OUTPUT_DIR / m / plaud.PLAUD_TRANSCRIPT).exists()]
+
+
 # main
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -46,8 +53,18 @@ def main():
     parser.add_argument("--next", type=int, help="process this many of the newest waiting meetings")
     parser.add_argument("--hours", type=float,
                         help="work through the newest waiting meetings, starting no new one after this long")
+    parser.add_argument("--retime", action="store_true",
+                        help="swap the transcript of meetings already reprocessed for their note's, keeping confirmed names")
     args = parser.parse_args()
 
+    if args.retime:
+        for meeting_id in reprocessed():
+            try:
+                suggested = plaud.retime(meeting_id)
+                print(f"{meeting_id}: the note's transcript, suggesting {len(suggested)} names")
+            except ValueError as err:
+                print(f"{meeting_id}: skipped, {err}")
+        return
     meeting_ids = args.meetings + (waiting(args.next) if args.next else waiting() if args.hours else [])
     if not meeting_ids:
         parser.error("name some meetings or use --next or --hours")

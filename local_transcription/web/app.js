@@ -899,15 +899,19 @@ async function renderHome() {
 }
 
 // people
+// kept across re-renders, such as after saving an edit
+let peopleQuery = "";
+
 async function renderPeople(editing = null) {
   const [people, lookups] = await Promise.all([api("/api/people"), api("/api/lookups")]);
   view.innerHTML = `
     <div class="page">
       <h1>People</h1>
       <div class="sub">Names and voices are stored in data/library.db on this Mac. Organizations and teams come from each person's note in Obsidian, and saving them here writes them there. Changes update every past transcript and note.</div>
+      <div class="tools"><input type="text" id="people-filter" placeholder="Search by name, organization, or team" value="${esc(peopleQuery)}"></div>
       <table>
         <tr><th>Name</th><th>Organizations</th><th>Teams</th><th class="num">Meetings</th><th class="num">Voice clips</th><th>Last heard</th><th></th></tr>
-        ${people.map(p => p.person_id === editing ? editRow(p) : `<tr>
+        ${people.map(p => p.person_id === editing ? editRow(p) : `<tr data-search="${esc(`${p.name} ${p.organizations || ""} ${p.teams || ""}`.toLowerCase())}">
           <td><button class="link expand" data-person="${p.person_id}" aria-expanded="false">${esc(p.name)}</button></td>
           <td>${esc(p.organizations || "")}</td>
           <td>${esc(p.teams || "")}</td>
@@ -917,12 +921,30 @@ async function renderPeople(editing = null) {
           <td><button class="link" data-edit="${p.person_id}">Edit</button></td>
         </tr>`).join("")}
       </table>
+      <div class="empty" id="people-none" hidden>No matches</div>
       <datalist id="org-list">${lookups.organizations.map(o => `<option value="${esc(o)}">`).join("")}</datalist>
       <datalist id="team-list">${lookups.teams.map(t => `<option value="${esc(t)}">`).join("")}</datalist>
     </div>`;
   view.querySelectorAll("[data-edit]").forEach(b => b.onclick = () => renderPeople(b.dataset.edit));
   view.querySelectorAll("[data-person]").forEach(b => b.onclick = () => togglePerson(b));
+  const filter = document.getElementById("people-filter");
+  // rows are hidden rather than redrawn, so open meeting lists stay open
+  const draw = () => {
+    peopleQuery = filter.value;
+    const words = peopleQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    let shown = 0;
+    view.querySelectorAll("tr[data-search]").forEach(row => {
+      const match = words.every(w => row.dataset.search.includes(w));
+      row.hidden = !match;
+      if (row.nextElementSibling?.classList.contains("meetings-row")) row.nextElementSibling.hidden = !match;
+      shown += match;
+    });
+    document.getElementById("people-none").hidden = shown > 0 || !!editing;
+  };
+  filter.oninput = draw;
+  draw();
   if (editing) bindEdit(people.find(p => p.person_id === editing));
+  else if (peopleQuery) filter.focus();
 }
 
 const TAGGED = { confirmed: "confirmed", matched: "voice match", mic: "mic", imported: "from note", skipped: "left unnamed" };

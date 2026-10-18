@@ -830,6 +830,74 @@ async function renderNote(id, body) {
   }
 }
 
+// home
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// horizontal bars, longest first, each with an optional note after its count
+function barChart(rows, note = () => "") {
+  if (!rows.length) return `<div class="empty">Nothing yet</div>`;
+  const max = Math.max(...rows.map(r => r.value));
+  return `<div class="bars">${rows.map(r => `<div class="bar-row">
+      <div class="bar-label" title="${esc(r.label)}">${esc(r.label)}</div>
+      <div class="bar-track"><div class="bar-fill" style="width: ${r.value / max * 100}%"></div></div>
+      <div class="bar-value">${r.value}${note(r)}</div>
+    </div>`).join("")}</div>`;
+}
+
+// vertical columns in order, labelled every few when there are many
+function columnChart(rows, label = r => r.label, every = 1) {
+  if (!rows.length) return `<div class="empty">Nothing yet</div>`;
+  const max = Math.max(...rows.map(r => r.value), 1);
+  return `<div class="columns">${rows.map((r, i) => `<div class="column" title="${esc(label(r))}: ${r.value}">
+      <div class="column-fill" style="height: ${r.value / max * 100}%"></div>
+      <div class="column-label">${i % every === 0 ? esc(label(r)) : ""}</div>
+    </div>`).join("")}</div>`;
+}
+
+async function renderHome() {
+  const s = await api("/api/home");
+  const month = r => { const [y, m] = r.label.split("-"); return `${MONTHS[m - 1]} ${y.slice(2)}`; };
+  // weekends show only when there are real weekend meetings, not the odd one
+  const busiest = Math.max(...s.by_weekday.map(r => r.value), 1);
+  const weekdays = s.by_weekday.filter(r => !["Sat", "Sun"].includes(r.label) || r.value >= busiest / 10);
+  const tile = (value, label) => `<div class="tile"><div class="tile-value">${value}</div><div class="tile-label">${label}</div></div>`;
+  view.innerHTML = `
+    <div class="page">
+      <h1>Home</h1>
+      <div class="sub">Across every meeting in the app, processed here or imported from Obsidian.</div>
+      <div class="tiles">
+        ${tile(s.meetings, "meetings")}
+        ${tile(s.hours, "hours recorded")}
+        ${tile(s.people, "people met")}
+        ${tile(s.voices, "voices known")}
+        ${s.owner_share != null ? tile(`${Math.round(s.owner_share * 100)}%`, "of talk time is you") : ""}
+        ${s.review ? `<a class="tile warn" href="#/archive"><div class="tile-value">${s.review}</div><div class="tile-label">meetings to review</div></a>` : ""}
+      </div>
+      <div class="chart wide">
+        <h2>Meetings per month</h2>
+        ${columnChart(s.by_month, month, Math.ceil(s.by_month.length / 12))}
+      </div>
+      <div class="charts">
+        <div class="chart">
+          <h2>Who you meet with most</h2>
+          ${barChart(s.people_top, r => `<span class="bar-note"> · ${r.minutes} min talking</span>`)}
+        </div>
+        <div class="chart">
+          <h2>Teams you meet with most</h2>
+          ${barChart(s.teams_top)}
+        </div>
+        <div class="chart">
+          <h2>Busiest projects</h2>
+          ${barChart(s.projects_top)}
+        </div>
+        <div class="chart">
+          <h2>Meetings by weekday</h2>
+          ${columnChart(weekdays)}
+        </div>
+      </div>
+    </div>`;
+}
+
 // people
 async function renderPeople(editing = null) {
   const [people, lookups] = await Promise.all([api("/api/people"), api("/api/lookups")]);
@@ -974,13 +1042,15 @@ function route() {
   player.ontimeupdate = null;
   const [, page, id, tab] = location.hash.split("/");
   document.querySelectorAll("[data-nav]").forEach(a => a.classList.toggle(
-    "active", a.dataset.nav === (["people", "archive"].includes(page) ? page : page === "imported" ? "archive" : "inbox")));
+    "active", a.dataset.nav === (["people", "archive", "inbox"].includes(page) ? page : page === "imported" ? "archive"
+      : ["review", "transcript"].includes(page) ? "inbox" : "home")));
   const run = page === "review" ? renderReview(decodeURIComponent(id))
     : page === "transcript" ? renderTranscript(decodeURIComponent(id), tab === "note" ? "note" : "transcript")
     : page === "imported" ? renderImported(decodeURIComponent(id))
     : page === "people" ? renderPeople()
     : page === "archive" ? renderArchive()
-    : renderInbox();
+    : page === "inbox" ? renderInbox()
+    : renderHome();
   run.catch(err => { view.innerHTML = `<div class="page"><div class="card">Something went wrong: ${esc(err.message)}</div></div>`; });
 }
 
@@ -1001,6 +1071,6 @@ document.addEventListener("scroll", e => {
   clearTimeout(el.scrollTimer);
   el.scrollTimer = setTimeout(() => el.classList.remove("scrolling"), 900);
 }, true);
-if (!location.hash) location.hash = "#/inbox";
+if (!location.hash) location.hash = "#/home";
 route();
 api("/api/state").then(s => updateCount(s.meetings)).catch(() => {});

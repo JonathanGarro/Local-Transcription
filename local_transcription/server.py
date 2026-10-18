@@ -497,6 +497,10 @@ def create_app():
     def people():
         return _records(library.people_summary())
 
+    @app.get("/api/home")
+    def home():
+        return library.home_stats(owner=os.environ.get("MIC_OWNER"))
+
     @app.get("/api/people/{person_id}/meetings")
     def person_meetings(person_id: str):
         return _records(library.person_meetings(person_id))

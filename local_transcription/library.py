@@ -505,6 +505,57 @@ def person_meetings(person_id):
         order by m.date desc, m.updated desc""", (person_id,))
 
 
+def home_stats(owner=None, top=5):
+    """totals and rankings for the home page. the owner is in nearly every meeting, so they
+    are left out of the people rankings and shown as a share of talk time instead."""
+    meetings = _query("""select m.meeting_id, m.date, m.minutes, m.status, m.source_type, pr.name as project
+                         from meetings m left join projects pr using (project_id) where m.date is not null""")
+    tagged = _query("""select ms.meeting_id, ms.minutes, p.name from meeting_speakers ms
+                       join people p using (person_id)""")
+    voices = _query("select count(distinct person_id) as n from entries")
+    others = tagged[tagged["name"] != owner] if len(tagged) else tagged
+    stats = {"meetings": len(meetings), "people": int(others["name"].nunique()) if len(others) else 0,
+             "hours": round(float(meetings["minutes"].fillna(0).sum()) / 60, 1) if len(meetings) else 0,
+             "voices": int(voices["n"].iloc[0]) if len(voices) else 0,
+             "review": int((meetings["status"] == "needs review").sum()) if len(meetings) else 0,
+             "owner_share": None, "by_month": [], "by_weekday": [], "people_top": [], "projects_top": [],
+             "teams_top": []}
+    if not len(meetings):
+        return stats
+    dates = pd.to_datetime(meetings["date"], errors="coerce")
+    months = dates.dt.to_period("M").value_counts().sort_index()
+    if len(months):
+        # every month from the first to the last, so quiet months show as gaps
+        span = pd.period_range(months.index.min(), months.index.max(), freq="M")
+        stats["by_month"] = [{"label": str(m), "value": int(months.get(m, 0))} for m in span]
+    weekdays = dates.dt.dayofweek.value_counts()
+    stats["by_weekday"] = [{"label": d, "value": int(weekdays.get(i, 0))}
+                           for i, d in enumerate(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])]
+    projects = meetings["project"].dropna().value_counts().head(top)
+    stats["projects_top"] = [{"label": k, "value": int(v)} for k, v in projects.items()]
+    if len(others):
+        people = others.groupby("name").agg(meetings=("meeting_id", "nunique"), minutes=("minutes", "sum"))
+        people = people.sort_values(["meetings", "minutes"], ascending=False).head(top)
+        stats["people_top"] = [{"label": k, "value": int(r.meetings), "minutes": round(float(r.minutes or 0))}
+                               for k, r in people.iterrows()]
+        # a meeting counts once for each team anyone in it belongs to
+        index = directory.all_details()
+        team_rows = [(m, t) for m, n in zip(others["meeting_id"], others["name"])
+                     for t in directory.details(n, index)["teams"]]
+        if team_rows:
+            teams = pd.DataFrame(team_rows, columns=["meeting_id", "team"]).groupby("team")["meeting_id"].nunique()
+            stats["teams_top"] = [{"label": k, "value": int(v)}
+                                  for k, v in teams.sort_values(ascending=False).head(top).items()]
+    if owner and len(tagged):
+        # only meetings whose speakers were timed, the imported notes have no minutes
+        timed = tagged.dropna(subset=["minutes"])
+        timed = timed[timed["meeting_id"].isin(timed.loc[timed["name"] == owner, "meeting_id"])]
+        if timed["minutes"].sum():
+            stats["owner_share"] = round(float(timed.loc[timed["name"] == owner, "minutes"].sum()
+                                               / timed["minutes"].sum()), 3)
+    return stats
+
+
 def delete_meeting(meeting_id):
     with connect() as con:
         con.execute("delete from meetings where meeting_id = ?", (meeting_id,))

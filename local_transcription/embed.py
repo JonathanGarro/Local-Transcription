@@ -17,6 +17,9 @@ EDGE_TRIM_S = 0.2
 CHUNK_S = 10.0
 # cap the work per speaker by using only the longest turns
 MAX_TURNS = 40
+# turns stop this short of the end of the audio, pyannote works out its length a hair
+# differently and refuses a crop that ends exactly there
+END_MARGIN_S = 0.01
 
 
 # helpers
@@ -31,6 +34,11 @@ def load_audio(wav):
 
     samples, rate = sf.read(str(wav), dtype="float32")
     return {"waveform": torch.from_numpy(samples).unsqueeze(0), "sample_rate": rate}
+
+
+def last_time(audio):
+    """the latest time a crop can end at."""
+    return audio["waveform"].shape[-1] / audio["sample_rate"] - END_MARGIN_S
 
 
 def chunks(start, end, size=CHUNK_S, min_size=MIN_TURN_S):
@@ -60,7 +68,7 @@ class Embedder:
         """duration-weighted mean of normalized chunk embeddings over (start, end) spans."""
         from pyannote.core import Segment
 
-        duration = audio["waveform"].shape[-1] / audio["sample_rate"]
+        duration = last_time(audio)
         vectors, weights = [], []
         for start, end in spans:
             # turn ends rounded past the last sample cannot be cropped
@@ -73,7 +81,7 @@ class Embedder:
 
     def clip(self, audio, start=None, end=None):
         """embedding for one stretch of audio, the whole file by default."""
-        duration = audio["waveform"].shape[-1] / audio["sample_rate"]
+        duration = last_time(audio)
         start = 0.0 if start is None else start
         end = duration if end is None else min(end, duration)
         return self.embed_spans(audio, [(start, end)])
@@ -81,7 +89,7 @@ class Embedder:
     def speakers(self, audio, turns):
         """one embedding per diarized speaker from its longest exclusive turns.
         returns {speaker: (vector, seconds_used)}."""
-        duration = audio["waveform"].shape[-1] / audio["sample_rate"]
+        duration = last_time(audio)
         turns = turns.assign(end=turns["end"].clip(upper=duration))
         turns = turns.assign(seconds=turns["end"] - turns["start"])
         result = {}

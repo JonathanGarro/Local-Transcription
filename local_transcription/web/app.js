@@ -52,6 +52,14 @@ function meetingLink(kind, id) {
   return `#/${kind}/${encodeURIComponent(id)}`;
 }
 
+// a list row opens its data-open link when clicked anywhere but its own buttons and links
+function openRows(list) {
+  list.onclick = e => {
+    const row = e.target.closest(".item[data-open]");
+    if (row && !e.target.closest("a, button, input, .rename")) location.hash = row.dataset.open;
+  };
+}
+
 function stopAudio() {
   player.pause();
   document.querySelectorAll(".play.playing").forEach(b => b.classList.remove("playing"));
@@ -157,7 +165,8 @@ async function refreshInbox() {
     const review = m.status !== "done";
     const stage = review ? ["review", "needs review"] : writing.has(m.meeting_id) ? ["work", "writing note"]
       : m.note ? ["ready", "ready to send"] : ["review", "no note yet"];
-    return `<div class="item">
+    const open = review ? meetingLink("review", m.meeting_id) : `${meetingLink("transcript", m.meeting_id)}/note`;
+    return `<div class="item" data-open="${open}">
       <div class="main">
         <div class="title"><span class="rename" data-rename="${esc(m.meeting_id)}" title="Click to rename">${esc(m.title || m.meeting_id)}</span></div>
         <div class="meta">${esc(m.date || "")} · ${m.minutes ? Math.round(m.minutes) + " min" : ""} · ${esc(m.source_type || "")}${m.split ? " · split channels" : ""}</div>
@@ -169,6 +178,7 @@ async function refreshInbox() {
     </div>`;
   }).join("") : `<div class="empty">${state.meetings.length ? "Nothing waiting. Sent meetings are in the Archive." : "No meetings yet"}</div>`;
   meetingsEl.querySelectorAll("[data-rename]").forEach(el => renamable(el, el.dataset.rename));
+  openRows(meetingsEl);
 }
 
 // click a meeting title to rename it. the inbox poll leaves the list alone while editing
@@ -237,13 +247,14 @@ async function renderArchive() {
   const list = document.getElementById("archive-list");
   // imported notes have no recording, so only the note opens. once their recording is
   // processed they have a transcript and speakers, but the note stays the obsidian one
-  const row = m => m.source_type === "obsidian" ? `<div class="item">
+  const open = m => m.note ? `${meetingLink("transcript", m.meeting_id)}/note` : meetingLink("imported", m.meeting_id);
+  const row = m => m.source_type === "obsidian" ? `<div class="item" data-open="${open(m)}">
       <div class="main">
         <div class="title">${esc(m.title || m.meeting_id)}</div>
         <div class="meta">${esc(m.date || "")} · imported from Obsidian${m.project ? ` · ${esc(m.project)}` : ""}</div>
       </div>
       <a class="btn small" href="${meetingLink("imported", m.meeting_id)}">Note</a>
-    </div>` : `<div class="item">
+    </div>` : `<div class="item" data-open="${open(m)}">
       <div class="main">
         <div class="title">${esc(m.title || m.meeting_id)}</div>
         <div class="meta">${esc(m.date || "")} · ${m.note ? `sent ${esc((m.archived || "").slice(0, 10))} as ${esc((m.sent_path || "").split("/").pop())}`
@@ -267,6 +278,7 @@ async function renderArchive() {
       renderArchive();
     });
   };
+  openRows(list);
   const filter = document.getElementById("archive-filter");
   if (filter) filter.oninput = draw;
   draw();

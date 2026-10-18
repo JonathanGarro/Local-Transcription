@@ -63,7 +63,6 @@ button, input, select { font: inherit; color: inherit; }
   justify-content: space-between;
 }
 .sidebar a.active { background: var(--panel); box-shadow: 0 0 0 1px var(--line); }
-.sidebar-foot { margin-top: auto; color: var(--muted); font-size: 12px; padding: 0 10px; }
 .count:not(:empty) {
   background: var(--warn);
   color: #fff;

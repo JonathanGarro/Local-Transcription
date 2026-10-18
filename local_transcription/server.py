@@ -221,7 +221,7 @@ class DetailsRequest(BaseModel):
 
 # main
 def create_app():
-    app = FastAPI(title="Local Transcription", docs_url=None, redoc_url=None)
+    app = FastAPI(title="Boswell", docs_url=None, redoc_url=None)
     jobs = Jobs()
     pipeline.register_existing()
     # wavs rebuilt to replay an archived meeting are not kept between launches. a meeting with

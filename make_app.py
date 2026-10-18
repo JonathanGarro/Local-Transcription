@@ -4,7 +4,7 @@ usage:
     uv run make_app.py                      # uses assets/icon.png, makes a plain one if missing
     uv run make_app.py --icon ~/Pictures/my-icon.png
 
-the app goes in ~/Applications/Local Transcription.app. it only starts this project's
+the app goes in ~/Applications/Boswell.app. it only starts this project's
 app.py, so the code, data, and outputs stay where they are. run this again after changing
 the icon. any square png works, 1024x1024 looks best.
 """
@@ -18,7 +18,7 @@ from pathlib import Path
 
 # config
 BASE_DIR = Path(__file__).parent.resolve()
-APP_NAME = "Local Transcription"
+APP_NAME = "Boswell"
 APP_DIR = Path.home() / "Applications" / f"{APP_NAME}.app"
 ICON_PNG = BASE_DIR / "assets" / "icon.png"
 LOG_FILE = Path.home() / "Library" / "Logs" / f"{APP_NAME}.log"

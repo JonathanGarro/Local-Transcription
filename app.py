@@ -37,7 +37,7 @@ def set_dock_icon():
         return
     info = NSBundle.mainBundle().infoDictionary()
     if info is not None:
-        info["CFBundleName"] = "Local Transcription"
+        info["CFBundleName"] = "Boswell"
     if icon.exists():
         NSApplication.sharedApplication().setApplicationIconImage_(NSImage.alloc().initWithContentsOfFile_(str(icon)))
 
@@ -123,7 +123,7 @@ def main():
     set_dock_icon()
     threading.Thread(target=server.run, daemon=True).start()
     wait_for_server()
-    window = webview.create_window("Local Transcription", URL, width=1200, height=820, min_size=(820, 560))
+    window = webview.create_window("Boswell", URL, width=1200, height=820, min_size=(820, 560))
     # the page becomes the window's content once it loads
     window.events.loaded += lambda: hide_title_bar(window)
     webview.start()

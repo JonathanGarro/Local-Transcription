@@ -22,7 +22,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from local_transcription import audio, directory, library, notes, pipeline, projects, render
+from local_transcription import audio, directory, library, notes, pipeline, plaud, projects, render
 
 # config
 BASE_DIR = Path(__file__).parent.parent
@@ -31,6 +31,8 @@ WEB_DIR = Path(__file__).parent / "web"
 AUDIO_TYPES = {".m4a", ".mp3", ".wav"}
 CHANNELS = {"left": 0, "right": 1}
 # progress messages from pipeline.run, in order, mapped to a share of the job
+# how far back the inbox looks for recordings uploaded to plaud
+PLAUD_DAYS = 14
 STEPS = {"analyzing audio": 0.02, "diarizing": 0.10, "transcribing": 0.35,
          "transcribing mic": 0.75, "matching speakers": 0.88}
 # note jobs, the token count moves the bar between writing and done
@@ -80,6 +82,15 @@ def _dated_name(name):
     return f"{date} - {rest}{path.suffix}" if rest else f"{date}{path.suffix}"
 
 
+def _plaud_file(recording):
+    """the name, without extension, a plaud recording is saved under, dated by its recording
+    day when its name has no date. the extension is plaud's, added on download."""
+    name = recording["name"].replace("/", "-").strip()
+    name = name if render.DATE_PATTERN.search(name) else f"{recording['date']} - {name}"
+    # a placeholder extension, so a dot in the name is not taken for one
+    return Path(_dated_name(f"{name}.audio")).stem
+
+
 def _unique_path(folder, name):
     path = folder / name
     stem, suffix, n = path.stem, path.suffix, 2
@@ -100,6 +111,11 @@ class Jobs:
     def add(self, path, source_type, meeting_id=None):
         return self._queue({"kind": "transcribe", "file": path.name, "path": str(path),
                             "source_type": source_type, "meeting_id": meeting_id})
+
+    def add_plaud(self, plaud_id, name):
+        # the audio is downloaded when the job starts, so the queue stays quick to fill
+        return self._queue({"kind": "transcribe", "file": name, "path": None, "source_type": "auto",
+                            "meeting_id": None, "plaud_id": plaud_id})
 
     def add_note(self, meeting_id, backend, project):
         return self._queue({"kind": "note", "file": f"Note for {meeting_id}", "meeting_id": meeting_id,
@@ -146,6 +162,17 @@ class Jobs:
             elif share is not None:
                 self._update(job, step=message, progress=share)
 
+        if job.get("plaud_id") and not job["path"]:
+            self._update(job, step="downloading from plaud", progress=0.0)
+            DATA_DIR.mkdir(exist_ok=True)
+            # plaud's audio is mp3
+            stem = _unique_path(DATA_DIR, f"{job['file']}.mp3").stem
+            def downloaded(done, total):
+                mb = f"{done / 1e6:.0f} of {total / 1e6:.0f} MB" if total else f"{done / 1e6:.0f} MB"
+                # the download is the first sliver of the bar, before analysis starts
+                self._update(job, detail=mb, progress=STEPS["analyzing audio"] * (done / total if total else 0))
+
+            self._update(job, path=str(plaud.download_audio(job["plaud_id"], DATA_DIR, stem, downloaded)))
         source_type = job["source_type"]
         if source_type == "auto":
             info = audio.analyze(job["path"])
@@ -156,6 +183,8 @@ class Jobs:
             mic_channel=CHANNELS.get(os.environ.get("MIC_CHANNEL", "left"), 0),
             owner=os.environ.get("MIC_OWNER"),
             out_dir=pipeline.OUTPUT_DIR / job["meeting_id"] if job.get("meeting_id") else None)
+        if job.get("plaud_id"):
+            library.save_plaud_import(job["plaud_id"], out_dir.name)
         self._update(job, status="done", step="needs review" if review else "done",
                      progress=1.0, meeting_id=out_dir.name)
         self.auto_note(out_dir.name)
@@ -194,6 +223,10 @@ class ApplyRequest(BaseModel):
     no_enroll: list[str] = []
     skip: list[str] = []
     merges: list[tuple[str, str]] = []
+
+
+class PlaudRequest(BaseModel):
+    plaud_ids: list[str]
 
 
 class NameRequest(BaseModel):
@@ -237,6 +270,42 @@ def create_app():
             m["note"] = (pipeline.OUTPUT_DIR / m["meeting_id"] / "note.json").exists()
         return {"jobs": jobs.snapshot(), "meetings": meetings,
                 "owner": os.environ.get("MIC_OWNER")}
+
+    @app.get("/api/plaud/recent")
+    def plaud_recent():
+        try:
+            recordings = plaud.recent(PLAUD_DAYS)
+        except FileNotFoundError:
+            raise HTTPException(503, "the plaud cli is not installed, see the readme")
+        except RuntimeError as err:
+            raise HTTPException(502, f"plaud: {err}")
+        imported = library.plaud_imports()
+        meetings = library.meetings()
+        # recordings brought in before imports were tracked are known by name
+        known = set(meetings["meeting_id"]) | {Path(f).stem for col in ("source_file", "original_file")
+                                                for f in meetings[col].dropna()} if len(meetings) else set()
+        queued = {j.get("plaud_id"): j for j in jobs.snapshot() if j.get("plaud_id") and j["status"] != "failed"}
+        for r in recordings:
+            r["file"] = _plaud_file(r)
+            r["meeting_id"] = imported.get(r["plaud_id"]) or (r["file"] if r["file"] in known else None)
+            r["status"] = ("imported" if r["meeting_id"] else queued[r["plaud_id"]]["status"] if r["plaud_id"] in queued
+                           else "new")
+            # where its row opens: the app's note, else the obsidian one, else the review
+            out_dir = pipeline.OUTPUT_DIR / (r["meeting_id"] or "")
+            r["open"] = (None if not r["meeting_id"] else "note" if (out_dir / "note.json").exists()
+                         else "imported" if library.meeting_sent_path(r["meeting_id"]) else "review")
+        return {"days": PLAUD_DAYS, "recordings": recordings}
+
+    @app.post("/api/plaud/import")
+    def plaud_import(request: PlaudRequest):
+        busy = {j.get("plaud_id") for j in jobs.snapshot() if j["status"] in ("queued", "processing")}
+        recordings = {r["plaud_id"]: r for r in plaud.recent(PLAUD_DAYS)}
+        queued = []
+        for plaud_id in request.plaud_ids:
+            if plaud_id in busy or plaud_id not in recordings:
+                continue
+            queued.append(jobs.add_plaud(plaud_id, _plaud_file(recordings[plaud_id]))["job_id"])
+        return {"queued": queued}
 
     @app.post("/api/upload")
     async def upload(files: list[UploadFile] = File(...), source_type: str = Form("auto"),

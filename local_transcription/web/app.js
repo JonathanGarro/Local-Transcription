@@ -72,7 +72,7 @@ async function renderInbox() {
   view.innerHTML = `
     <div class="page">
       <h1>Inbox</h1>
-      <div class="sub">Drop Plaud or Audio Hijack recordings to transcribe them. One file runs at a time.</div>
+      <div class="sub">Drop Plaud or Audio Hijack recordings to transcribe them, or import ones uploaded to Plaud. One file runs at a time.</div>
       <div class="drop" id="drop">
         <p>Drop m4a, mp3, or wav files here</p>
         <div class="row">
@@ -87,6 +87,7 @@ async function renderInbox() {
       </div>
       <div id="notice"></div>
       <div id="jobs"></div>
+      <div id="plaud"></div>
       <h2>Meetings</h2>
       <div class="list" id="meetings"><div class="empty">Loading</div></div>
     </div>`;
@@ -100,6 +101,7 @@ async function renderInbox() {
     upload([...e.dataTransfer.files]);
   });
   document.getElementById("picker").addEventListener("change", e => upload([...e.target.files]));
+  loadPlaud();
   await refreshInbox();
   pollTimer = setInterval(refreshInbox, 1000);
 }
@@ -135,8 +137,57 @@ async function upload(files, rerun = false) {
   }
 }
 
+// recordings uploaded to plaud lately, imported by downloading their audio and running them
+// here, so plaud's own transcription minutes are not used
+let plaudJobs = "";
+
+async function loadPlaud() {
+  const el = document.getElementById("plaud");
+  if (!el) return;
+  let data;
+  try {
+    data = await api("/api/plaud/recent");
+  } catch (err) {
+    el.innerHTML = `<h2>From Plaud</h2><div class="list"><div class="empty">Could not reach Plaud: ${esc(err.message)}</div></div>`;
+    return;
+  }
+  const fresh = data.recordings.filter(r => r.status === "new");
+  const label = { imported: ["done", "in the app"], queued: ["work", "queued"], processing: ["work", "importing"], done: ["done", "in the app"] };
+  el.innerHTML = `<div class="section-head"><h2>From Plaud</h2>
+      ${fresh.length > 1 ? `<button class="btn small" id="plaud-all">Import all ${fresh.length}</button>` : ""}</div>
+    <div class="list">${data.recordings.length ? data.recordings.map(r => `<div class="item"${r.open ? ` data-open="${r.open === "note" ? `${meetingLink("transcript", r.meeting_id)}/note` : meetingLink(r.open, r.meeting_id)}"` : ""}>
+        <div class="main">
+          <div class="title">${esc(r.name)}</div>
+          <div class="meta">${esc(r.date)} · ${esc(r.duration)}</div>
+        </div>
+        ${r.status === "new" ? `<button class="btn small" data-plaud="${r.plaud_id}">Import</button>`
+          : ["queued", "processing"].includes(r.status) ? `<span class="badge work" data-plaud-job="${r.plaud_id}">${label[r.status][1]}</span>`
+          : `<span class="badge ${label[r.status][0]}">${label[r.status][1]}</span>`}
+      </div>`).join("") : `<div class="empty">Nothing uploaded to Plaud in the last ${data.days} days</div>`}</div>`;
+  const importIds = async ids => {
+    await post("/api/plaud/import", { plaud_ids: ids });
+    loadPlaud();
+    refreshInbox();
+  };
+  el.querySelectorAll("[data-plaud]").forEach(b => b.onclick = () => { b.disabled = true; importIds([b.dataset.plaud]); });
+  const all = document.getElementById("plaud-all");
+  if (all) all.onclick = () => { all.disabled = true; importIds(fresh.map(r => r.plaud_id)); };
+  openRows(el.querySelector(".list"));
+}
+
 async function refreshInbox() {
   const state = await api("/api/state");
+  // a plaud import that starts or finishes changes that list too
+  const now = state.jobs.filter(j => j.plaud_id).map(j => `${j.plaud_id}:${j.status}`).join();
+  if (now !== plaudJobs) {
+    if (plaudJobs) loadPlaud();
+    plaudJobs = now;
+  }
+  // a running import shows its step on its plaud row too
+  state.jobs.filter(j => j.plaud_id && j.status === "processing").forEach(j => {
+    const badge = document.querySelector(`[data-plaud-job="${j.plaud_id}"]`);
+    if (badge) badge.textContent = `${j.step} ${Math.round(j.progress * 100)}%`;
+  });
   updateCount(state.meetings);
   const jobsEl = document.getElementById("jobs");
   const meetingsEl = document.getElementById("meetings");

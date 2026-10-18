@@ -40,6 +40,7 @@ uv run make_app.py --icon ~/Pictures/my-icon.png
 It goes in `~/Applications/Boswell.app` and just starts `app.py` from this folder. Run it again after changing the icon. Without `--icon` it uses `assets/icon.png`. The app's log is `~/Library/Logs/Boswell.log`.
 
 - **Inbox:** drop recordings to queue them. One file runs at a time, with live progress. Dropped files are copied into `data/`. A file that was already processed is only re-run if you confirm, because re-running replaces its confirmed names.
+- **From Plaud:** the Inbox lists recordings uploaded to Plaud in the last 14 days. Import downloads the audio with the Plaud CLI (`plaud login` once) and runs it here like a dropped file, so Plaud doesn't need to transcribe it. Recordings already in the app show as such.
 - **Review:** each unknown speaker gets a few short clips with what they said, suggested names with scores, and a name field that searches existing people or creates a new one. You can also mark a speaker as the same person as another speaker (diarization split them), leave a speaker unnamed, or name them without adding the voice to their profile. Identified speakers are collapsed, with a "wrong?" link. Nothing is saved until you press Apply.
 - **Transcript:** click any line to play from there, show the file in Finder, or copy the markdown.
 - **Note:** writes the meeting note (see below), with a choice of model and project.

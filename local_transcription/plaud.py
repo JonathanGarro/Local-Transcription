@@ -33,6 +33,8 @@ NOTE_LINE = re.compile(r"^\[([^\]]+)\]:? ?(.*)$")
 GENERIC_LABEL = re.compile(r"^(speaker[ _]?\d+|unknown( \d+)?)$", re.IGNORECASE)
 # a speaker here is suggested a name when most of its overlapping time agrees
 SPEAKER_MIN_SHARE = 0.5
+# '  of_13eb...  2026-10-15 - GM Huddle  2026-10-15  26m33s' from plaud recent
+RECENT_LINE = re.compile(r"^\s*(of_\w+)\s{2,}(.+?)\s{2,}(\d{4}-\d{2}-\d{2})\s{2,}(\S+)\s*$")
 
 
 # helpers
@@ -71,19 +73,36 @@ def plaud_link(note_path):
     return link if isinstance(link, str) and "plaud.ai/" in link else None
 
 
-def download_audio(plaud_id, folder, stem):
+def download_audio(plaud_id, folder, stem, progress=None):
     """save a recording's audio as <stem> plus plaud's file type. returns the path. plaud
-    hands out a link that expires after a day, so it is fetched fresh each time."""
+    hands out a link that expires after a day, so it is fetched fresh each time. progress,
+    if given, is called with (bytes so far, total bytes or None) as it downloads."""
     url = next((line.strip() for line in _cli("audio", plaud_id).splitlines() if line.strip().startswith("https://")), None)
     if not url:
         raise RuntimeError(f"plaud gave no audio link for {plaud_id}")
     target = Path(folder) / f"{stem}{Path(url.split('?', 1)[0]).suffix or '.ogg'}"
     partial = target.with_name(target.name + ".partial")
     with urllib.request.urlopen(url) as response, partial.open("wb") as f:
+        total, done = int(response.headers.get("Content-Length") or 0) or None, 0
         while chunk := response.read(1 << 20):
             f.write(chunk)
+            done += len(chunk)
+            if progress:
+                progress(done, total)
     partial.replace(target)
     return target
+
+
+def recent(days=14):
+    """recordings uploaded to plaud in the last few days, newest first, as dicts of plaud_id,
+    name, date, and duration. they need not be transcribed there."""
+    rows = []
+    for line in _cli("recent", "--days", str(days)).splitlines():
+        found = RECENT_LINE.match(line)
+        if found:
+            plaud_id, name, date, duration = found.groups()
+            rows.append({"plaud_id": plaud_id, "name": name, "date": date, "duration": duration})
+    return rows
 
 
 def save_transcript(plaud_id, target):

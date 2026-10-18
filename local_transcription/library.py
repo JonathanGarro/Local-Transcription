@@ -91,6 +91,11 @@ create table if not exists meeting_speakers (
     minutes real,
     primary key (meeting_id, speaker)
 );
+create table if not exists plaud_files (
+    plaud_id text primary key,
+    meeting_id text,
+    imported text not null
+);
 """
 # columns added after the first release, applied to older databases on open
 ADDED_COLUMNS = {
@@ -452,6 +457,18 @@ def rename_meeting_id(old_id, new_id):
         con.execute("update meeting_speakers set meeting_id = ? where meeting_id = ?", (new_id, old_id))
         con.execute("update entries set meeting_id = ? where meeting_id = ?", (new_id, old_id))
         con.execute("delete from meetings where meeting_id = ?", (old_id,))
+
+
+def plaud_imports():
+    """{plaud_id: meeting_id} for recordings imported from plaud."""
+    table = _query("select plaud_id, meeting_id from plaud_files")
+    return dict(zip(table["plaud_id"], table["meeting_id"])) if len(table) else {}
+
+
+def save_plaud_import(plaud_id, meeting_id):
+    with connect() as con:
+        con.execute("insert or replace into plaud_files (plaud_id, meeting_id, imported) values (?, ?, ?)",
+                    (plaud_id, meeting_id, _now()))
 
 
 def find_meeting_by_source(source_file):

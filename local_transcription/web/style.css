@@ -205,7 +205,10 @@ select { border: 1px solid var(--line); background: var(--panel); border-radius:
 .turn.current { background: var(--accent-soft); }
 .turn .who { width: 120px; flex-shrink: 0; font-weight: 600; }
 .turn .who .at { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
-.tools { display: flex; gap: 8px; margin-bottom: 18px; }
+.tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 18px; }
+.tools .btn { white-space: nowrap; }
+/* the note beside a row of buttons goes on its own line under them */
+.tools .hint { flex-basis: 100%; }
 .tools input[type=text] {
   border: 1px solid var(--line);
   background: var(--bg);

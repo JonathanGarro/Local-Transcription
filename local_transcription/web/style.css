@@ -386,3 +386,8 @@ table.inner td, table.inner th { padding: 6px 14px; }
 .column-label { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 4px; color: var(--muted); font-size: 11px; white-space: nowrap; }
 
 .section-head { display: flex; align-items: center; justify-content: space-between; }
+
+.vocab-used { margin: 4px 0 14px; }
+input.cell { width: 100%; border: 1px solid transparent; background: transparent; border-radius: 6px; padding: 4px 6px; color: var(--text); font-size: 14px; }
+input.cell:hover { border-color: var(--line); }
+input.cell:focus { border-color: var(--accent); background: var(--bg); outline: none; }

@@ -961,6 +961,66 @@ async function renderHome() {
     </div>`;
 }
 
+// vocabulary
+async function renderVocabulary() {
+  let state = await api("/api/vocabulary");
+  const save = async () => {
+    try {
+      state = await api("/api/vocabulary", { method: "PUT", headers: { "Content-Type": "application/json" },
+                                            body: JSON.stringify({ entries: state.entries }) });
+    } catch (err) {
+      toast(err.message);
+      state = await api("/api/vocabulary");
+    }
+    draw();
+  };
+  const draw = () => {
+    view.innerHTML = `
+      <div class="page">
+        <h1>Vocabulary</h1>
+        <div class="sub">Terms Whisper should spell your way, such as acronyms, project names and jargon. Each term is given to Whisper as a spelling hint, and anything it mishears the same way every time can be listed under "also heard as" to be replaced with the term. Changes apply to recordings transcribed from now on. People's names are added as hints on their own.</div>
+        <div class="form">
+          <label>Term<input type="text" id="v-term" placeholder="GMS"></label>
+          <label>Also heard as<input type="text" id="v-variants" placeholder="GMs, G.M.S."></label>
+          <button class="btn primary" id="v-add">Add</button>
+        </div>
+        <div class="hint vocab-used">Spelling hints use ${state.used} of ${state.max} characters${state.used > state.max ? ", so the last terms are left out. Fixes still apply to them" : ""}.</div>
+        <table>
+          <tr><th>Term</th><th>Also heard as</th><th></th></tr>
+          ${state.entries.length ? state.entries.map((e, i) => `<tr>
+            <td><input type="text" class="cell" data-i="${i}" data-field="term" value="${esc(e.term)}"></td>
+            <td><input type="text" class="cell" data-i="${i}" data-field="variants" value="${esc(e.variants.join(", "))}" placeholder="none"></td>
+            <td><button class="link" data-remove="${i}">Remove</button></td>
+          </tr>`).join("") : `<tr><td colspan="3" class="empty">No terms yet</td></tr>`}
+        </table>
+      </div>`;
+    const add = () => {
+      const term = document.getElementById("v-term").value.trim();
+      if (!term) return;
+      const variants = document.getElementById("v-variants").value.split(",").map(v => v.trim()).filter(Boolean);
+      state.entries = [...state.entries.filter(e => e.term.toLowerCase() !== term.toLowerCase()), { term, variants }];
+      save();
+    };
+    document.getElementById("v-add").onclick = add;
+    ["v-term", "v-variants"].forEach(id => document.getElementById(id).onkeydown = e => { if (e.key === "Enter") add(); });
+    // edits in the table save when the box loses focus or on Enter
+    view.querySelectorAll(".cell").forEach(input => {
+      input.onchange = () => {
+        const entry = state.entries[input.dataset.i];
+        if (input.dataset.field === "term") entry.term = input.value.trim();
+        else entry.variants = input.value.split(",").map(v => v.trim()).filter(Boolean);
+        save();
+      };
+      input.onkeydown = e => { if (e.key === "Enter") input.blur(); };
+    });
+    view.querySelectorAll("[data-remove]").forEach(b => b.onclick = () => {
+      state.entries.splice(Number(b.dataset.remove), 1);
+      save();
+    });
+  };
+  draw();
+}
+
 // people
 // kept across re-renders, such as after saving an edit
 let peopleQuery = "";
@@ -1127,12 +1187,13 @@ function route() {
   player.ontimeupdate = null;
   const [, page, id, tab] = location.hash.split("/");
   document.querySelectorAll("[data-nav]").forEach(a => a.classList.toggle(
-    "active", a.dataset.nav === (["people", "archive", "inbox"].includes(page) ? page : page === "imported" ? "archive"
+    "active", a.dataset.nav === (["people", "archive", "inbox", "vocabulary"].includes(page) ? page : page === "imported" ? "archive"
       : ["review", "transcript"].includes(page) ? "inbox" : "home")));
   const run = page === "review" ? renderReview(decodeURIComponent(id))
     : page === "transcript" ? renderTranscript(decodeURIComponent(id), tab === "note" ? "note" : "transcript")
     : page === "imported" ? renderImported(decodeURIComponent(id))
     : page === "people" ? renderPeople()
+    : page === "vocabulary" ? renderVocabulary()
     : page === "archive" ? renderArchive()
     : page === "inbox" ? renderInbox()
     : renderHome();

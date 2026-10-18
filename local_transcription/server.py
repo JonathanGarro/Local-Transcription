@@ -22,7 +22,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from local_transcription import audio, directory, library, notes, pipeline, plaud, projects, render
+from local_transcription import audio, directory, library, notes, pipeline, plaud, projects, render, vocab
 
 # config
 BASE_DIR = Path(__file__).parent.parent
@@ -225,6 +225,15 @@ class ApplyRequest(BaseModel):
     merges: list[tuple[str, str]] = []
 
 
+class VocabEntry(BaseModel):
+    term: str
+    variants: list[str] = []
+
+
+class VocabRequest(BaseModel):
+    entries: list[VocabEntry]
+
+
 class PlaudRequest(BaseModel):
     plaud_ids: list[str]
 
@@ -270,6 +279,23 @@ def create_app():
             m["note"] = (pipeline.OUTPUT_DIR / m["meeting_id"] / "note.json").exists()
         return {"jobs": jobs.snapshot(), "meetings": meetings,
                 "owner": os.environ.get("MIC_OWNER")}
+
+    def vocabulary_state():
+        rows = vocab.entries()
+        # the share of whisper's spelling hint the terms take, names fill whatever is left
+        return {"entries": rows, "used": len(", ".join(r["term"] for r in rows)), "max": vocab.PROMPT_MAX_CHARS}
+
+    @app.get("/api/vocabulary")
+    def vocabulary():
+        return vocabulary_state()
+
+    @app.put("/api/vocabulary")
+    def save_vocabulary(request: VocabRequest):
+        try:
+            vocab.save([e.model_dump() for e in request.entries])
+        except ValueError as err:
+            raise HTTPException(400, str(err))
+        return vocabulary_state()
 
     @app.get("/api/plaud/recent")
     def plaud_recent():

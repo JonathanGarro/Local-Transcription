@@ -68,6 +68,35 @@ def apply(text, replacements):
     return text
 
 
+def entries(path=VOCAB_PATH):
+    """the file as a list of {"term", "variants"}, for editing in the app."""
+    if not path.exists():
+        return []
+    rows = []
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            term, _, variants = line.partition("=")
+            rows.append({"term": term.strip(), "variants": [v.strip() for v in variants.split(",") if v.strip()]})
+    return rows
+
+
+def save(rows, path=VOCAB_PATH):
+    """write entries back as the file, one term per line under the usual header. a term may
+    not hold = or a comma, which the file uses to separate variants."""
+    lines = []
+    for row in rows:
+        term = row["term"].strip()
+        if not term:
+            continue
+        if "=" in term or "," in term:
+            raise ValueError(f"{term} can't hold = or a comma")
+        variants = [v.strip() for v in row.get("variants", []) if v.strip() and "=" not in v]
+        lines.append(f"{term} = {', '.join(variants)}" if variants else term)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(TEMPLATE + "\n" + "\n".join(lines) + ("\n" if lines else ""))
+
+
 def ensure_template(path=VOCAB_PATH):
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)

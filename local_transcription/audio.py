@@ -98,6 +98,15 @@ def extract_channel(src, dst, channel):
     _write_mono(src, dst, f"c{channel}")
 
 
+def clip(src, start, end, channel=None):
+    """a stretch of a recording as 16 khz mono wav bytes, one channel of it if given.
+    seeking before the input skips decoding the rest, so this is quick even on a long file."""
+    cmd = ["ffmpeg", "-v", "error", "-ss", f"{max(0, start):.3f}", "-t", f"{max(0, end - start):.3f}", "-i", str(src)]
+    if channel is not None:
+        cmd += ["-af", f"pan=mono|c0=c{channel}"]
+    return _run(cmd + ["-ac", "1", "-ar", str(SAMPLE_RATE), "-c:a", "pcm_s16le", "-f", "wav", "-"])
+
+
 def energy_regions(wav, threshold_db=VAD_THRESHOLD_DB):
     """speech regions on a clean single-speaker channel, found by frame energy."""
     import soundfile as sf

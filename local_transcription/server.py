@@ -305,6 +305,12 @@ def create_app():
     def clip(meeting_id: str, speaker: str, start: float, end: float):
         out_dir = _meeting_dir(meeting_id)
         meta = pipeline.load_run(out_dir)[0]
+        # cut from the original recording, so the playback wavs need not be rebuilt first
+        source = pipeline.source_path(meta)
+        if source.exists():
+            mic = meta.get("mic_channel") or 0
+            channel = (mic if speaker == pipeline.MIC_SPEAKER else 1 - mic) if meta.get("split") else None
+            return Response(audio.clip(source, start, end, channel), media_type="audio/wav")
         try:
             wav = pipeline.speaker_audio(out_dir, meta, speaker)
         except ValueError as err:

@@ -988,6 +988,19 @@ function route() {
 document.addEventListener("dragover", e => e.preventDefault());
 document.addEventListener("drop", e => e.preventDefault());
 window.addEventListener("hashchange", route);
+
+// in the app window the page runs under the title bar, so it leaves room for the window buttons
+const framed = () => document.documentElement.classList.add("framed");
+if (window.pywebview) framed();
+window.addEventListener("pywebviewready", framed);
+
+// scrollbars show only while scrolling
+document.addEventListener("scroll", e => {
+  const el = e.target === document ? document.documentElement : e.target;
+  el.classList.add("scrolling");
+  clearTimeout(el.scrollTimer);
+  el.scrollTimer = setTimeout(() => el.classList.remove("scrolling"), 900);
+}, true);
 if (!location.hash) location.hash = "#/inbox";
 route();
 api("/api/state").then(s => updateCount(s.meetings)).catch(() => {});

@@ -256,6 +256,8 @@ class Todo(BaseModel):
 
 class AddTodosRequest(BaseModel):
     todos: list[Todo]
+    # a meeting whose note's action items become the to-dos added
+    note_meeting_id: str | None = None
 
 
 class AskRequest(BaseModel):
@@ -409,6 +411,35 @@ def create_app():
         except RuntimeError as err:
             raise HTTPException(502, str(err))
 
+    def file_projects(todos, open_projects, meetings):
+        """the meeting's project charter in obsidian names its things project, which beats
+        claude's guess. claude's guess beats the inbox."""
+        open_ids = {p["id"] for p in open_projects}
+        for todo in todos:
+            charter = projects.things_project_id(meetings.get(todo["meeting_id"], {}).get("project"))
+            if charter in open_ids:
+                todo.update(project_id=charter, project_source="charter")
+            else:
+                todo["project_source"] = "claude" if todo["project_id"] else "inbox"
+
+    @app.post("/api/meetings/{meeting_id}/todos")
+    def meeting_todos(meeting_id: str):
+        row = library.meetings().query("meeting_id == @meeting_id")
+        if not len(row):
+            raise HTTPException(404, f"no meeting named {meeting_id}")
+        info = _records(row)[0]
+        meeting = {"title": info["title"] or meeting_id, "date": info["date"], "project": info.get("project"),
+                   "people": library.meeting_people().get(meeting_id, [])}
+        try:
+            open_projects = things.projects()
+            todos = ask.meeting_todos(meeting_id, meeting, open_projects, os.environ.get("MIC_OWNER"),
+                                      datetime.now().date().isoformat())
+        except RuntimeError as err:
+            raise HTTPException(502, str(err))
+        file_projects(todos, open_projects, {meeting_id: meeting})
+        return {"todos": todos, "projects": open_projects, "areas": things.areas(),
+                "meetings": {meeting_id: {"title": meeting["title"], "date": meeting["date"]}}}
+
     @app.post("/api/conversations/{conversation_id}/todos")
     def conversation_todos(conversation_id: str, request: TodosRequest):
         found = library.conversation(conversation_id)
@@ -425,15 +456,7 @@ def create_app():
                                       os.environ.get("MIC_OWNER"), datetime.now().date().isoformat())
         except RuntimeError as err:
             raise HTTPException(502, str(err))
-        # the meeting's project charter in obsidian names its things project, which beats
-        # claude's guess. claude's guess beats the inbox
-        open_ids = {p["id"] for p in open_projects}
-        for todo in todos:
-            charter = projects.things_project_id(meetings.get(todo["meeting_id"], {}).get("project"))
-            if charter in open_ids:
-                todo.update(project_id=charter, project_source="charter")
-            else:
-                todo["project_source"] = "claude" if todo["project_id"] else "inbox"
+        file_projects(todos, open_projects, meetings)
         return {"todos": todos, "projects": open_projects, "areas": things.areas(),
                 "meetings": {m: {"title": v["title"], "date": v["date"]} for m, v in meetings.items()}}
 
@@ -460,11 +483,22 @@ def create_app():
                 if link and link.startswith("#/transcript/"):
                     notes.append(f"{str(http.base_url).rstrip('/')}/{link}" + (f"/at/{todo.seconds}" if todo.seconds >= 0 else ""))
             try:
-                added.append(things.add_todo(todo.title.strip(), "\n\n".join(n for n in notes if n),
-                                             todo.project_id, when, deadline))
+                added.append({"title": todo.title.strip(), "id": things.add_todo(
+                    todo.title.strip(), "\n\n".join(n for n in notes if n), todo.project_id, when, deadline)})
             except RuntimeError as err:
-                raise HTTPException(502, f"added {len(added)}, then Things said: {err}")
-        return {"added": len(added)}
+                failed = f"added {len(added)}, then Things said: {err}"
+                break
+        else:
+            failed = None
+        vault = None
+        if request.note_meeting_id and added:
+            # the note's action items become links to these to-dos, after any sent before
+            out_dir = _meeting_dir(request.note_meeting_id)
+            earlier = json.loads((out_dir / "note.json").read_text()).get("things_items") or []
+            vault = pipeline.set_action_items(out_dir, earlier + added)
+        if failed:
+            raise HTTPException(502, failed)
+        return {"added": len(added), "vault": vault}
 
     @app.get("/api/ask/{ask_id}")
     def ask_status(ask_id: str):

@@ -782,7 +782,8 @@ async function renderNote(id, body) {
         </div>
         ${["app-ahead", "conflict"].includes(note.vault) ? `<button class="btn" id="pull-note">Use Obsidian version</button>` : ""}
         <button class="btn ${note.sent_path && note.vault !== "app-ahead" && note.vault !== "missing" ? "" : "primary"}" id="send-note" ${note.notes_dir ? "" : "disabled title=\"Set MEETING_NOTES_DIR in .env\""}>${note.sent_path ? "Send again" : "Send to Obsidian"}</button>
-      </div>` : ""}
+      </div>
+      ${lookups.claude_ready ? `<div class="card" id="note-todos"></div>` : ""}` : ""}
     ${note.exists ? `<div class="tools">
         <button class="btn small" id="open-obsidian" ${note.sent_path ? "" : "disabled title=\"Send the note to Obsidian first\""}>Open in Obsidian</button>
         <button class="btn small" id="copy-note">Copy note</button>
@@ -794,6 +795,33 @@ async function renderNote(id, body) {
       </div>
       <div id="note-diff" hidden></div>
       <textarea class="note" id="note-text" spellcheck="true">${esc(note.markdown)}</textarea>` : job ? "" : `<div class="empty">No note yet. Names come from the confirmed speakers, so finish the review first.</div>`}`;
+
+  // claude reads the transcript for the owner's to-dos. once they're added to things, the
+  // note's action items become links to them
+  const todosCard = document.getElementById("note-todos");
+  if (todosCard) {
+    let todoState = null;
+    const drawTodos = () => {
+      todosCard.innerHTML = (todoState ? "" : `<div class="hint">Claude reads the transcript for tasks you were asked to do or offered to do, to add to Things. The note's action items then become links to them.</div>`)
+        + todoPanel(todoState, "note", "Find my to-dos");
+      bindTodoPanel(todosCard, "note", {
+        get: () => todoState,
+        set: state => { todoState = state; },
+        find: () => post(`/api/meetings/${enc}/todos`, {}),
+        add: async todos => {
+          // the note on disk is rewritten, so unsaved edits go first
+          await flushNote?.();
+          return post("/api/things/add", { todos, note_meeting_id: id });
+        },
+        redraw: drawTodos,
+        added: result => {
+          toast(`Added ${result.added} to Things${result.vault === "same" || result.vault === "pulled" ? ", and updated the note in Obsidian" : ""}`);
+          renderNote(id, body);
+        },
+      });
+    };
+    drawTodos();
+  }
 
   const writeButton = document.getElementById("write");
   writeButton.onclick = async () => {
@@ -902,6 +930,85 @@ async function renderNote(id, body) {
   }
 }
 
+// to-dos for things 3. claude picks out the owner's to-dos, which are checked and adjusted
+// here before they are added. a panel's state is kept by whatever it belongs to, so a redraw
+// keeps the edits, and key tells panels on one page apart
+function todoPanel(state, key, label = "Send to Things") {
+  if (!state) return `<div class="ask-tools"><button class="link" data-things="${key}">${label}</button></div>`;
+  if (state.status === "loading") return `<div class="things"><div class="hint">Finding your to-dos…</div></div>`;
+  if (state.status === "error") return `<div class="things"><div class="hint">${esc(state.error)}</div>
+    <button class="link" data-things="${key}">Try again</button></div>`;
+  if (state.status === "added") return `<div class="things"><div class="hint">Added ${state.added} to-do${state.added === 1 ? "" : "s"} to Things.</div></div>`;
+  if (!state.todos.length) return `<div class="things"><div class="hint">No to-dos for you here.</div></div>`;
+  const projectOptions = selected => `<option value="" ${selected ? "" : "selected"}>Inbox</option>` + state.areas.map(area => `
+    <optgroup label="${esc(area)}">${state.projects.filter(p => p.area === area).map(p =>
+      `<option value="${p.id}" ${p.id === selected ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</optgroup>`).join("");
+  const whenOptions = when => [["", "No date"], ["today", "Today"], ["tomorrow", "Tomorrow"],
+    ...(when && !["today", "tomorrow"].includes(when) ? [[when, when]] : [])]
+    .map(([v, label]) => `<option value="${v}" ${v === when ? "selected" : ""}>${label}</option>`).join("");
+  const chosen = state.todos.filter(todo => todo.keep).length;
+  return `<div class="things">
+    <div class="things-head">To-dos for Things</div>
+    ${state.todos.map((todo, j) => `<div class="things-row ${todo.keep ? "" : "off"}">
+      <input type="checkbox" data-todo="${key}:${j}" data-field="keep" ${todo.keep ? "checked" : ""}>
+      <div class="things-main">
+        <input type="text" class="cell" data-todo="${key}:${j}" data-field="title" value="${esc(todo.title)}">
+        <div class="hint">${esc(todo.notes)}${todo.meeting_id && state.meetings[todo.meeting_id] && !key.startsWith("note") ? ` From ${esc(state.meetings[todo.meeting_id].title)}.` : ""}${todo.seconds >= 0 ? ` (${fmtTime(todo.seconds)})` : ""}</div>
+        <div class="things-fields">
+          <label>Project <select data-todo="${key}:${j}" data-field="project_id">${projectOptions(todo.project_id)}</select>
+            ${PROJECT_SOURCE[todo.project_source] ? `<span class="source">${PROJECT_SOURCE[todo.project_source]}</span>` : ""}</label>
+          <label>When <select data-todo="${key}:${j}" data-field="when">${whenOptions(todo.when)}</select></label>
+          <label>Deadline <input type="date" data-todo="${key}:${j}" data-field="deadline" value="${esc(todo.deadline)}"></label>
+        </div>
+      </div>
+    </div>`).join("")}
+    <div class="ask-actions">
+      <button class="btn" data-things-cancel="${key}">Cancel</button>
+      <button class="btn primary" data-things-add="${key}" ${chosen ? "" : "disabled"}>Add ${chosen} to Things</button>
+    </div>
+  </div>`;
+}
+
+// panel is { get, set, find, add, redraw, added }: find fetches the to-dos, add sends the kept
+// ones, and added, when given, runs with add's result instead of the "added" message
+function bindTodoPanel(root, key, panel) {
+  const start = root.querySelector(`[data-things="${key}"]`);
+  if (start) start.onclick = async () => {
+    panel.set({ status: "loading" });
+    panel.redraw();
+    try {
+      const found = await panel.find();
+      panel.set({ status: "ready", ...found, todos: found.todos.map(todo => ({ ...todo, keep: true, when: todo.when || "today" })) });
+    } catch (err) {
+      panel.set({ status: "error", error: err.message });
+    }
+    panel.redraw();
+  };
+  root.querySelectorAll(`[data-todo^="${key}:"]`).forEach(el => el.onchange = () => {
+    const todo = panel.get().todos[Number(el.dataset.todo.split(":").pop())];
+    todo[el.dataset.field] = el.type === "checkbox" ? el.checked : el.value;
+    if (el.dataset.field === "project_id") todo.project_source = "you";
+    if (["keep", "project_id"].includes(el.dataset.field)) panel.redraw();
+  });
+  const cancel = root.querySelector(`[data-things-cancel="${key}"]`);
+  if (cancel) cancel.onclick = () => { panel.set(null); panel.redraw(); };
+  const add = root.querySelector(`[data-things-add="${key}"]`);
+  if (add) add.onclick = async () => {
+    add.disabled = true;
+    let result;
+    try {
+      result = await panel.add(panel.get().todos.filter(todo => todo.keep));
+    } catch (err) {
+      toast(err.message);
+      add.disabled = false;
+      return;
+    }
+    if (panel.added) return panel.added(result);
+    panel.set({ status: "added", added: result.added });
+    panel.redraw();
+  };
+}
+
 // ask
 // the open conversation. coming back to the page shows the list of saved conversations,
 // each one saved in the library after every answer
@@ -957,46 +1064,8 @@ async function renderAsk() {
   const thread = () => asking.turns.map((t, i) => `
     <div class="ask-q">${esc(t.question)}</div>
     <div class="ask-a">${t.error ? `<div class="hint">Something went wrong: ${esc(t.error)}</div>`
-      : t.answer != null ? renderAnswer(t.answer, t.links || {}) + thingsPanel(t, i)
+      : t.answer != null ? renderAnswer(t.answer, t.links || {}) + todoPanel(t.things, `t${i}`)
       : `<div class="ask-steps">${["thinking", ...(t.steps || [])].map(s => `<div>${esc(s)}…</div>`).join("")}</div>`}</div>`).join("");
-  // to-dos for things 3: claude picks out the actions assigned to the owner, which are
-  // checked and adjusted here before they are added
-  const thingsPanel = (t, i) => {
-    const state = t.things;
-    if (!state) return `<div class="ask-tools"><button class="link" data-things="${i}">Send to Things</button></div>`;
-    if (state.status === "loading") return `<div class="things"><div class="hint">Finding your to-dos…</div></div>`;
-    if (state.status === "error") return `<div class="things"><div class="hint">${esc(state.error)}</div>
-      <button class="link" data-things="${i}">Try again</button></div>`;
-    if (state.status === "added") return `<div class="things"><div class="hint">Added ${state.added} to-do${state.added === 1 ? "" : "s"} to Things.</div></div>`;
-    if (!state.todos.length) return `<div class="things"><div class="hint">No actions assigned to you in this answer.</div></div>`;
-    const projectOptions = selected => `<option value="" ${selected ? "" : "selected"}>Inbox</option>` + state.areas.map(area => `
-      <optgroup label="${esc(area)}">${state.projects.filter(p => p.area === area).map(p =>
-        `<option value="${p.id}" ${p.id === selected ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</optgroup>`).join("");
-    const whenOptions = when => [["", "No date"], ["today", "Today"], ["tomorrow", "Tomorrow"],
-      ...(when && !["today", "tomorrow"].includes(when) ? [[when, when]] : [])]
-      .map(([v, label]) => `<option value="${v}" ${v === when ? "selected" : ""}>${label}</option>`).join("");
-    const chosen = state.todos.filter(todo => todo.keep).length;
-    return `<div class="things">
-      <div class="things-head">To-dos for Things</div>
-      ${state.todos.map((todo, j) => `<div class="things-row ${todo.keep ? "" : "off"}">
-        <input type="checkbox" data-todo="${i}:${j}" data-field="keep" ${todo.keep ? "checked" : ""}>
-        <div class="things-main">
-          <input type="text" class="cell" data-todo="${i}:${j}" data-field="title" value="${esc(todo.title)}">
-          <div class="hint">${esc(todo.notes)}${todo.meeting_id && state.meetings[todo.meeting_id] ? ` From ${esc(state.meetings[todo.meeting_id].title)}.` : ""}</div>
-          <div class="things-fields">
-            <label>Project <select data-todo="${i}:${j}" data-field="project_id">${projectOptions(todo.project_id)}</select>
-              ${PROJECT_SOURCE[todo.project_source] ? `<span class="source">${PROJECT_SOURCE[todo.project_source]}</span>` : ""}</label>
-            <label>When <select data-todo="${i}:${j}" data-field="when">${whenOptions(todo.when)}</select></label>
-            <label>Deadline <input type="date" data-todo="${i}:${j}" data-field="deadline" value="${esc(todo.deadline)}"></label>
-          </div>
-        </div>
-      </div>`).join("")}
-      <div class="ask-actions">
-        <button class="btn" data-things-cancel="${i}">Cancel</button>
-        <button class="btn primary" data-things-add="${i}" ${chosen ? "" : "disabled"}>Add ${chosen} to Things</button>
-      </div>
-    </div>`;
-  };
   const when = at => at ? `${at.slice(0, 10)} ${at.slice(11, 16)}` : "";
   const table = () => !list.total ? "" : `
     <h2>Conversations</h2>
@@ -1057,43 +1126,13 @@ async function renderAsk() {
     };
     document.getElementById("ask-send").onclick = send;
     input.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } };
-    view.querySelectorAll("[data-things]").forEach(b => b.onclick = async () => {
-      const turn = asking.turns[Number(b.dataset.things)];
-      turn.things = { status: "loading" };
-      draw();
-      try {
-        const found = await post(`/api/conversations/${asking.conversationId}/todos`, { turn: Number(b.dataset.things) });
-        turn.things = { status: "ready", ...found, todos: found.todos.map(todo => ({ ...todo, keep: true, when: todo.when || "today" })) };
-      } catch (err) {
-        turn.things = { status: "error", error: err.message };
-      }
-      draw();
-    });
-    // edits are kept on the turn, so a redraw keeps them
-    view.querySelectorAll("[data-todo]").forEach(el => el.onchange = () => {
-      const [i, j] = el.dataset.todo.split(":").map(Number);
-      const todo = asking.turns[i].things.todos[j];
-      todo[el.dataset.field] = el.type === "checkbox" ? el.checked : el.value;
-      if (el.dataset.field === "project_id") todo.project_source = "you";
-      if (["keep", "project_id"].includes(el.dataset.field)) draw();
-    });
-    view.querySelectorAll("[data-things-cancel]").forEach(b => b.onclick = () => {
-      delete asking.turns[Number(b.dataset.thingsCancel)].things;
-      draw();
-    });
-    view.querySelectorAll("[data-things-add]").forEach(b => b.onclick = async () => {
-      const turn = asking.turns[Number(b.dataset.thingsAdd)];
-      b.disabled = true;
-      try {
-        const done = await post("/api/things/add", { todos: turn.things.todos.filter(todo => todo.keep) });
-        turn.things = { status: "added", added: done.added };
-      } catch (err) {
-        toast(err.message);
-        b.disabled = false;
-        return;
-      }
-      draw();
-    });
+    asking.turns.forEach((t, i) => bindTodoPanel(view, `t${i}`, {
+      get: () => t.things,
+      set: state => { t.things = state; },
+      find: () => post(`/api/conversations/${asking.conversationId}/todos`, { turn: i }),
+      add: todos => post("/api/things/add", { todos }),
+      redraw: draw,
+    }));
 
     // back to the list, or a fresh question, both leave this conversation as saved
     const leave = async e => {

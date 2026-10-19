@@ -213,5 +213,15 @@ def render_note(summary, date, title, segments, speakers, owner_id, project, tra
         lines.append(f"- {topic['topic']}")
         lines += [f"\t- {point}" for point in topic["points"]]
     lines += ["", "## Transcript", "", "```"] + transcript_lines(segments, speakers) + ["```", "## Action Items", ""]
-    lines += [f"- [ ] {item}" for item in summary["action_items"]]
+    lines += action_item_lines(summary)
     return "\n".join(lines) + "\n"
+
+
+def action_item_lines(summary):
+    """the action items as markdown. once to-dos are sent to things 3 they replace the
+    model's list, each a link to its to-do, which is where it gets ticked off."""
+    if summary.get("things_items") is not None:
+        # square brackets would end the link text early
+        return ["- [{}](things:///show?id={})".format(re.sub(r"[\[\]]", "", item["title"]), item["id"])
+                for item in summary["things_items"]]
+    return [f"- [ ] {item}" for item in summary["action_items"]]

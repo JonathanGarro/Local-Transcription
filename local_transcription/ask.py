@@ -261,10 +261,19 @@ Projects:
 {projects}"""
 
 
-def extract_todos(question, answer_text, meetings, projects, owner, today):
-    """the actions assigned to the owner in an answer, as to-do dicts. meetings is
-    {meeting_id: {title, date, project}} for the meetings the answer used, projects the
-    task manager's projects as dicts of id, name, and area."""
+MEETING_TODO_SYSTEM = """You read the transcript of one of {owner}'s meetings and list {owner}'s to-dos from it for their task manager. Today is {today}.
+
+Include only tasks someone asked {owner} to do, and tasks {owner} committed to doing ("I'll send that over", "let me look into it"). Leave out tasks for other people, general "we should" ideas nobody took on, and things already done in the meeting. Speaker names come from voice matching and can be wrong now and then, so go by who is being addressed as well as who is talking. If {owner} has no tasks, return an empty list.
+
+Write each title as a short imperative, like "Send Maya the dashboard mockups". In notes, say who asked for it, or that {owner} offered, and the detail needed to act on it, in a sentence or two. seconds is the time of the line where it was asked or offered, from the [m:ss] stamps, else -1. project_id is the id of the project below that fits the task or the meeting's project best, or "" when none fits. when is "today", "tomorrow", or a YYYY-MM-DD date only when the meeting says when to start, else "". deadline is a YYYY-MM-DD date only when one is given, such as "by Friday", else "".
+
+Projects:
+{projects}"""
+
+
+def _todos(system, content, projects, purpose):
+    """ask claude for to-dos in a fixed shape. returns them as dicts with unknown projects
+    dropped."""
     from pydantic import BaseModel
 
     class Todo(BaseModel):
@@ -280,20 +289,45 @@ def extract_todos(question, answer_text, meetings, projects, owner, today):
         todos: list[Todo]
 
     client, model = _client(), settings.claude_model()
-    listed = "\n".join(f"- {p['id']}: {p['name']} ({p['area']})" for p in projects) or "(none)"
-    used = "\n".join(f"- {m}: {v['title']}, {v['date']}, project {v.get('project') or 'none'}" for m, v in meetings.items())
     response = client.messages.parse(
-        model=model, max_tokens=8000, output_format=Todos,
-        system=TODO_SYSTEM.format(owner=owner or "the user", today=today, projects=listed),
-        messages=[{"role": "user", "content": f"Question: {question}\n\nAnswer:\n{answer_text}\n\nMeetings in the answer:\n{used or '(none)'}"}])
-    library.record_usage(response.model, "todos", response.usage, settings.cost(
+        model=model, max_tokens=8000, output_format=Todos, system=system,
+        messages=[{"role": "user", "content": content}])
+    library.record_usage(response.model, purpose, response.usage, settings.cost(
         response.model, response.usage.input_tokens, response.usage.output_tokens,
         response.usage.cache_creation_input_tokens, response.usage.cache_read_input_tokens))
     if response.stop_reason == "refusal" or response.parsed_output is None:
-        raise RuntimeError("Claude couldn't pull to-dos from this answer")
+        raise RuntimeError("Claude couldn't pull to-dos from this")
     known = {p["id"] for p in projects}
-    return [{**t.model_dump(), "project_id": t.project_id if t.project_id in known else "",
-             "meeting_id": t.meeting_id if t.meeting_id in meetings else ""} for t in response.parsed_output.todos]
+    return [{**t.model_dump(), "project_id": t.project_id if t.project_id in known else ""}
+            for t in response.parsed_output.todos]
+
+
+def _project_list(projects):
+    return "\n".join(f"- {p['id']}: {p['name']} ({p['area']})" for p in projects) or "(none)"
+
+
+def extract_todos(question, answer_text, meetings, projects, owner, today):
+    """the actions assigned to the owner in an answer, as to-do dicts. meetings is
+    {meeting_id: {title, date, project}} for the meetings the answer used, projects the
+    task manager's projects as dicts of id, name, and area."""
+    used = "\n".join(f"- {m}: {v['title']}, {v['date']}, project {v.get('project') or 'none'}" for m, v in meetings.items())
+    todos = _todos(TODO_SYSTEM.format(owner=owner or "the user", today=today, projects=_project_list(projects)),
+                   f"Question: {question}\n\nAnswer:\n{answer_text}\n\nMeetings in the answer:\n{used or '(none)'}",
+                   projects, "todos")
+    return [{**t, "meeting_id": t["meeting_id"] if t["meeting_id"] in meetings else ""} for t in todos]
+
+
+def meeting_todos(meeting_id, meeting, projects, owner, today):
+    """the owner's to-dos in one meeting, read from its whole transcript. meeting is
+    {title, date, project, people}."""
+    lines = transcript_lines(meeting_id)
+    if not lines:
+        raise RuntimeError("this meeting has no transcript to read")
+    content = (f"Meeting: {meeting['title']}, {meeting['date']}\nProject: {meeting.get('project') or 'none'}\n"
+               f"People: {', '.join(meeting.get('people') or []) or 'unknown'}\n\nTranscript:\n{_format(lines)}")
+    todos = _todos(MEETING_TODO_SYSTEM.format(owner=owner or "the user", today=today, projects=_project_list(projects)),
+                   content, projects, "meeting todos")
+    return [{**t, "meeting_id": meeting_id} for t in todos]
 
 
 # main

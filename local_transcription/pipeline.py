@@ -775,6 +775,41 @@ def send_note(out_dir, replace=False):
     return target, out_dir
 
 
+def _replace_section(text, heading, lines):
+    """swap the body of one "## " section of a note, adding the section when it is missing."""
+    rows = text.rstrip("\n").split("\n")
+    start = next((i for i, row in enumerate(rows) if row.strip() == heading), None)
+    if start is None:
+        return "\n".join(rows + ["", heading, ""] + lines) + "\n"
+    end = next((i for i in range(start + 1, len(rows)) if rows[i].startswith("## ")), len(rows))
+    tail = [""] + rows[end:] if end < len(rows) else []
+    return "\n".join(rows[:start + 1] + [""] + lines + tail) + "\n"
+
+
+def set_action_items(out_dir, items):
+    """make the note's action items the to-dos sent to things 3, as dicts of title and id.
+    a sent note's obsidian copy is updated too when the two were in step. returns the vault
+    state from before, as sync_from_vault gives it."""
+    out_dir = Path(out_dir)
+    # obsidian edits come in first, so they aren't overwritten
+    before = sync_from_vault(out_dir)
+    path = out_dir / "note.json"
+    summary = json.loads(path.read_text())
+    summary["things_items"] = items
+    path.write_text(json.dumps(summary, indent=2))
+    if summary.get("edited"):
+        note = out_dir / "note.md"
+        note.write_text(_replace_section(note.read_text(), "## Action Items", notes.action_item_lines(summary)))
+    else:
+        meta, segments, speakers, _ = load_run(out_dir)
+        render_note_file(out_dir, meta, segments, speakers)
+    if before in ("same", "pulled"):
+        text = (out_dir / "note.md").read_text()
+        vault_copy(out_dir).write_text(text)
+        (out_dir / SENT_NOTE).write_text(text)
+    return before
+
+
 def write_note(out_dir, backend=None, project=None, owner=None, progress=print):
     """summarize a meeting into note.md. project is a project name to file it under, or None
     to keep the current one. the owner is who the action items are for."""

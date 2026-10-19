@@ -23,7 +23,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from local_transcription import ask, audio, directory, library, notes, pipeline, plaud, projects, render, vocab
+from local_transcription import ask, audio, directory, library, notes, pipeline, plaud, projects, render, settings, vocab
 
 # config
 BASE_DIR = Path(__file__).parent.parent
@@ -235,6 +235,11 @@ class VocabRequest(BaseModel):
     entries: list[VocabEntry]
 
 
+class SettingsRequest(BaseModel):
+    accent: str | None = None
+    claude_model: str | None = None
+
+
 class AskRequest(BaseModel):
     question: str
     # None starts a new conversation
@@ -291,6 +296,23 @@ def create_app():
         rows = vocab.entries()
         # the share of whisper's spelling hint the terms take, names fill whatever is left
         return {"entries": rows, "used": len(", ".join(r["term"] for r in rows)), "max": vocab.PROMPT_MAX_CHARS}
+
+    def settings_state():
+        return {**settings.load(), "claude_model": settings.claude_model(), "accents": settings.ACCENTS,
+                "models": [{"id": k, **v} for k, v in settings.MODELS.items()],
+                "key": settings.masked_key(), "usage": library.usage_totals()}
+
+    @app.get("/api/settings")
+    def get_settings():
+        return settings_state()
+
+    @app.put("/api/settings")
+    def put_settings(request: SettingsRequest):
+        try:
+            settings.save(accent=request.accent, claude_model=request.claude_model)
+        except ValueError as err:
+            raise HTTPException(400, str(err))
+        return settings_state()
 
     # questions about past meetings. answers take a while, so a question runs in its own
     # thread and the page polls it. conversations live in memory until the app quits

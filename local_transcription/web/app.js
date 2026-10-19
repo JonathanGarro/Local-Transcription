@@ -1005,6 +1005,59 @@ async function renderAsk() {
   poll();
 }
 
+// settings
+const ACCENT_KEY = "accent";
+
+function applyAccent(accent) {
+  document.documentElement.dataset.accent = accent;
+  try { localStorage.setItem(ACCENT_KEY, accent); } catch (e) {}
+}
+
+async function renderSettings() {
+  let s = await api("/api/settings");
+  const money = n => `$${(n || 0).toFixed(2)}`;
+  const save = async changes => {
+    try {
+      s = await api("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(changes) });
+      applyAccent(s.accent);
+      draw();
+    } catch (err) {
+      toast(err.message);
+    }
+  };
+  const draw = () => {
+    const model = s.models.find(m => m.id === s.claude_model);
+    view.innerHTML = `
+      <div class="page">
+        <h1>Settings</h1>
+        <h2>Appearance</h2>
+        <div class="card setting">
+          <div class="main"><b>Accent color</b><div class="hint">Buttons, links, highlights and charts.</div></div>
+          <div class="swatches">${s.accents.map(a => `<button class="swatch ${a === s.accent ? "on" : ""}" data-accent-pick="${a}" style="--swatch: var(--accent-${a})" title="${a[0].toUpperCase() + a.slice(1)}" aria-label="${a}"></button>`).join("")}</div>
+        </div>
+        <h2>Claude</h2>
+        <div class="card setting">
+          <div class="main"><b>Anthropic API key</b><div class="hint">${s.key ? "Read from ANTHROPIC_API_KEY in .env." : "Add ANTHROPIC_API_KEY to .env and restart the app."}</div></div>
+          <code class="key">${s.key ? esc(s.key) : "not set"}</code>
+        </div>
+        <div class="card setting">
+          <div class="main"><b>Model</b><div class="hint">Used to answer questions on the Ask page and to write notes with Claude.${model ? ` $${model.input} per million tokens in, $${model.output} out.` : ""}</div></div>
+          <select id="model">${s.models.map(m => `<option value="${m.id}" ${m.id === s.claude_model ? "selected" : ""}>${esc(m.label)}</option>`).join("")}</select>
+        </div>
+        <h2>Usage</h2>
+        <div class="tiles">
+          <div class="tile"><div class="tile-value">${money(s.usage.today)}</div><div class="tile-label">today</div></div>
+          <div class="tile"><div class="tile-value">${money(s.usage.total)}</div><div class="tile-label">in total${s.usage.since ? ` since ${esc(s.usage.since.slice(0, 10))}` : ""}</div></div>
+          <div class="tile"><div class="tile-value">${s.usage.requests}</div><div class="tile-label">requests to Claude</div></div>
+        </div>
+        <div class="hint">Estimated from list prices for the requests this app makes, counted from when usage tracking was added. Anything else using the same key isn't included, and the Anthropic Console has the exact bill.</div>
+      </div>`;
+    view.querySelectorAll("[data-accent-pick]").forEach(b => b.onclick = () => save({ accent: b.dataset.accentPick }));
+    document.getElementById("model").onchange = e => save({ claude_model: e.target.value });
+  };
+  draw();
+}
+
 // home
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -1299,11 +1352,12 @@ function route() {
   player.ontimeupdate = null;
   const [, page, id, tab, extra] = location.hash.split("/");
   document.querySelectorAll("[data-nav]").forEach(a => a.classList.toggle(
-    "active", a.dataset.nav === (["people", "archive", "inbox", "vocabulary", "ask"].includes(page) ? page : page === "imported" ? "archive"
+    "active", a.dataset.nav === (["people", "archive", "inbox", "vocabulary", "ask", "settings"].includes(page) ? page : page === "imported" ? "archive"
       : ["review", "transcript"].includes(page) ? "inbox" : "home")));
   const run = page === "review" ? renderReview(decodeURIComponent(id))
     : page === "transcript" ? renderTranscript(decodeURIComponent(id), tab === "note" ? "note" : "transcript", tab === "at" ? Number(extra) : null)
     : page === "ask" ? renderAsk()
+    : page === "settings" ? renderSettings()
     : page === "imported" ? renderImported(decodeURIComponent(id))
     : page === "people" ? renderPeople()
     : page === "vocabulary" ? renderVocabulary()
@@ -1317,6 +1371,10 @@ function route() {
 document.addEventListener("dragover", e => e.preventDefault());
 document.addEventListener("drop", e => e.preventDefault());
 window.addEventListener("hashchange", route);
+
+// the accent is remembered in the browser so the page opens in it, then checked with the app
+try { if (localStorage.getItem(ACCENT_KEY)) applyAccent(localStorage.getItem(ACCENT_KEY)); } catch (e) {}
+api("/api/settings").then(s => applyAccent(s.accent)).catch(() => {});
 
 // in the app window the page runs under the title bar, so it leaves room for the window buttons
 const framed = () => document.documentElement.classList.add("framed");

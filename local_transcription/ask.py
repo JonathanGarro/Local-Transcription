@@ -13,10 +13,9 @@ import os
 import re
 from pathlib import Path
 
-from local_transcription import library, pipeline, plaud
+from local_transcription import library, pipeline, plaud, settings
 
 # config
-DEFAULT_MODEL = "claude-opus-5-5"
 MAX_OUTPUT_TOKENS = 16000
 # every tool call is a round trip, a question that needs more than this is cut off
 MAX_TURNS = 20
@@ -230,7 +229,10 @@ def answer(history, question, owner, today, progress=None):
     if not os.environ.get("ANTHROPIC_API_KEY"):
         raise RuntimeError("ANTHROPIC_API_KEY is not set in .env")
     client = anthropic.Anthropic()
-    model = os.environ.get("CLAUDE_MODEL", DEFAULT_MODEL)
+    model = settings.claude_model()
+    # a declined request is retried on a fallback model instead of stopping, where offered
+    fallback = ({"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
+                if model in settings.FALLBACK_MODELS else {})
     messages = [*history, {"role": "user", "content": question}]
     touched = []
     for _ in range(MAX_TURNS):
@@ -241,9 +243,11 @@ def answer(history, question, owner, today, progress=None):
             thinking={"type": "adaptive"}, output_config={"effort": "medium"},
             # the conversation so far is reused on every round trip
             cache_control={"type": "ephemeral"},
-            # a declined request is retried on a fallback model instead of stopping
-            betas=["server-side-fallback-2026-07-01"], fallbacks="default",
+            **fallback,
         )
+        library.record_usage(response.model, "ask", response.usage, settings.cost(
+            response.model, response.usage.input_tokens, response.usage.output_tokens,
+            response.usage.cache_creation_input_tokens, response.usage.cache_read_input_tokens))
         messages.append({"role": "assistant", "content": response.content})
         if response.stop_reason == "refusal":
             raise RuntimeError("Claude declined to answer this one")

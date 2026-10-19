@@ -406,3 +406,28 @@ input.cell:focus { border-color: var(--accent); background: var(--bg); outline: 
 .ask-box textarea:focus { border-color: var(--accent); }
 .page.ask { padding-bottom: 0; }
 
+/* accent colors, each with a soft tint for backgrounds. the swatches show them on the settings page */
+:root {
+  --accent-blue: #2f6fde; --accent-red: #d23f3f; --accent-green: #23824a; --accent-purple: #7b4fd6; --accent-orange: #d9730d;
+}
+:root[data-accent="red"] { --accent: var(--accent-red); --accent-soft: #fbe7e7; }
+:root[data-accent="green"] { --accent: var(--accent-green); --accent-soft: #e3f3e8; }
+:root[data-accent="purple"] { --accent: var(--accent-purple); --accent-soft: #efe8fc; }
+:root[data-accent="orange"] { --accent: var(--accent-orange); --accent-soft: #fcefe1; }
+@media (prefers-color-scheme: dark) {
+  :root { --accent-blue: #5b93f5; --accent-red: #f07167; --accent-green: #5cc283; --accent-purple: #a98af5; --accent-orange: #f0a050; }
+  :root[data-accent="red"] { --accent-soft: #4a2626; }
+  :root[data-accent="green"] { --accent-soft: #1f3a2a; }
+  :root[data-accent="purple"] { --accent-soft: #322a4d; }
+  :root[data-accent="orange"] { --accent-soft: #45321c; }
+}
+
+.sidebar a.nav-settings { margin-top: auto; color: var(--muted); font-size: 13px; }
+.sidebar a.nav-settings.active { color: var(--text); }
+.card.setting { display: flex; align-items: center; gap: 16px; margin-bottom: 10px; }
+.card.setting .main { flex: 1; }
+.card.setting select { border: 1px solid var(--line); background: var(--bg); color: var(--text); border-radius: 7px; padding: 5px 10px; font-size: 14px; }
+.swatches { display: flex; gap: 10px; }
+.swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; background: var(--swatch); cursor: pointer; padding: 0; box-shadow: inset 0 0 0 2px var(--panel); }
+.swatch.on { border-color: var(--swatch); }
+code.key { font-size: 13px; color: var(--muted); letter-spacing: 0.5px; }

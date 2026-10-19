@@ -91,6 +91,16 @@ create table if not exists meeting_speakers (
     minutes real,
     primary key (meeting_id, speaker)
 );
+create table if not exists api_usage (
+    at text not null,
+    model text,
+    purpose text,
+    input_tokens integer,
+    output_tokens integer,
+    cache_write_tokens integer,
+    cache_read_tokens integer,
+    cost real
+);
 create table if not exists plaud_files (
     plaud_id text primary key,
     meeting_id text,
@@ -457,6 +467,26 @@ def rename_meeting_id(old_id, new_id):
         con.execute("update meeting_speakers set meeting_id = ? where meeting_id = ?", (new_id, old_id))
         con.execute("update entries set meeting_id = ? where meeting_id = ?", (new_id, old_id))
         con.execute("delete from meetings where meeting_id = ?", (old_id,))
+
+
+def record_usage(model, purpose, usage, cost):
+    """log one claude request's token counts and estimated cost."""
+    with connect() as con:
+        con.execute("""insert into api_usage (at, model, purpose, input_tokens, output_tokens,
+                       cache_write_tokens, cache_read_tokens, cost) values (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (datetime.now().isoformat(timespec="seconds"), model, purpose,
+                     getattr(usage, "input_tokens", 0) or 0, getattr(usage, "output_tokens", 0) or 0,
+                     getattr(usage, "cache_creation_input_tokens", 0) or 0,
+                     getattr(usage, "cache_read_input_tokens", 0) or 0, cost))
+
+
+def usage_totals():
+    """estimated spend in total and today, local time, with the first request's date."""
+    row = _query("""select coalesce(sum(cost), 0) as total, count(*) as requests, min(at) as since,
+                           coalesce(sum(case when substr(at, 1, 10) = ? then cost end), 0) as today
+                    from api_usage""", (datetime.now().date().isoformat(),))
+    return {k: (None if v is None or v != v else v) for k, v in row.iloc[0].to_dict().items()} if len(row) \
+        else {"total": 0, "requests": 0, "since": None, "today": 0}
 
 
 def meeting_people():

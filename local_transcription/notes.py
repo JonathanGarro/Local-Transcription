@@ -15,12 +15,11 @@ import os
 import re
 from datetime import datetime
 
-from local_transcription import library
+from local_transcription import library, settings
 
 # config
 BACKENDS = ["local", "claude"]
 DEFAULT_LOCAL_MODEL = "mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit"
-DEFAULT_CLAUDE_MODEL = "claude-opus-5-5"
 MAX_OUTPUT_TOKENS = 4000
 LOCAL_TEMPERATURE = 0.2
 INSTRUCTIONS = """You write meeting notes from a speaker-labeled transcript. Reply with a single JSON object and nothing else. It has these keys:
@@ -40,7 +39,7 @@ Rules:
 # helpers
 def _models():
     return {"local_model": os.environ.get("LOCAL_SUMMARY_MODEL", DEFAULT_LOCAL_MODEL),
-            "claude_model": os.environ.get("CLAUDE_MODEL", DEFAULT_CLAUDE_MODEL)}
+            "claude_model": settings.claude_model()}
 
 
 def default_backend():
@@ -164,6 +163,10 @@ def run_claude(system, user, progress=None):
     client = anthropic.Anthropic()
     message = client.messages.create(model=model_name, max_tokens=MAX_OUTPUT_TOKENS, system=system,
                                      messages=[{"role": "user", "content": user}])
+    usage = message.usage
+    library.record_usage(message.model, "note", usage, settings.cost(
+        message.model, usage.input_tokens, usage.output_tokens,
+        usage.cache_creation_input_tokens, usage.cache_read_input_tokens))
     return "".join(block.text for block in message.content if block.type == "text"), model_name
 
 

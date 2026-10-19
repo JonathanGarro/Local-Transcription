@@ -251,6 +251,51 @@ def title(question, answer_text):
     return text[:80] or question[:60]
 
 
+TODO_SYSTEM = """You turn an answer about {owner}'s meetings into to-dos for {owner}'s task manager. Today is {today}.
+
+Include only actions assigned to {owner} or that {owner} took on, never things other people will do or points raised without anyone owning them. Write each title as a short imperative, like "Walk through the comment and review flow". In notes, say who asked for it and the detail needed to act on it, in a sentence or two, without links.
+
+meeting_id is the meeting the action came from, from the answer's meeting links, and seconds the moment in it when the answer links one, else -1. project_id is the id of the project below that fits the action or its meeting's project best, or "" when none fits. when is "today", "tomorrow", or a YYYY-MM-DD date only when the answer says when to start, else "". deadline is a YYYY-MM-DD date only when the answer gives one, such as "before Wednesday's demo", else "".
+
+Projects:
+{projects}"""
+
+
+def extract_todos(question, answer_text, meetings, projects, owner, today):
+    """the actions assigned to the owner in an answer, as to-do dicts. meetings is
+    {meeting_id: {title, date, project}} for the meetings the answer used, projects the
+    task manager's projects as dicts of id, name, and area."""
+    from pydantic import BaseModel
+
+    class Todo(BaseModel):
+        title: str
+        notes: str
+        meeting_id: str
+        seconds: int
+        project_id: str
+        when: str
+        deadline: str
+
+    class Todos(BaseModel):
+        todos: list[Todo]
+
+    client, model = _client(), settings.claude_model()
+    listed = "\n".join(f"- {p['id']}: {p['name']} ({p['area']})" for p in projects) or "(none)"
+    used = "\n".join(f"- {m}: {v['title']}, {v['date']}, project {v.get('project') or 'none'}" for m, v in meetings.items())
+    response = client.messages.parse(
+        model=model, max_tokens=8000, output_format=Todos,
+        system=TODO_SYSTEM.format(owner=owner or "the user", today=today, projects=listed),
+        messages=[{"role": "user", "content": f"Question: {question}\n\nAnswer:\n{answer_text}\n\nMeetings in the answer:\n{used or '(none)'}"}])
+    library.record_usage(response.model, "todos", response.usage, settings.cost(
+        response.model, response.usage.input_tokens, response.usage.output_tokens,
+        response.usage.cache_creation_input_tokens, response.usage.cache_read_input_tokens))
+    if response.stop_reason == "refusal" or response.parsed_output is None:
+        raise RuntimeError("Claude couldn't pull to-dos from this answer")
+    known = {p["id"] for p in projects}
+    return [{**t.model_dump(), "project_id": t.project_id if t.project_id in known else "",
+             "meeting_id": t.meeting_id if t.meeting_id in meetings else ""} for t in response.parsed_output.todos]
+
+
 # main
 def answer(history, question, owner, today, progress=None):
     """continue a conversation with a new question. history is the message list from the

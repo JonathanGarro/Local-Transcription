@@ -1,10 +1,12 @@
 """project names from the obsidian project index, one note per project.
 
-PROJECT_INDEX_DIR in .env points at the folder. only the "project status" line of each
-note's frontmatter is read, the rest of the note is never opened by the app.
+PROJECT_INDEX_DIR in .env points at the folder. only the "project status" and "things
+project" lines of each note's frontmatter are read, the rest of the note is never opened by
+the app.
 """
 
 import os
+import re
 from pathlib import Path
 
 from local_transcription import library
@@ -12,6 +14,9 @@ from local_transcription import library
 # config
 STATUS_KEY = "project status"
 ACTIVE_STATUS = "In-Progress"
+# a charter's link to its things 3 project, such as things:///show?id=5rg4Dyv6CNpxh1jf3QbqET
+THINGS_KEY = "things project"
+THINGS_ID = re.compile(r"[?&]id=([A-Za-z0-9]+)")
 
 
 # helpers
@@ -20,8 +25,8 @@ def index_dir():
     return Path(folder).expanduser() if folder else None
 
 
-def _status(path):
-    """the project status from the frontmatter, or None if it has none."""
+def _field(path, wanted):
+    """one frontmatter value, or None if the note has none."""
     with path.open(encoding="utf-8", errors="replace") as f:
         if f.readline().strip() != "---":
             return None
@@ -29,9 +34,13 @@ def _status(path):
             if line.strip() == "---":
                 return None
             key, _, value = line.partition(":")
-            if key.strip().lower() == STATUS_KEY:
+            if key.strip().lower() == wanted:
                 return value.strip().strip("\"'") or None
     return None
+
+
+def _status(path):
+    return _field(path, STATUS_KEY)
 
 
 # main
@@ -42,6 +51,18 @@ def index_projects():
         return []
     return [{"name": path.stem, "status": _status(path)} for path in folder.glob("*.md")
             if not path.name.startswith(".")]
+
+
+def things_project_id(name):
+    """the things 3 project id a project's charter links to, or None when the charter is
+    missing or has no link."""
+    folder = index_dir()
+    if not name or not folder or not folder.is_dir():
+        return None
+    charter = next((p for p in folder.glob("*.md") if p.stem.lower() == name.lower()), None)
+    link = _field(charter, THINGS_KEY) if charter else None
+    found = THINGS_ID.search(link or "")
+    return found.group(1) if found else None
 
 
 def all_projects():

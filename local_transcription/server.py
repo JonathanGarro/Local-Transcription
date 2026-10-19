@@ -18,12 +18,12 @@ from urllib.parse import quote
 
 import numpy as np
 import soundfile as sf
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from local_transcription import ask, audio, directory, library, notes, pipeline, plaud, projects, render, settings, vocab
+from local_transcription import ask, audio, directory, library, notes, pipeline, plaud, projects, render, settings, things, vocab
 
 # config
 BASE_DIR = Path(__file__).parent.parent
@@ -240,6 +240,24 @@ class SettingsRequest(BaseModel):
     claude_model: str | None = None
 
 
+class TodosRequest(BaseModel):
+    turn: int
+
+
+class Todo(BaseModel):
+    title: str
+    notes: str = ""
+    meeting_id: str = ""
+    seconds: int = -1
+    project_id: str = ""
+    when: str = ""
+    deadline: str = ""
+
+
+class AddTodosRequest(BaseModel):
+    todos: list[Todo]
+
+
 class AskRequest(BaseModel):
     question: str
     # None starts a new conversation
@@ -383,6 +401,70 @@ def create_app():
     def delete_conversation(conversation_id: str):
         library.delete_conversation(conversation_id)
         return {"ok": True}
+
+    @app.get("/api/things/projects")
+    def things_projects():
+        try:
+            return {"areas": things.areas(), "projects": things.projects()}
+        except RuntimeError as err:
+            raise HTTPException(502, str(err))
+
+    @app.post("/api/conversations/{conversation_id}/todos")
+    def conversation_todos(conversation_id: str, request: TodosRequest):
+        found = library.conversation(conversation_id)
+        if not found or not 0 <= request.turn < len(found["turns"]):
+            raise HTTPException(404, "no such answer")
+        turn = found["turns"][request.turn]
+        rows = library.meetings().set_index("meeting_id")
+        meetings = {m: {"title": rows.at[m, "title"] or m, "date": rows.at[m, "date"],
+                        "project": _clean(rows.at[m, "project"])}
+                    for m in turn.get("links", {}) if m in rows.index}
+        try:
+            open_projects = things.projects()
+            todos = ask.extract_todos(turn["question"], turn["answer"], meetings, open_projects,
+                                      os.environ.get("MIC_OWNER"), datetime.now().date().isoformat())
+        except RuntimeError as err:
+            raise HTTPException(502, str(err))
+        # the meeting's project charter in obsidian names its things project, which beats
+        # claude's guess. claude's guess beats the inbox
+        open_ids = {p["id"] for p in open_projects}
+        for todo in todos:
+            charter = projects.things_project_id(meetings.get(todo["meeting_id"], {}).get("project"))
+            if charter in open_ids:
+                todo.update(project_id=charter, project_source="charter")
+            else:
+                todo["project_source"] = "claude" if todo["project_id"] else "inbox"
+        return {"todos": todos, "projects": open_projects, "areas": things.areas(),
+                "meetings": {m: {"title": v["title"], "date": v["date"]} for m, v in meetings.items()}}
+
+    @app.post("/api/things/add")
+    def add_todos(request: AddTodosRequest, http: Request):
+        dated = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+        rows = library.meetings().set_index("meeting_id")
+        added = []
+        for todo in request.todos:
+            if not todo.title.strip():
+                continue
+            when = todo.when if todo.when in ("", "today", "tomorrow") or dated.match(todo.when) else ""
+            deadline = todo.deadline if dated.match(todo.deadline or "") else ""
+            # the note says where the to-do came from, with links to the meeting
+            notes = [todo.notes.strip()]
+            if todo.meeting_id in rows.index:
+                title, date = rows.at[todo.meeting_id, "title"] or todo.meeting_id, rows.at[todo.meeting_id, "date"]
+                at = f" at {ask._clock(todo.seconds)}" if todo.seconds >= 0 else ""
+                notes.append(f"From {title}, {date}{at}.")
+                sent = library.meeting_sent_path(todo.meeting_id)
+                if sent:
+                    notes.append(f"obsidian://open?path={quote(sent, safe='')}")
+                link = meeting_link(todo.meeting_id)
+                if link and link.startswith("#/transcript/"):
+                    notes.append(f"{str(http.base_url).rstrip('/')}/{link}" + (f"/at/{todo.seconds}" if todo.seconds >= 0 else ""))
+            try:
+                added.append(things.add_todo(todo.title.strip(), "\n\n".join(n for n in notes if n),
+                                             todo.project_id, when, deadline))
+            except RuntimeError as err:
+                raise HTTPException(502, f"added {len(added)}, then Things said: {err}")
+        return {"added": len(added)}
 
     @app.get("/api/ask/{ask_id}")
     def ask_status(ask_id: str):

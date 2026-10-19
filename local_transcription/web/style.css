@@ -435,6 +435,7 @@ table.conversations td.actions .link + .link { margin-left: 12px; }
 .card.setting .main { flex: 1; }
 .card.setting select { border: 1px solid var(--line); background: var(--bg); color: var(--text); border-radius: 7px; padding: 5px 10px; font-size: 14px; }
 .swatches { display: flex; gap: 10px; }
-.swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; background: var(--swatch); cursor: pointer; padding: 0; box-shadow: inset 0 0 0 2px var(--panel); }
-.swatch.on { border-color: var(--swatch); }
+.swatch { width: 24px; height: 24px; border-radius: 50%; border: none; background: var(--swatch); cursor: pointer; padding: 0; }
+/* only the chosen color gets a ring, set off from it by a gap in the card's color */
+.swatch.on { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--swatch); }
 code.key { font-size: 13px; color: var(--muted); letter-spacing: 0.5px; }

@@ -459,6 +459,12 @@ def rename_meeting_id(old_id, new_id):
         con.execute("delete from meetings where meeting_id = ?", (old_id,))
 
 
+def meeting_people():
+    """{meeting_id: sorted names of the people tagged in it}."""
+    tagged = _query("select ms.meeting_id, p.name from meeting_speakers ms join people p using (person_id)")
+    return tagged.groupby("meeting_id")["name"].agg(lambda n: sorted(set(n))).to_dict() if len(tagged) else {}
+
+
 def plaud_imports():
     """{plaud_id: meeting_id} for recordings imported from plaud."""
     table = _query("select plaud_id, meeting_id from plaud_files")

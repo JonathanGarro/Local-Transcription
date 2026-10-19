@@ -391,3 +391,18 @@ table.inner td, table.inner th { padding: 6px 14px; }
 input.cell { width: 100%; border: 1px solid transparent; background: transparent; border-radius: 6px; padding: 4px 6px; color: var(--text); font-size: 14px; }
 input.cell:hover { border-color: var(--line); }
 input.cell:focus { border-color: var(--accent); background: var(--bg); outline: none; }
+
+.ask-q { margin: 22px 0 8px auto; max-width: 80%; width: fit-content; background: var(--accent-soft); border-radius: 14px 14px 4px 14px; padding: 9px 14px; white-space: pre-wrap; }
+.ask-a { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 4px 18px; line-height: 1.55; }
+.ask-a p { margin: 10px 0; }
+.ask-a ul, .ask-a ol { margin: 8px 0; padding-left: 22px; }
+.ask-a li { margin: 4px 0; }
+.ask-a h4 { margin: 14px 0 6px; font-size: 14px; }
+.ask-a code { font-size: 12.5px; background: var(--bg); padding: 1px 5px; border-radius: 4px; }
+.ask-steps { color: var(--muted); font-size: 13px; padding: 10px 0; }
+.ask-steps div:last-child { color: var(--text); }
+.ask-box { position: sticky; bottom: 0; display: flex; gap: 10px; align-items: flex-end; padding: 18px 0 8px; background: var(--bg); }
+.ask-box textarea { flex: 1; resize: none; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: var(--radius); padding: 10px 12px; font: inherit; outline: none; }
+.ask-box textarea:focus { border-color: var(--accent); }
+.page.ask { padding-bottom: 0; }
+

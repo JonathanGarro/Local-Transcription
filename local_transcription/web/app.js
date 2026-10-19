@@ -564,7 +564,7 @@ async function applyReview() {
 }
 
 // transcript and note
-async function renderTranscript(id, tab = "transcript") {
+async function renderTranscript(id, tab = "transcript", at = null) {
   view.innerHTML = `<div class="page"><div class="empty">Loading transcript</div></div>`;
   const enc = encodeURIComponent(id);
   const [meeting, data] = await Promise.all([api(`/api/meetings/${enc}`), api(`/api/meetings/${enc}/transcript`)]);
@@ -607,6 +607,15 @@ async function renderTranscript(id, tab = "transcript") {
     body.querySelectorAll(".turn").forEach(el => el.classList.toggle(
       "current", !player.paused && now >= Number(el.dataset.start) && now < Number(el.dataset.end) + 0.5));
   };
+  // a link to a moment, from an answer on the Ask page, lands on that line
+  if (at != null) {
+    const turns = [...body.querySelectorAll(".turn")];
+    const hit = turns.filter(el => Number(el.dataset.start) <= at + 1).pop() || turns[0];
+    if (hit) {
+      hit.classList.add("current");
+      hit.scrollIntoView({ block: "center" });
+    }
+  }
   document.getElementById("reveal").onclick = () => post(`/api/meetings/${enc}/reveal`);
   document.getElementById("copy").onclick = async () => {
     await navigator.clipboard.writeText(data.markdown);
@@ -891,6 +900,109 @@ async function renderNote(id, body) {
   if (job) {
     pollTimer = setTimeout(() => { if (document.body.contains(body)) renderNote(id, body); }, 1500);
   }
+}
+
+// ask
+// the conversation stays while the app runs, so leaving the page and coming back keeps it
+const asking = { conversationId: null, turns: [], pending: null };
+
+// a small markdown renderer for answers: headings, lists, bold, code, and links, where
+// meeting:ID and meeting:ID@SECONDS open the meeting, at that moment when given
+function renderAnswer(text, links) {
+  const inline = s => esc(s)
+    .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\[([^\]]+)\]\(meeting:([^)@]+?)(?:@(\d+))?\)/g, (all, label, id, at) => {
+      const href = links[id.replace(/&amp;/g, "&").replace(/&#39;/g, "'").replace(/&quot;/g, '"')];
+      if (!href) return label;
+      return `<a href="${href.startsWith("#/transcript/") && at ? `${href}/at/${at}` : href}">${label}</a>`;
+    });
+  const out = [];
+  let list = null;
+  const close = () => { if (list) { out.push(`</${list}>`); list = null; } };
+  for (const line of text.split("\n")) {
+    const bullet = line.match(/^\s*[-*] (.*)$/), numbered = line.match(/^\s*\d+[.)] (.*)$/), heading = line.match(/^(#{1,4}) (.*)$/);
+    if (bullet || numbered) {
+      const kind = bullet ? "ul" : "ol";
+      if (list !== kind) { close(); out.push(`<${kind}>`); list = kind; }
+      out.push(`<li>${inline((bullet || numbered)[1])}</li>`);
+    } else {
+      close();
+      if (heading) out.push(`<h4>${inline(heading[2])}</h4>`);
+      else if (line.trim()) out.push(`<p>${inline(line)}</p>`);
+    }
+  }
+  close();
+  return out.join("");
+}
+
+async function renderAsk() {
+  const lookups = await api("/api/lookups");
+  const draw = () => {
+    view.innerHTML = `
+      <div class="page ask">
+        <div class="section-head"><h1>Ask</h1>
+          ${asking.turns.length ? `<button class="btn small" id="ask-new">New conversation</button>` : ""}</div>
+        <div class="sub">Ask about your meetings, such as what you agreed with someone or where a project stands. Claude looks through your notes and transcripts to answer, so the parts it reads are sent to Anthropic.</div>
+        ${lookups.claude_ready ? "" : `<div class="card">Add ANTHROPIC_API_KEY to .env and restart the app to ask questions.</div>`}
+        <div id="ask-thread">${asking.turns.map(t => `
+          <div class="ask-q">${esc(t.question)}</div>
+          <div class="ask-a">${t.error ? `<div class="hint">Something went wrong: ${esc(t.error)}</div>`
+            : t.answer != null ? renderAnswer(t.answer, t.links || {})
+            : `<div class="ask-steps">${["thinking", ...t.steps].map(s => `<div>${esc(s)}…</div>`).join("")}</div>`}</div>`).join("")}
+        </div>
+        <div class="ask-box">
+          <textarea id="ask-input" rows="2" placeholder="${asking.turns.length ? "Ask a follow-up" : "What did Daniel and I agree to in our last meeting?"}" ${lookups.claude_ready && !asking.pending ? "" : "disabled"}></textarea>
+          <button class="btn primary" id="ask-send" ${lookups.claude_ready && !asking.pending ? "" : "disabled"}>Ask</button>
+        </div>
+      </div>`;
+    const input = document.getElementById("ask-input");
+    const send = async () => {
+      const question = input.value.trim();
+      if (!question || asking.pending) return;
+      const turn = { question, steps: [], answer: null };
+      asking.turns.push(turn);
+      try {
+        const started = await post("/api/ask", { question, conversation_id: asking.conversationId });
+        asking.conversationId = started.conversation_id;
+        asking.pending = { askId: started.ask_id, turn };
+      } catch (err) {
+        turn.error = err.message;
+      }
+      draw();
+      poll();
+    };
+    document.getElementById("ask-send").onclick = send;
+    input.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } };
+    const fresh = document.getElementById("ask-new");
+    if (fresh) fresh.onclick = () => {
+      if (asking.pending) return toast("Wait for the answer first");
+      Object.assign(asking, { conversationId: null, turns: [] });
+      draw();
+    };
+    if (!asking.pending) input.focus();
+    view.querySelector(".ask-a:last-of-type")?.scrollIntoView({ block: "end" });
+  };
+  const poll = async () => {
+    clearTimeout(pollTimer);
+    if (!asking.pending) return;
+    const { askId, turn } = asking.pending;
+    try {
+      const state = await api(`/api/ask/${askId}`);
+      turn.steps = state.steps;
+      if (state.status === "done") Object.assign(turn, { answer: state.answer, links: state.links });
+      if (state.status === "failed") turn.error = state.error;
+      if (state.status !== "working") asking.pending = null;
+    } catch (err) {
+      turn.error = err.message;
+      asking.pending = null;
+    }
+    if (location.hash !== "#/ask") return;
+    draw();
+    if (asking.pending) pollTimer = setTimeout(poll, 800);
+  };
+  draw();
+  poll();
 }
 
 // home
@@ -1185,12 +1297,13 @@ function route() {
   clearTimeout(pollTimer);
   stopAudio();
   player.ontimeupdate = null;
-  const [, page, id, tab] = location.hash.split("/");
+  const [, page, id, tab, extra] = location.hash.split("/");
   document.querySelectorAll("[data-nav]").forEach(a => a.classList.toggle(
-    "active", a.dataset.nav === (["people", "archive", "inbox", "vocabulary"].includes(page) ? page : page === "imported" ? "archive"
+    "active", a.dataset.nav === (["people", "archive", "inbox", "vocabulary", "ask"].includes(page) ? page : page === "imported" ? "archive"
       : ["review", "transcript"].includes(page) ? "inbox" : "home")));
   const run = page === "review" ? renderReview(decodeURIComponent(id))
-    : page === "transcript" ? renderTranscript(decodeURIComponent(id), tab === "note" ? "note" : "transcript")
+    : page === "transcript" ? renderTranscript(decodeURIComponent(id), tab === "note" ? "note" : "transcript", tab === "at" ? Number(extra) : null)
+    : page === "ask" ? renderAsk()
     : page === "imported" ? renderImported(decodeURIComponent(id))
     : page === "people" ? renderPeople()
     : page === "vocabulary" ? renderVocabulary()

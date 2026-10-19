@@ -7,6 +7,7 @@ import io
 import json
 import os
 import queue
+import re
 import subprocess
 import threading
 import traceback
@@ -22,7 +23,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from local_transcription import audio, directory, library, notes, pipeline, plaud, projects, render, vocab
+from local_transcription import ask, audio, directory, library, notes, pipeline, plaud, projects, render, vocab
 
 # config
 BASE_DIR = Path(__file__).parent.parent
@@ -234,6 +235,12 @@ class VocabRequest(BaseModel):
     entries: list[VocabEntry]
 
 
+class AskRequest(BaseModel):
+    question: str
+    # None starts a new conversation
+    conversation_id: str | None = None
+
+
 class PlaudRequest(BaseModel):
     plaud_ids: list[str]
 
@@ -284,6 +291,48 @@ def create_app():
         rows = vocab.entries()
         # the share of whisper's spelling hint the terms take, names fill whatever is left
         return {"entries": rows, "used": len(", ".join(r["term"] for r in rows)), "max": vocab.PROMPT_MAX_CHARS}
+
+    # questions about past meetings. answers take a while, so a question runs in its own
+    # thread and the page polls it. conversations live in memory until the app quits
+    conversations, asks = {}, {}
+
+    def meeting_link(meeting_id):
+        """where a meeting opens: its transcript when recorded here, else its imported note."""
+        if (pipeline.OUTPUT_DIR / meeting_id / "segments.json").exists():
+            return f"#/transcript/{quote(meeting_id)}"
+        if library.meeting_sent_path(meeting_id):
+            return f"#/imported/{quote(meeting_id)}"
+        return None
+
+    def run_ask(ask_id, conversation_id, question):
+        job = asks[ask_id]
+        try:
+            text, history, touched = ask.answer(
+                conversations.get(conversation_id, []), question, os.environ.get("MIC_OWNER"),
+                datetime.now().date().isoformat(), progress=lambda step: job["steps"].append(step))
+            conversations[conversation_id] = history
+            mentioned = re.findall(r"\(meeting:([^)@]+)", text)
+            links = {m: meeting_link(m) for m in dict.fromkeys([*touched, *mentioned])}
+            job.update(status="done", answer=text, links={m: l for m, l in links.items() if l})
+        except Exception as err:
+            traceback.print_exc()
+            job.update(status="failed", error=str(err) or type(err).__name__)
+
+    @app.post("/api/ask")
+    def start_ask(request: AskRequest):
+        if not request.question.strip():
+            raise HTTPException(400, "ask a question")
+        conversation_id = request.conversation_id or uuid.uuid4().hex[:8]
+        ask_id = uuid.uuid4().hex[:8]
+        asks[ask_id] = {"status": "working", "steps": [], "conversation_id": conversation_id}
+        threading.Thread(target=run_ask, args=(ask_id, conversation_id, request.question.strip()), daemon=True).start()
+        return {"ask_id": ask_id, "conversation_id": conversation_id}
+
+    @app.get("/api/ask/{ask_id}")
+    def ask_status(ask_id: str):
+        if ask_id not in asks:
+            raise HTTPException(404, "no such question")
+        return asks[ask_id]
 
     @app.get("/api/vocabulary")
     def vocabulary():

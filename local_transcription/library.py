@@ -99,6 +99,13 @@ create table if not exists conversations (
     turns text not null default '[]',
     messages text not null default '[]'
 );
+create table if not exists things_todos (
+    things_id text primary key,
+    meeting_id text,
+    title text,
+    added text not null,
+    source text
+);
 create table if not exists api_usage (
     at text not null,
     model text,
@@ -119,7 +126,9 @@ create table if not exists plaud_files (
 ADDED_COLUMNS = {
     "people": {"org_id": "text references organizations(org_id) on delete set null"},
     "meetings": {"project_id": "text references projects(project_id) on delete set null",
-                 "archived": "text", "sent_path": "text", "original_file": "text"},
+                 "archived": "text", "sent_path": "text", "original_file": "text",
+                 # when the owner's to-dos were last looked for, found or not
+                 "todos_checked": "text"},
 }
 _ready = False
 
@@ -453,8 +462,10 @@ def save_imported_meeting(meeting_id, title, date, note_path, person_ids):
 
 def meetings():
     """every processed meeting, newest first."""
-    table = _query("""select m.*, pr.name as project from meetings m
-                      left join projects pr using (project_id) order by m.date desc, m.updated desc""")
+    table = _query("""select m.*, pr.name as project,
+                             (select count(*) from things_todos t where t.meeting_id = m.meeting_id) as todos_sent
+                      from meetings m left join projects pr using (project_id)
+                      order by m.date desc, m.updated desc""")
     return table
 
 
@@ -474,6 +485,8 @@ def rename_meeting_id(old_id, new_id):
                     "where meeting_id = ?", (new_id, old_id))
         con.execute("update meeting_speakers set meeting_id = ? where meeting_id = ?", (new_id, old_id))
         con.execute("update entries set meeting_id = ? where meeting_id = ?", (new_id, old_id))
+        con.execute("update things_todos set meeting_id = ? where meeting_id = ?", (new_id, old_id))
+        con.execute("update plaud_files set meeting_id = ? where meeting_id = ?", (new_id, old_id))
         con.execute("delete from meetings where meeting_id = ?", (old_id,))
 
 
@@ -516,6 +529,27 @@ def rename_conversation(conversation_id, title):
 def delete_conversation(conversation_id):
     with connect() as con:
         con.execute("delete from conversations where conversation_id = ?", (conversation_id,))
+
+
+# to-dos sent to things 3, by the meeting they came from
+def record_things_todo(things_id, meeting_id, title, source):
+    with connect() as con:
+        con.execute("""insert or replace into things_todos (things_id, meeting_id, title, added, source)
+                       values (?, ?, ?, ?, ?)""",
+                    (things_id, meeting_id or None, title, datetime.now().isoformat(timespec="seconds"), source))
+
+
+def meeting_things_todos(meeting_id):
+    """[{things_id, title, added, source}] sent from a meeting, oldest first."""
+    rows = _query("select things_id, title, added, source from things_todos where meeting_id = ? order by added",
+                  (meeting_id,))
+    return rows.to_dict("records") if len(rows) else []
+
+
+def mark_todos_checked(meeting_id):
+    with connect() as con:
+        con.execute("update meetings set todos_checked = ? where meeting_id = ?",
+                    (datetime.now().isoformat(timespec="seconds"), meeting_id))
 
 
 def record_usage(model, purpose, usage, cost):

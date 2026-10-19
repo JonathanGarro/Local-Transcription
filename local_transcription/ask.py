@@ -317,14 +317,16 @@ def extract_todos(question, answer_text, meetings, projects, owner, today):
     return [{**t, "meeting_id": t["meeting_id"] if t["meeting_id"] in meetings else ""} for t in todos]
 
 
-def meeting_todos(meeting_id, meeting, projects, owner, today):
+def meeting_todos(meeting_id, meeting, projects, owner, today, already=()):
     """the owner's to-dos in one meeting, read from its whole transcript. meeting is
-    {title, date, project, people}."""
+    {title, date, project, people}, already the titles of to-dos sent from it before."""
     lines = transcript_lines(meeting_id)
     if not lines:
         raise RuntimeError("this meeting has no transcript to read")
     content = (f"Meeting: {meeting['title']}, {meeting['date']}\nProject: {meeting.get('project') or 'none'}\n"
                f"People: {', '.join(meeting.get('people') or []) or 'unknown'}\n\nTranscript:\n{_format(lines)}")
+    if already:
+        content += "\n\nAlready in the task manager, so leave these out:\n" + "\n".join(f"- {t}" for t in already)
     todos = _todos(MEETING_TODO_SYSTEM.format(owner=owner or "the user", today=today, projects=_project_list(projects)),
                    content, projects, "meeting todos")
     return [{**t, "meeting_id": meeting_id} for t in todos]

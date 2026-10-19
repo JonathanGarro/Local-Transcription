@@ -454,3 +454,8 @@ code.key { font-size: 13px; color: var(--muted); letter-spacing: 0.5px; }
 .things-fields label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12.5px; }
 .things-fields select, .things-fields input[type=date] { border: 1px solid var(--line); background: var(--bg); color: var(--text); border-radius: 6px; padding: 3px 6px; font-size: 13px; max-width: 260px; }
 .things-fields .source { font-size: 11.5px; color: var(--muted); font-style: italic; }
+.badge.muted { background: var(--bg); color: var(--muted); border: 1px solid var(--line); }
+.things-sent { margin: 4px 0 6px; padding-left: 20px; }
+.things-sent li { margin: 3px 0; }
+.things-sent .hint { margin-left: 6px; }
+.tools select { border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 7px; padding: 5px 10px; font-size: 13.5px; }

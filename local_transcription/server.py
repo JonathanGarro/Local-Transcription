@@ -433,10 +433,12 @@ def create_app():
         try:
             open_projects = things.projects()
             todos = ask.meeting_todos(meeting_id, meeting, open_projects, os.environ.get("MIC_OWNER"),
-                                      datetime.now().date().isoformat())
+                                      datetime.now().date().isoformat(),
+                                      [t["title"] for t in library.meeting_things_todos(meeting_id)])
         except RuntimeError as err:
             raise HTTPException(502, str(err))
         file_projects(todos, open_projects, {meeting_id: meeting})
+        library.mark_todos_checked(meeting_id)
         return {"todos": todos, "projects": open_projects, "areas": things.areas(),
                 "meetings": {meeting_id: {"title": meeting["title"], "date": meeting["date"]}}}
 
@@ -485,6 +487,8 @@ def create_app():
             try:
                 added.append({"title": todo.title.strip(), "id": things.add_todo(
                     todo.title.strip(), "\n\n".join(n for n in notes if n), todo.project_id, when, deadline)})
+                library.record_things_todo(added[-1]["id"], todo.meeting_id if todo.meeting_id in rows.index else None,
+                                           added[-1]["title"], "note" if request.note_meeting_id else "ask")
             except RuntimeError as err:
                 failed = f"added {len(added)}, then Things said: {err}"
                 break
@@ -697,7 +701,9 @@ def create_app():
                 "edited": info.get("edited"), "sent_path": library.meeting_sent_path(meeting_id),
                 "archived": _records(library.meetings().query("meeting_id == @meeting_id"))[0].get("archived"),
                 "notes_dir": str(pipeline.notes_dir() or ""), "vault": vault,
-                "job": running[0] if running else None}
+                "job": running[0] if running else None,
+                "todos_sent": library.meeting_things_todos(meeting_id),
+                "todos_checked": _records(library.meetings().query("meeting_id == @meeting_id"))[0].get("todos_checked")}
 
     @app.post("/api/meetings/{meeting_id}/note")
     def write_note(meeting_id: str, request: NoteRequest):

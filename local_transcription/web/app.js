@@ -222,6 +222,7 @@ async function refreshInbox() {
         <div class="title"><span class="rename" data-rename="${esc(m.meeting_id)}" title="Click to rename">${esc(m.title || m.meeting_id)}</span></div>
         <div class="meta">${esc(m.date || "")} · ${m.minutes ? Math.round(m.minutes) + " min" : ""} · ${esc(m.source_type || "")}${m.split ? " · split channels" : ""}</div>
       </div>
+      ${todoBadge(m)}
       <span class="badge ${stage[0]}">${stage[1]}</span>
       <a class="btn small" href="${meetingLink("review", m.meeting_id)}">${review ? "Review" : "Speakers"}</a>
       <a class="btn small" href="${meetingLink("transcript", m.meeting_id)}">Transcript</a>
@@ -279,6 +280,13 @@ function renamable(el, id, onSaved) {
   };
 }
 
+// whether a meeting's to-dos went to things 3, for the archive and inbox lists
+function todoBadge(m) {
+  if (m.todos_sent) return `<span class="badge done" title="Sent to Things from this meeting">${m.todos_sent} to-do${m.todos_sent === 1 ? "" : "s"} in Things</span>`;
+  if (m.todos_checked) return `<span class="badge muted" title="Checked ${esc(m.todos_checked.slice(0, 10))}">no to-dos</span>`;
+  return "";
+}
+
 function crumb(meeting) {
   return meeting.archived ? `<a class="crumb" href="#/archive">Archive</a>` : `<a class="crumb" href="#/inbox">Inbox</a>`;
 }
@@ -292,7 +300,12 @@ async function renderArchive() {
     <div class="page">
       <h1>Archive</h1>
       <div class="sub">Meetings whose notes were sent to Obsidian, and notes imported from it.</div>
-      ${sent.length ? `<div class="tools"><input type="text" id="archive-filter" placeholder="Filter by title or project"></div>` : ""}
+      ${sent.length ? `<div class="tools"><input type="text" id="archive-filter" placeholder="Filter by title or project">
+        <select id="archive-todos">
+          <option value="">All meetings</option>
+          <option value="sent">To-dos sent to Things</option>
+          <option value="unchecked">To-dos not checked yet</option>
+        </select></div>` : ""}
       <div class="list" id="archive-list"></div>
     </div>`;
   const list = document.getElementById("archive-list");
@@ -304,6 +317,7 @@ async function renderArchive() {
         <div class="title">${esc(m.title || m.meeting_id)}</div>
         <div class="meta">${esc(m.date || "")} · imported from Obsidian${m.project ? ` · ${esc(m.project)}` : ""}</div>
       </div>
+      ${todoBadge(m)}
       <a class="btn small" href="${meetingLink("imported", m.meeting_id)}">Note</a>
     </div>` : `<div class="item" data-open="${open(m)}">
       <div class="main">
@@ -311,6 +325,7 @@ async function renderArchive() {
         <div class="meta">${esc(m.date || "")} · ${m.note ? `sent ${esc((m.archived || "").slice(0, 10))} as ${esc((m.sent_path || "").split("/").pop())}`
           : "imported from Obsidian, recording processed here"}${m.project ? ` · ${esc(m.project)}` : ""}</div>
       </div>
+      ${todoBadge(m)}
       ${m.status !== "done" ? `<span class="badge review">needs review</span>
         <a class="btn small" href="${meetingLink("review", m.meeting_id)}">Review</a>` : ""}
       <a class="btn small" href="${meetingLink("transcript", m.meeting_id)}">Transcript</a>
@@ -320,7 +335,10 @@ async function renderArchive() {
     </div>`;
   const draw = () => {
     const query = (document.getElementById("archive-filter")?.value || "").trim().toLowerCase();
-    const shown = sent.filter(m => !query || `${m.title} ${m.project || ""}`.toLowerCase().includes(query));
+    const todos = document.getElementById("archive-todos")?.value || "";
+    // only notes written here can be checked for to-dos
+    const shown = sent.filter(m => (!query || `${m.title} ${m.project || ""}`.toLowerCase().includes(query))
+      && (todos !== "sent" || m.todos_sent) && (todos !== "unchecked" || (m.note && !m.todos_sent && !m.todos_checked)));
     list.innerHTML = shown.length ? shown.map(row).join("")
       : `<div class="empty">${sent.length ? "No matches" : "Nothing sent yet"}</div>`;
     list.querySelectorAll("[data-unarchive]").forEach(b => b.onclick = async () => {
@@ -332,6 +350,8 @@ async function renderArchive() {
   openRows(list);
   const filter = document.getElementById("archive-filter");
   if (filter) filter.oninput = draw;
+  const todosFilter = document.getElementById("archive-todos");
+  if (todosFilter) todosFilter.onchange = draw;
   draw();
 }
 
@@ -802,8 +822,14 @@ async function renderNote(id, body) {
   if (todosCard) {
     let todoState = null;
     const drawTodos = () => {
-      todosCard.innerHTML = (todoState ? "" : `<div class="hint">Claude reads the transcript for tasks you were asked to do or offered to do, to add to Things. The note's action items then become links to them.</div>`)
-        + todoPanel(todoState, "note", "Find my to-dos");
+      const sentList = note.todos_sent.length ? `<div class="things-head">Sent to Things</div>
+        <ul class="things-sent">${note.todos_sent.map(t => `<li><a href="things:///show?id=${encodeURIComponent(t.things_id)}">${esc(t.title)}</a>
+          <span class="hint">${esc(t.added.slice(0, 10))}${t.source === "ask" ? ", from Ask" : ""}</span></li>`).join("")}</ul>` : "";
+      const intro = note.todos_sent.length ? ""
+        : note.todos_checked ? `<div class="hint">Checked on ${esc(note.todos_checked.slice(0, 10))}, and nothing was sent to Things.</div>`
+        : `<div class="hint">Claude reads the transcript for tasks you were asked to do or offered to do, to add to Things. The note's action items then become links to them.</div>`;
+      todosCard.innerHTML = (todoState ? "" : sentList + intro)
+        + todoPanel(todoState, "note", note.todos_sent.length || note.todos_checked ? "Look again" : "Find my to-dos");
       bindTodoPanel(todosCard, "note", {
         get: () => todoState,
         set: state => { todoState = state; },

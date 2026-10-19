@@ -812,7 +812,7 @@ def set_action_items(out_dir, items):
 
 def write_note(out_dir, backend=None, project=None, owner=None, progress=print):
     """summarize a meeting into note.md. project is a project name to file it under, or None
-    to keep the current one. the owner is who the action items are for."""
+    to keep the current one. the owner is whose meeting it is."""
     out_dir = Path(out_dir)
     meta, segments, speakers, _ = load_run(out_dir)
     speakers = link_people(speakers)

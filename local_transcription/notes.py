@@ -1,7 +1,7 @@
-"""meeting notes in the obsidian layout: frontmatter, agenda, discussion, transcript, and
-action items.
+"""meeting notes in the obsidian layout: frontmatter, agenda, discussion, transcript, and,
+once the owner's to-dos are sent to things 3 from the app, action items linking to them.
 
-a language model writes the agenda, discussion, and action items as json. the heading is
+a language model writes the agenda and discussion as json. the heading is
 the meeting's own title, the project is the one picked in the app, and the frontmatter and
 transcript block are filled in by code, so the transcript is never retyped by the model and
 the people come from the library and their teams and organizations from obsidian.
@@ -26,7 +26,6 @@ INSTRUCTIONS = """You write meeting notes from a speaker-labeled transcript. Rep
 
 "agenda": a few sentences describing what the meeting was about.
 "discussion": a list of topics in the order they came up. Each topic is an object {{"topic": "...", "points": ["...", "..."]}}. The points summarize the key things said, decided, or raised under that topic, one sentence each.
-"action_items": the top three to five to-dos that are specifically for {owner}, each a short imperative sentence with enough context to act on later. Use fewer if the meeting produced fewer.
 
 Rules:
 - Plain text only. No bold, italics, headings, or bullet characters inside the strings.
@@ -81,8 +80,7 @@ def clean_summary(raw):
             discussion.append({"topic": _plain(topic.get("topic")), "points": points})
         elif _plain(topic):
             discussion.append({"topic": _plain(topic), "points": []})
-    return {"agenda": _plain(raw.get("agenda")), "discussion": discussion,
-            "action_items": [_plain(a) for a in raw.get("action_items") or [] if _plain(a)]}
+    return {"agenda": _plain(raw.get("agenda")), "discussion": discussion}
 
 
 # people
@@ -212,16 +210,15 @@ def render_note(summary, date, title, segments, speakers, owner_id, project, tra
     for topic in summary["discussion"]:
         lines.append(f"- {topic['topic']}")
         lines += [f"\t- {point}" for point in topic["points"]]
-    lines += ["", "## Transcript", "", "```"] + transcript_lines(segments, speakers) + ["```", "## Action Items", ""]
-    lines += action_item_lines(summary)
+    lines += ["", "## Transcript", "", "```"] + transcript_lines(segments, speakers) + ["```"]
+    if action_item_lines(summary):
+        lines += ["## Action Items", ""] + action_item_lines(summary)
     return "\n".join(lines) + "\n"
 
 
 def action_item_lines(summary):
-    """the action items as markdown. once to-dos are sent to things 3 they replace the
-    model's list, each a link to its to-do, which is where it gets ticked off."""
-    if summary.get("things_items") is not None:
-        # square brackets would end the link text early
-        return ["- [{}](things:///show?id={})".format(re.sub(r"[\[\]]", "", item["title"]), item["id"])
-                for item in summary["things_items"]]
-    return [f"- [ ] {item}" for item in summary["action_items"]]
+    """the owner's to-dos sent to things 3 from the app, each a link to its to-do, which is
+    where it gets ticked off. none until some are sent."""
+    # square brackets would end the link text early
+    return ["- [{}](things:///show?id={})".format(re.sub(r"[\[\]]", "", item["title"]), item["id"])
+            for item in summary.get("things_items") or []]

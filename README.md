@@ -44,7 +44,7 @@ It goes in `~/Applications/Boswell.app` and just starts `app.py` from this folde
 - **Review:** each unknown speaker gets a few short clips with what they said, suggested names with scores, and a name field that searches existing people or creates a new one. You can also mark a speaker as the same person as another speaker (diarization split them), leave a speaker unnamed, or name them without adding the voice to their profile. Identified speakers are collapsed, with a "wrong?" link. Nothing is saved until you press Apply.
 - **Transcript:** click any line to play from there, show the file in Finder, or copy the markdown.
 - **Note:** writes the meeting note (see below), with a choice of model and project.
-- **Find my to-dos:** on the Note tab, Claude reads the transcript for tasks you were asked to do or offered to do, leaving out other people's tasks and ideas nobody took on. You review them like Send to Things on the Ask page, and once added, the note's Action Items become links to the Things to-dos (`things:///show?id=…`), so Things is where they get ticked off. A sent note's Obsidian copy is updated too when it hasn't been edited there since.
+- **Find my to-dos:** on the Note tab, Claude reads the transcript for tasks you were asked to do or offered to do, leaving out other people's tasks and ideas nobody took on. You review them like Send to Things on the Ask page, and once added, they appear in the note as an Action Items section of links to the Things to-dos (`things:///show?id=…`), so Things is where they get ticked off. A sent note's Obsidian copy is updated too when it hasn't been edited there since.
 - **Editing the note:** click the note to edit it, and it saves as you type. Once edited, **Show changes** shows a git style diff with changed words highlighted, compared with the note before your first edit (kept as `note_original.md`). **Discard my edits** goes back to the generated note.
 - **Send to Obsidian:** after you review the note, copies it into `MEETING_NOTES_DIR` as `<date> - <heading>.md` and moves the meeting to the Archive. An existing file with that name is only replaced after a second click. The meeting's folder in `outputs/` is renamed to the same name, so it matches what you see in Obsidian. The recording in `data/` is renamed to match too, and the playback WAVs are deleted to save space (about 115 MB an hour, three times that for split Zoom calls). They are rebuilt from the recording in a second or two whenever you play an archived meeting, and cleared again the next time the app starts. Dropping the recording in again under its old name is still recognized.
 
@@ -139,7 +139,7 @@ uv run summarize.py "outputs/2026-10-13 - Dashboard Review"
 uv run summarize.py "outputs/2026-10-13 - Dashboard Review" --backend claude --project "Customer Dashboard"
 ```
 
-Writes `note.md` in the Obsidian layout: frontmatter, Agenda, Discussion, Transcript and Action Items. The model writes the agenda, discussion and your top three to five action items. Code fills in the rest:
+Writes `note.md` in the Obsidian layout: frontmatter, Agenda, Discussion and Transcript. The model writes the agenda and discussion. An Action Items section is added only once you run Find my to-dos and send them to Things, holding just those to-dos as links. Code fills in the rest:
 
 - the heading is `# <date> - <meeting name>`, using the name you gave the meeting (or its file name), never one the model makes up
 

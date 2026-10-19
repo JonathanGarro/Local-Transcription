@@ -315,8 +315,8 @@ def create_app():
         return settings_state()
 
     # questions about past meetings. answers take a while, so a question runs in its own
-    # thread and the page polls it. conversations live in memory until the app quits
-    conversations, asks = {}, {}
+    # thread and the page polls it. conversations are saved in the library after each answer
+    asks = {}
 
     def meeting_link(meeting_id):
         """where a meeting opens: its transcript when recorded here, else its imported note."""
@@ -329,13 +329,23 @@ def create_app():
     def run_ask(ask_id, conversation_id, question):
         job = asks[ask_id]
         try:
+            saved = library.conversation(conversation_id) or {"turns": [], "messages": [], "title": None}
             text, history, touched = ask.answer(
-                conversations.get(conversation_id, []), question, os.environ.get("MIC_OWNER"),
+                saved["messages"], question, os.environ.get("MIC_OWNER"),
                 datetime.now().date().isoformat(), progress=lambda step: job["steps"].append(step))
-            conversations[conversation_id] = history
             mentioned = re.findall(r"\(meeting:([^)@]+)", text)
             links = {m: meeting_link(m) for m in dict.fromkeys([*touched, *mentioned])}
-            job.update(status="done", answer=text, links={m: l for m, l in links.items() if l})
+            links = {m: l for m, l in links.items() if l}
+            turn = {"question": question, "answer": text, "links": links, "at": datetime.now().isoformat(timespec="seconds")}
+            library.save_conversation(conversation_id, saved["turns"] + [turn], ask.saveable(history))
+            if not saved["title"]:
+                try:
+                    library.rename_conversation(conversation_id, ask.title(question, text))
+                except Exception:
+                    # a conversation without a name still works, it shows its first question
+                    traceback.print_exc()
+            job.update(status="done", answer=text, links=links,
+                       title=(library.conversation(conversation_id) or {}).get("title"))
         except Exception as err:
             traceback.print_exc()
             job.update(status="failed", error=str(err) or type(err).__name__)
@@ -349,6 +359,30 @@ def create_app():
         asks[ask_id] = {"status": "working", "steps": [], "conversation_id": conversation_id}
         threading.Thread(target=run_ask, args=(ask_id, conversation_id, request.question.strip()), daemon=True).start()
         return {"ask_id": ask_id, "conversation_id": conversation_id}
+
+    @app.get("/api/conversations")
+    def conversations(page: int = 1):
+        found = library.conversations_page(page)
+        return {**found, "items": _records(found["items"]) if len(found["items"]) else []}
+
+    @app.get("/api/conversations/{conversation_id}")
+    def get_conversation(conversation_id: str):
+        found = library.conversation(conversation_id)
+        if not found:
+            raise HTTPException(404, "no such conversation")
+        return {k: _clean(v) if k != "turns" else v for k, v in found.items() if k != "messages"}
+
+    @app.post("/api/conversations/{conversation_id}/rename")
+    def rename_conversation(conversation_id: str, request: NameRequest):
+        if not request.name.strip():
+            raise HTTPException(400, "the name cannot be blank")
+        library.rename_conversation(conversation_id, request.name.strip())
+        return {"ok": True}
+
+    @app.delete("/api/conversations/{conversation_id}")
+    def delete_conversation(conversation_id: str):
+        library.delete_conversation(conversation_id)
+        return {"ok": True}
 
     @app.get("/api/ask/{ask_id}")
     def ask_status(ask_id: str):

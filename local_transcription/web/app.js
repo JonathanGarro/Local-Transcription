@@ -903,8 +903,10 @@ async function renderNote(id, body) {
 }
 
 // ask
-// the conversation stays while the app runs, so leaving the page and coming back keeps it
-const asking = { conversationId: null, turns: [], pending: null };
+// the open conversation. coming back to the page shows the list of saved conversations,
+// each one saved in the library after every answer
+const asking = { conversationId: null, title: null, turns: [], pending: null, page: 1 };
+const CONVERSATION_PAGE = 10;
 
 // a small markdown renderer for answers: headings, lists, bold, code, and links, where
 // meeting:ID and meeting:ID@SECONDS open the meeting, at that moment when given
@@ -937,24 +939,66 @@ function renderAnswer(text, links) {
 }
 
 async function renderAsk() {
+  // an answer still coming in is saved when it lands, and shows up in the list then
+  Object.assign(asking, { conversationId: null, title: null, turns: [], pending: null });
   const lookups = await api("/api/lookups");
+  let list = { items: [], page: 1, pages: 1, total: 0 };
+  const loadList = async () => {
+    list = await api(`/api/conversations?page=${asking.page}`);
+    if (list.page > list.pages && list.pages > 0) { asking.page = list.pages; return loadList(); }
+  };
+  const open = async id => {
+    if (asking.pending) return toast("Wait for the answer first");
+    const found = await api(`/api/conversations/${id}`);
+    Object.assign(asking, { conversationId: id, title: found.title, turns: found.turns });
+    draw();
+  };
+  const thread = () => asking.turns.map(t => `
+    <div class="ask-q">${esc(t.question)}</div>
+    <div class="ask-a">${t.error ? `<div class="hint">Something went wrong: ${esc(t.error)}</div>`
+      : t.answer != null ? renderAnswer(t.answer, t.links || {})
+      : `<div class="ask-steps">${["thinking", ...(t.steps || [])].map(s => `<div>${esc(s)}…</div>`).join("")}</div>`}</div>`).join("");
+  const when = at => at ? `${at.slice(0, 10)} ${at.slice(11, 16)}` : "";
+  const table = () => !list.total ? "" : `
+    <h2>Conversations</h2>
+    <table class="conversations">
+      <tr><th>Name</th><th class="num">Questions</th><th>Last asked</th><th></th></tr>
+      ${list.items.map(c => `<tr data-open-conversation="${c.conversation_id}">
+        <td class="name"><span data-title="${c.conversation_id}">${esc(c.title || "Naming…")}</span></td>
+        <td class="num">${c.questions}</td>
+        <td>${esc(when(c.updated))}</td>
+        <td class="actions"><button class="link" data-rename-conversation="${c.conversation_id}">Rename</button>
+          <button class="link danger" data-delete-conversation="${c.conversation_id}">Delete</button></td>
+      </tr>`).join("")}
+    </table>
+    ${list.pages > 1 ? `<div class="pager">
+      <button class="btn small" data-page="${list.page - 1}" ${list.page <= 1 ? "disabled" : ""}>Previous</button>
+      <span class="hint">Page ${list.page} of ${list.pages}</span>
+      <button class="btn small" data-page="${list.page + 1}" ${list.page >= list.pages ? "disabled" : ""}>Next</button>
+    </div>` : ""}`;
   const draw = () => {
-    view.innerHTML = `
+    const ready = lookups.claude_ready && !asking.pending;
+    const box = `
+      <textarea id="ask-input" class="ask-input" rows="${asking.turns.length ? 2 : 3}" placeholder="${asking.turns.length ? "Ask a follow-up" : "What did Daniel and I agree to in our last meeting?"}" ${ready ? "" : "disabled"}></textarea>
+      <div class="ask-actions">
+        ${asking.turns.length ? `<button class="btn" id="ask-new">New conversation</button>` : ""}
+        <button class="btn primary" id="ask-send" ${ready ? "" : "disabled"}>Ask</button>
+      </div>`;
+    // the list, with a box for a new question above it. an open conversation reads like a
+    // chat instead, its box for follow-ups under the last answer
+    view.innerHTML = asking.turns.length ? `
       <div class="page ask">
-        <div class="section-head"><h1>Ask</h1>
-          ${asking.turns.length ? `<button class="btn small" id="ask-new">New conversation</button>` : ""}</div>
+        <a class="crumb" href="#/ask" id="ask-back">Conversations</a>
+        <h1>${esc(asking.title || "New conversation")}</h1>
+        <div id="ask-thread">${thread()}</div>
+        <div class="ask-reply">${box}</div>
+      </div>` : `
+      <div class="page ask">
+        <h1>Ask</h1>
         <div class="sub">Ask about your meetings, such as what you agreed with someone or where a project stands. Claude looks through your notes and transcripts to answer, so the parts it reads are sent to Anthropic.</div>
         ${lookups.claude_ready ? "" : `<div class="card">Add ANTHROPIC_API_KEY to .env and restart the app to ask questions.</div>`}
-        <div id="ask-thread">${asking.turns.map(t => `
-          <div class="ask-q">${esc(t.question)}</div>
-          <div class="ask-a">${t.error ? `<div class="hint">Something went wrong: ${esc(t.error)}</div>`
-            : t.answer != null ? renderAnswer(t.answer, t.links || {})
-            : `<div class="ask-steps">${["thinking", ...t.steps].map(s => `<div>${esc(s)}…</div>`).join("")}</div>`}</div>`).join("")}
-        </div>
-        <div class="ask-box">
-          <textarea id="ask-input" rows="2" placeholder="${asking.turns.length ? "Ask a follow-up" : "What did Daniel and I agree to in our last meeting?"}" ${lookups.claude_ready && !asking.pending ? "" : "disabled"}></textarea>
-          <button class="btn primary" id="ask-send" ${lookups.claude_ready && !asking.pending ? "" : "disabled"}>Ask</button>
-        </div>
+        ${box}
+        ${table()}
       </div>`;
     const input = document.getElementById("ask-input");
     const send = async () => {
@@ -974,14 +1018,70 @@ async function renderAsk() {
     };
     document.getElementById("ask-send").onclick = send;
     input.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } };
-    const fresh = document.getElementById("ask-new");
-    if (fresh) fresh.onclick = () => {
+    // back to the list, or a fresh question, both leave this conversation as saved
+    const leave = async e => {
+      e?.preventDefault();
       if (asking.pending) return toast("Wait for the answer first");
-      Object.assign(asking, { conversationId: null, turns: [] });
+      Object.assign(asking, { conversationId: null, title: null, turns: [] });
+      await loadList();
       draw();
     };
-    if (!asking.pending) input.focus();
-    view.querySelector(".ask-a:last-of-type")?.scrollIntoView({ block: "end" });
+    const fresh = document.getElementById("ask-new");
+    if (fresh) fresh.onclick = leave;
+    const back = document.getElementById("ask-back");
+    if (back) back.onclick = leave;
+    if (asking.turns.length) view.querySelector(".ask-reply").scrollIntoView({ block: "end" });
+    if (ready) input.focus();
+
+    // the table: a row opens its conversation, its links rename or delete it
+    const rows = view.querySelector("table.conversations");
+    if (rows) rows.onclick = e => {
+      const row = e.target.closest("[data-open-conversation]");
+      if (row && !e.target.closest("button, input")) open(row.dataset.openConversation);
+    };
+    view.querySelectorAll("[data-rename-conversation]").forEach(b => b.onclick = () => {
+      const id = b.dataset.renameConversation;
+      const cell = view.querySelector(`[data-title="${id}"]`);
+      const before = list.items.find(c => c.conversation_id === id)?.title || "";
+      cell.innerHTML = `<input type="text" class="cell" value="${esc(before)}">`;
+      const box = cell.querySelector("input");
+      box.focus();
+      box.select();
+      let done = false;
+      const finish = async keep => {
+        if (done) return;
+        done = true;
+        const name = box.value.trim();
+        if (keep && name && name !== before) {
+          await post(`/api/conversations/${id}/rename`, { name });
+          if (id === asking.conversationId) asking.title = name;
+        }
+        await loadList();
+        draw();
+      };
+      box.onkeydown = e => { if (e.key === "Enter") finish(true); if (e.key === "Escape") finish(false); };
+      box.onblur = () => finish(true);
+    });
+    // deleting asks for a second click, there is no undo
+    view.querySelectorAll("[data-delete-conversation]").forEach(b => b.onclick = async () => {
+      if (!b.dataset.confirm) {
+        b.dataset.confirm = "1";
+        b.textContent = "Delete for good?";
+        setTimeout(() => { if (b.isConnected) { delete b.dataset.confirm; b.textContent = "Delete"; } }, 4000);
+        return;
+      }
+      const id = b.dataset.deleteConversation;
+      if (asking.pending && id === asking.conversationId) return toast("Wait for the answer first");
+      await api(`/api/conversations/${id}`, { method: "DELETE" });
+      if (id === asking.conversationId) Object.assign(asking, { conversationId: null, title: null, turns: [] });
+      await loadList();
+      draw();
+    });
+    view.querySelectorAll("[data-page]").forEach(b => b.onclick = async () => {
+      asking.page = Number(b.dataset.page);
+      await loadList();
+      draw();
+    });
   };
   const poll = async () => {
     clearTimeout(pollTimer);
@@ -990,9 +1090,17 @@ async function renderAsk() {
     try {
       const state = await api(`/api/ask/${askId}`);
       turn.steps = state.steps;
-      if (state.status === "done") Object.assign(turn, { answer: state.answer, links: state.links });
+      if (state.status === "done") {
+        Object.assign(turn, { answer: state.answer, links: state.links });
+        asking.title = state.title || asking.title;
+      }
       if (state.status === "failed") turn.error = state.error;
-      if (state.status !== "working") asking.pending = null;
+      if (state.status !== "working") {
+        asking.pending = null;
+        // the answer is saved now, so the table shows the conversation and its name
+        asking.page = 1;
+        await loadList();
+      }
     } catch (err) {
       turn.error = err.message;
       asking.pending = null;
@@ -1001,6 +1109,7 @@ async function renderAsk() {
     draw();
     if (asking.pending) pollTimer = setTimeout(poll, 800);
   };
+  await loadList();
   draw();
   poll();
 }

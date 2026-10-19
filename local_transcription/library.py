@@ -91,6 +91,14 @@ create table if not exists meeting_speakers (
     minutes real,
     primary key (meeting_id, speaker)
 );
+create table if not exists conversations (
+    conversation_id text primary key,
+    title text,
+    created text not null,
+    updated text not null,
+    turns text not null default '[]',
+    messages text not null default '[]'
+);
 create table if not exists api_usage (
     at text not null,
     model text,
@@ -467,6 +475,47 @@ def rename_meeting_id(old_id, new_id):
         con.execute("update meeting_speakers set meeting_id = ? where meeting_id = ?", (new_id, old_id))
         con.execute("update entries set meeting_id = ? where meeting_id = ?", (new_id, old_id))
         con.execute("delete from meetings where meeting_id = ?", (old_id,))
+
+
+# conversations on the ask page. turns are what the page shows, messages the full history
+# sent back to claude to carry on, as json
+def save_conversation(conversation_id, turns, messages):
+    now = datetime.now().isoformat(timespec="seconds")
+    with connect() as con:
+        con.execute("""insert into conversations (conversation_id, created, updated, turns, messages)
+                       values (?, ?, ?, ?, ?)
+                       on conflict (conversation_id) do update set updated = excluded.updated,
+                       turns = excluded.turns, messages = excluded.messages""",
+                    (conversation_id, now, now, json.dumps(turns), json.dumps(messages)))
+
+
+def conversation(conversation_id):
+    row = _query("select * from conversations where conversation_id = ?", (conversation_id,))
+    if not len(row):
+        return None
+    found = row.iloc[0].to_dict()
+    return {**found, "turns": json.loads(found["turns"]), "messages": json.loads(found["messages"])}
+
+
+def conversations_page(page=1, per_page=10):
+    """a page of conversations, most recently used first, without their histories. items is
+    a dataframe."""
+    total = int(_query("select count(*) as n from conversations")["n"].iloc[0])
+    rows = _query("""select conversation_id, title, created, updated, json_array_length(turns) as questions
+                     from conversations order by updated desc limit ? offset ?""",
+                  (per_page, (max(page, 1) - 1) * per_page))
+    return {"items": rows, "page": max(page, 1),
+            "pages": max(1, -(-total // per_page)), "total": total}
+
+
+def rename_conversation(conversation_id, title):
+    with connect() as con:
+        con.execute("update conversations set title = ? where conversation_id = ?", (title, conversation_id))
+
+
+def delete_conversation(conversation_id):
+    with connect() as con:
+        con.execute("delete from conversations where conversation_id = ?", (conversation_id,))
 
 
 def record_usage(model, purpose, usage, cost):

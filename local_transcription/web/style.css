@@ -401,10 +401,17 @@ input.cell:focus { border-color: var(--accent); background: var(--bg); outline: 
 .ask-a code { font-size: 12.5px; background: var(--bg); padding: 1px 5px; border-radius: 4px; }
 .ask-steps { color: var(--muted); font-size: 13px; padding: 10px 0; }
 .ask-steps div:last-child { color: var(--text); }
-.ask-box { position: sticky; bottom: 0; display: flex; gap: 10px; align-items: flex-end; padding: 18px 0 8px; background: var(--bg); }
-.ask-box textarea { flex: 1; resize: none; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: var(--radius); padding: 10px 12px; font: inherit; outline: none; }
-.ask-box textarea:focus { border-color: var(--accent); }
-.page.ask { padding-bottom: 0; }
+.ask-input { display: block; width: 100%; resize: vertical; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: var(--radius); padding: 10px 12px; font: inherit; outline: none; }
+.ask-input:focus { border-color: var(--accent); }
+.ask-actions { display: flex; justify-content: flex-end; gap: 8px; margin: 10px 0 6px; }
+.ask-reply { margin-top: 22px; }
+table.conversations tr[data-open-conversation] { cursor: pointer; }
+table.conversations tr[data-open-conversation]:hover td { background: var(--accent-soft); }
+table.conversations td.name { width: 55%; }
+table.conversations td.actions { text-align: right; white-space: nowrap; }
+table.conversations td.actions .link + .link { margin-left: 12px; }
+.link.danger { color: var(--bad); }
+.pager { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 10px; }
 
 /* accent colors, each with a soft tint for backgrounds. the swatches show them on the settings page */
 :root {

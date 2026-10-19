@@ -219,16 +219,44 @@ def describe(name, args):
     return f"reading the {what} of {args.get('meeting_id', '')}"
 
 
+def saveable(messages):
+    """the history as plain json. claude's reply blocks, thinking included, keep every field
+    they came with, since they have to go back unchanged when the conversation carries on."""
+    def block(b):
+        return b.model_dump(exclude_none=True) if hasattr(b, "model_dump") else b
+
+    return [{**m, "content": [block(b) for b in m["content"]] if isinstance(m["content"], list) else m["content"]}
+            for m in messages]
+
+
+def _client():
+    import anthropic
+
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        raise RuntimeError("ANTHROPIC_API_KEY is not set in .env")
+    return anthropic.Anthropic()
+
+
+def title(question, answer_text):
+    """a few words naming a conversation from its first question and answer."""
+    client, model = _client(), settings.claude_model()
+    response = client.beta.messages.create(
+        model=model, max_tokens=1000, output_config={"effort": "low"},
+        system="Name this conversation about the user's meetings in 3 to 6 words, like a document title. Reply with the title only, no quotes or punctuation at the end.",
+        messages=[{"role": "user", "content": f"Question: {question}\n\nAnswer: {answer_text[:3000]}"}])
+    library.record_usage(response.model, "title", response.usage, settings.cost(
+        response.model, response.usage.input_tokens, response.usage.output_tokens,
+        response.usage.cache_creation_input_tokens, response.usage.cache_read_input_tokens))
+    text = "".join(b.text for b in response.content if b.type == "text").strip().strip('"').rstrip(".")
+    return text[:80] or question[:60]
+
+
 # main
 def answer(history, question, owner, today, progress=None):
     """continue a conversation with a new question. history is the message list from the
     last call, kept whole so its thinking blocks pass back unchanged. returns (answer text,
     new history, ids of the meetings the tools touched)."""
-    import anthropic
-
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        raise RuntimeError("ANTHROPIC_API_KEY is not set in .env")
-    client = anthropic.Anthropic()
+    client = _client()
     model = settings.claude_model()
     # a declined request is retried on a fallback model instead of stopping, where offered
     fallback = ({"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}

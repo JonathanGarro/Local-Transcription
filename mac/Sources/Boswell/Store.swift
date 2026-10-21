@@ -65,6 +65,8 @@ final class Store {
     let chat = Chat()
     // a moment to show in the transcript of the meeting being opened
     var focusTime: Double?
+    // a tab for the open meeting to switch to, such as the transcript from its note
+    var showTab: Tab?
     private var pendingLink: URL?
     // the accent chosen in settings
     var accent = "blue"

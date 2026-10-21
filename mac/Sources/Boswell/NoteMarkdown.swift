@@ -5,6 +5,9 @@ import SwiftUI
 // code and links work inline, and [[wikilinks]] show in the accent color
 struct NoteMarkdown: View {
     let text: String
+    // the transcript property opens the meeting's transcript tab, since its file is outside
+    // the vault and obsidian could not open it
+    var openTranscript: (() -> Void)?
 
     private struct Property: Hashable {
         let key: String
@@ -65,8 +68,15 @@ struct NoteMarkdown: View {
         if p.values.isEmpty {
             Text("Empty").foregroundStyle(.tertiary)
         } else if p.values.count == 1, let url = URL(string: p.values[0]), url.scheme == "file" {
-            Link(url.deletingLastPathComponent().lastPathComponent.removingPercentEncoding ?? url.lastPathComponent, destination: url)
-                .help(url.path)
+            let name = url.deletingLastPathComponent().lastPathComponent.removingPercentEncoding ?? url.lastPathComponent
+            if let openTranscript, url.lastPathComponent == "transcript.md" {
+                Button(name, action: openTranscript)
+                    .buttonStyle(.link)
+                    .help("Show the transcript")
+            } else {
+                Link(name, destination: url)
+                    .help(url.path)
+            }
         } else {
             FlowLayout(spacing: 6, trailing: false) {
                 ForEach(p.values, id: \.self) { value in

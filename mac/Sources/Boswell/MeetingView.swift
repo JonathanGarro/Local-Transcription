@@ -50,6 +50,12 @@ struct MeetingView: View {
         }
         .task(id: store.revision) { await load() }
         .onChange(of: store.focusTime) { if store.focusTime != nil { tab = .transcript } }
+        .onChange(of: store.showTab) {
+            if let shown = store.showTab {
+                tab = shown
+                store.showTab = nil
+            }
+        }
         .onDisappear { Player.shared.stop() }
     }
 

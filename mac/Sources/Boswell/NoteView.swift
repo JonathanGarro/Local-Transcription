@@ -142,7 +142,7 @@ struct NoteView: View {
             Divider()
             switch mode {
             case .preview:
-                NoteMarkdown(text: text)
+                NoteMarkdown(text: text, openTranscript: { store.showTab = .transcript })
             case .source:
                 TextEditor(text: $text)
                     .font(.system(.body, design: .monospaced))

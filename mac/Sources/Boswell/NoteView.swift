@@ -170,24 +170,31 @@ struct NoteView: View {
         }
     }
 
-    private static let textSizes: ClosedRange<Double> = 10...24
+    // eight sizes, two points apart, with the original 13 among them
+    private static let textSizes: ClosedRange<Double> = 11...25
+    private static let textStep = 2.0
 
     // the note's text size, for both the formatted view and the markdown. cmd+= and cmd+- step it
     private var textSizeSlider: some View {
         HStack(spacing: 6) {
             Image(systemName: "textformat.size.smaller").foregroundStyle(.secondary)
-            Slider(value: $textSize, in: Self.textSizes, step: 1)
+            Slider(value: $textSize, in: Self.textSizes, step: Self.textStep)
                 .controlSize(.mini)
                 .frame(width: 90)
             Image(systemName: "textformat.size.larger").foregroundStyle(.secondary)
         }
         .help("Text size")
+        // a size picked when the stops were one point apart moves to the nearest stop
+        .onAppear {
+            let lower = Self.textSizes.lowerBound
+            textSize = min(max(lower + ((textSize - lower) / Self.textStep).rounded() * Self.textStep, lower), Self.textSizes.upperBound)
+        }
         .background {
-            Button("Bigger") { textSize = min(textSize + 1, Self.textSizes.upperBound) }
+            Button("Bigger") { textSize = min(textSize + Self.textStep, Self.textSizes.upperBound) }
                 .keyboardShortcut("=")
                 .opacity(0)
                 .allowsHitTesting(false)
-            Button("Smaller") { textSize = max(textSize - 1, Self.textSizes.lowerBound) }
+            Button("Smaller") { textSize = max(textSize - Self.textStep, Self.textSizes.lowerBound) }
                 .keyboardShortcut("-")
                 .opacity(0)
                 .allowsHitTesting(false)

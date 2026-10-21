@@ -1,9 +1,10 @@
 import SwiftUI
 
+// in the switcher's order, the note first
 enum Tab: String, CaseIterable {
-    case speakers = "Speakers"
-    case transcript = "Transcript"
     case note = "Note"
+    case transcript = "Transcript"
+    case speakers = "Speakers"
 }
 
 struct MeetingView: View {
@@ -66,8 +67,8 @@ struct MeetingView: View {
             detail = loaded
             // open where the meeting is in its workflow, as the inbox does
             if tab == nil {
-                tab = store.showTab ?? (store.focusTime != nil ? .transcript
-                    : loaded.status != "done" ? .speakers : loaded.note == true ? .note : .transcript)
+                // the note, unless speakers still need naming
+                tab = store.showTab ?? (store.focusTime != nil ? .transcript : loaded.status != "done" ? .speakers : .note)
                 store.showTab = nil
             }
         } catch {
@@ -140,6 +141,7 @@ struct SpeakersView: View {
                     .keyboardShortcut(.return, modifiers: .command)
                     .help("Name the speakers and update the transcript")
             }
+            DefaultToolbarItem(kind: .search)
         }
         .task {
             let found: [Person] = (try? await API.get(["api", "people"])) ?? []
@@ -422,6 +424,7 @@ struct TranscriptView: View {
                 Button { Task { await store.reveal(meetingId) } } label: { Label("Show in Finder", systemImage: "folder") }
                     .help("Show the transcript file in Finder")
             }
+            DefaultToolbarItem(kind: .search)
         }
         .task(id: store.revision) { transcript = try? await API.get(API.meeting(meetingId, "transcript")) }
     }

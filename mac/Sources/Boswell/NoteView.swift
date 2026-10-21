@@ -51,6 +51,15 @@ struct NoteView: View {
             ToolbarItem { TabPicker(tab: $tab) }
             ToolbarSpacer(.flexible)
             if note?.exists == true && job == nil { toolbar }
+            // the list's search field, right after this tab's buttons
+            DefaultToolbarItem(kind: .search)
+        }
+        // cmd+s saves right away, autosave does it anyway
+        .background {
+            Button("Save") { Task { await flush() } }
+                .keyboardShortcut("s")
+                .opacity(0)
+                .allowsHitTesting(false)
         }
         .inspector(isPresented: $showChanges) {
             VStack(spacing: 0) {
@@ -213,13 +222,6 @@ struct NoteView: View {
             .buttonStyle(.borderedProminent)
             .keyboardShortcut(.return, modifiers: [.command, .shift])
             .help("Save the note into the meeting notes folder")
-        }
-        ToolbarItem {
-            // cmd+s saves right away, autosave does it anyway
-            Button("Save") { Task { await flush() } }
-                .keyboardShortcut("s")
-                .opacity(0)
-                .frame(width: 0)
         }
     }
 

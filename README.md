@@ -47,7 +47,7 @@ It goes in `~/Applications/Boswell.app` and just starts `app.py` from this folde
 uv run make_app.py --native
 ```
 
-That builds `~/Applications/Boswell Native.app` next to the web one, or rebuilds it in `/Applications` if you moved it there. It starts `app.py --browser` from this folder, or uses the server if the web version is already open, and stops the server it started when you quit. For development, `cd mac && DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift run`. Set `BOSWELL_URL` to point it at a server on another port.
+That builds `~/Applications/Boswell Native.app` next to the web one, or rebuilds it in `/Applications` if you moved it there. It starts `app.py --browser` from this folder, or uses the server if the web version is already open, and stops the server it started when you quit. It's signed with your Apple Development certificate when Xcode has made one, so macOS remembers that it may use the Documents folder across rebuilds. Without one it falls back to an ad hoc signature, and macOS asks again after every rebuild. For development, `cd mac && DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift run`. Set `BOSWELL_URL` to point it at a server on another port.
 
 Native so far:
 

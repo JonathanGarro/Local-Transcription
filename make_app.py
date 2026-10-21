@@ -85,6 +85,18 @@ exec "{python}" app.py >> "{LOG_FILE}" 2>&1
 """
 
 
+def signing_identity():
+    """the apple development certificate xcode made, if there is one. macos remembers
+    permissions like documents folder access by the app's signature, and an ad hoc one
+    changes with every build, so it would ask again after each rebuild."""
+    found = subprocess.run(["security", "find-identity", "-v", "-p", "codesigning"],
+                           capture_output=True, text=True).stdout
+    for line in found.splitlines():
+        if '"Apple Development:' in line:
+            return line.split()[1]
+    return "-"
+
+
 def build_native():
     """compile the swiftui app in mac/ and return the binary."""
     env = dict(os.environ)
@@ -145,8 +157,10 @@ def main():
     with (contents / "Info.plist").open("wb") as f:
         plistlib.dump(info, f)
     if binary:
-        # an ad hoc signature, so macos treats the bundle as one app
-        subprocess.run(["codesign", "--force", "--sign", "-", str(app_dir)], check=True, capture_output=True)
+        identity = signing_identity()
+        if identity == "-":
+            print("no apple development certificate, so macos will ask for folder access again after each rebuild")
+        subprocess.run(["codesign", "--force", "--sign", identity, str(app_dir)], check=True, capture_output=True)
     # tell finder and the dock to pick up the new icon
     subprocess.run(["touch", str(app_dir)], check=False)
     print(f"built {app_dir}")

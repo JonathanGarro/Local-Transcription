@@ -691,6 +691,36 @@ class VaultChanged(Exception):
     """the obsidian copy was edited after the app last sent or loaded it."""
 
 
+def vault_root(folder):
+    """the obsidian vault holding a folder, found by its .obsidian settings folder."""
+    for parent in [Path(folder), *Path(folder).parents]:
+        if (parent / ".obsidian").is_dir():
+            return parent
+    return None
+
+
+def relink_vault(root, old, new):
+    """point [[old]] links anywhere in the vault at [[new]], as obsidian does when a note is
+    renamed inside it. keeps a folder path, heading, block or alias after the name. returns
+    the number of notes changed."""
+    link = re.compile(r"(\[\[(?:[^\]|#^\n]*/)?)" + re.escape(old) + r"(?=[\]|#^])")
+    changed = 0
+    for path in root.rglob("*.md"):
+        if ".obsidian" in path.parts or ".trash" in path.parts:
+            continue
+        try:
+            text = path.read_text()
+        except (OSError, UnicodeDecodeError):
+            continue
+        if old not in text:
+            continue
+        updated = link.sub(lambda m: m.group(1) + new, text)
+        if updated != text:
+            path.write_text(updated)
+            changed += 1
+    return changed
+
+
 def vault_copy(out_dir):
     """the note's file in the vault, if it was sent."""
     sent = library.meeting_sent_path(Path(out_dir).name)
@@ -755,8 +785,14 @@ def send_note(out_dir, replace=False):
     if not (out_dir / "note.md").exists():
         raise ValueError("this meeting has no note yet")
     target = folder / note_filename(out_dir)
+    previous = vault_copy(out_dir)
+    # a meeting renamed after it was sent moves its note in the vault, so no stale copy is left
+    moving = bool(previous and previous.exists() and previous != target)
+    if moving and not replace:
+        baseline = out_dir / SENT_NOTE
+        if not baseline.exists() or previous.read_text() != baseline.read_text():
+            raise VaultChanged(previous.name)
     if target.exists() and not replace:
-        previous = vault_copy(out_dir)
         if not previous or previous != target:
             raise FileExistsError(target.name)
         # sending again over our own file is fine unless it was edited in obsidian
@@ -766,6 +802,15 @@ def send_note(out_dir, replace=False):
     # the output folder takes the vault note's name, which also fixes the transcript link
     out_dir = move_meeting(out_dir, target.stem)
     text = (out_dir / "note.md").read_text()
+    if moving:
+        # a rename keeps the file obsidian knows, then links to the old name follow it
+        if target.exists():
+            previous.unlink()
+        else:
+            previous.rename(target)
+        root = vault_root(folder)
+        if root:
+            relink_vault(root, previous.stem, target.stem)
     target.write_text(text)
     (out_dir / SENT_NOTE).write_text(text)
     # the meeting is finished: name the recording after it and drop the rebuildable wavs

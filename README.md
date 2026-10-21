@@ -2,6 +2,11 @@
 
 Boswell is offline meeting transcription with speaker diarization and voice profile matching, built for Apple Silicon. Audio, transcripts, and voice profiles never leave the machine.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/screenshot-dark.png">
+  <img alt="Boswell's Inbox with a meeting note open" src="assets/screenshot-light.png">
+</picture>
+
 ## Pipeline
 
 1. **Normalize** to 16 kHz mono WAV with ffmpeg. Near-silent channels in stereo files are dropped instead of mixed in.
@@ -221,6 +226,6 @@ scripts/               command line tools
   enroll.py              add a voice sample
   manage_profiles.py     list, prune, delete profiles
   check_setup.py         verify ffmpeg, token, and models
-assets/                the app icon
+assets/                the app icon and the screenshots in this readme
 data/, outputs/        recordings and the library, and what's made from them (never committed)
 ```

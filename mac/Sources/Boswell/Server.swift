@@ -54,6 +54,8 @@ final class Server {
         // apps opened from finder get a bare PATH, so add homebrew for ffmpeg and ffprobe
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + (env["PATH"] ?? "/usr/bin:/bin")
+        // the server stops itself when this process goes away
+        env["BOSWELL_APP_PID"] = String(ProcessInfo.processInfo.processIdentifier)
         p.environment = env
         p.standardOutput = log
         p.standardError = log

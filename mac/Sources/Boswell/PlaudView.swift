@@ -51,12 +51,18 @@ struct PlaudList: View {
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            Toggle("Hide Processed", isOn: $hideImported)
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .frame(maxWidth: .infinity, alignment: .trailing)
+            // the switch first, with its label on the right
+            HStack(spacing: 8) {
+                Toggle("Hide Processed", isOn: $hideImported)
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .labelsHidden()
+                Text("Hide Processed")
+                    .onTapGesture { hideImported.toggle() }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .overlay {
             if let error {

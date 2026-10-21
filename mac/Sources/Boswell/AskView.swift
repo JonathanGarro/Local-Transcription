@@ -193,6 +193,7 @@ struct ChatView: View {
     @Environment(Store.self) private var store
     @State private var question = ""
     @FocusState private var focused: Bool
+    @AppStorage(Prefs.things) private var thingsEnabled = true
 
     var body: some View {
         let chat = store.chat
@@ -279,12 +280,14 @@ struct ChatView: View {
                     .foregroundStyle(.red)
             } else if let answer = turn.answer {
                 AnswerText(text: answer, links: turn.links)
+                if thingsEnabled {
                 TodoPanel(state: Binding(get: { store.chat.turns[index].things },
                                          set: { store.chat.turns[index].things = $0 }),
                           find: {
                               guard let id = store.chat.conversationId else { throw ServerError("The conversation is not saved yet") }
                               return try await API.post(["api", "conversations", id, "todos"], ["turn": index])
                           })
+                }
             } else {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(Array((["Thinking"] + turn.steps).enumerated()), id: \.offset) { i, step in

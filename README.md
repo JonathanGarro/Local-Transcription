@@ -59,7 +59,7 @@ Native so far:
 - **People:** search, sort, each person's meetings in a sortable table that opens them on a double click, and an Edit sheet for name, organizations and teams.
 - **Vocabulary:** an add bar, a meter for the spelling hint space, and a table edited in place that saves as you type, with Delete or right-click to remove.
 - **Ask:** conversations in the middle column (Cmd+N for a new one, right-click to rename or delete) and a chat on the right, where Return asks and Shift+Return starts a new line. Meeting links in answers open the meeting, and a link to a moment opens its transcript on that turn. Send to Things under each answer finds your to-dos to check and adjust before they're added.
-- **Settings:** accent color (which tints the native app too), the Claude model, usage, and where the project folder and log are.
+- **Settings:** accent color (which tints the native app too), Things 3 (on or off, which hides the To-dos tab, Send to Things and the to-do badges, and whether sending asks to find to-dos first), Obsidian (open a note in Obsidian as soon as it's sent), the Claude model, usage, and where the project folder and log are. The Things and Obsidian switches are kept by the native app only.
 
 Cmd+1 to Cmd+7 switch pages, and Go > Open in Browser opens the current page in a browser.
 

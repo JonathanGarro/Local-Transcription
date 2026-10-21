@@ -20,7 +20,9 @@ struct NoteView: View {
     @State private var confirmRewrite = false
     @State private var confirmPull = false
     @State private var confirmTodos = false
-    @AppStorage(askTodosKey) private var askTodos = true
+    @AppStorage(Prefs.askTodos) private var askTodos = true
+    @AppStorage(Prefs.things) private var thingsEnabled = true
+    @AppStorage(Prefs.openAfterSend) private var openAfterSend = false
 
     private var job: Job? { store.noteJob(meetingId) ?? note?.job.flatMap { $0.running ? $0 : nil } }
     private var sent: Bool { note?.sentPath != nil }
@@ -46,14 +48,17 @@ struct NoteView: View {
         .toolbar { if note?.exists == true && job == nil { toolbar } }
         .inspector(isPresented: $showChanges) {
             VStack(spacing: 0) {
-                Picker("Show", selection: $inspectorTab) {
-                    ForEach(InspectorTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                // with things off, the inspector is only the changes
+                if thingsEnabled {
+                    Picker("Show", selection: $inspectorTab) {
+                        ForEach(InspectorTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .padding(10)
+                    Divider()
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .padding(10)
-                Divider()
-                switch inspectorTab {
+                switch thingsEnabled ? inspectorTab : .changes {
                 case .changes: DiffView(diff: diff)
                 case .todos: todos
                 }
@@ -164,10 +169,12 @@ struct NoteView: View {
             }
             .help("Show what changed")
 
-            Button { toggleInspector(.todos) } label: {
-                Label("To-dos", systemImage: "checklist")
+            if thingsEnabled {
+                Button { toggleInspector(.todos) } label: {
+                    Label("To-dos", systemImage: "checklist")
+                }
+                .help("Find your to-dos in the transcript and send them to Things")
             }
-            .help("Find your to-dos in the transcript and send them to Things")
 
             Menu {
                 Button("Rewrite Note...") { confirmRewrite = true }
@@ -377,7 +384,7 @@ struct NoteView: View {
     private func requestSend() {
         let looking: Bool = { if case .idle = todoState { return false }; return true }()
         let unchecked = (note?.todosSent ?? []).isEmpty && note?.todosChecked == nil
-        if askTodos && claudeReady && !sent && unchecked && !looking {
+        if thingsEnabled && askTodos && claudeReady && !sent && unchecked && !looking {
             confirmTodos = true
         } else {
             Task { await send(replace: false) }
@@ -405,6 +412,7 @@ struct NoteView: View {
             await store.refresh()
             store.selection = store.section == .inbox ? next : result.meetingId
             store.show("Sent to Obsidian as \(URL(fileURLWithPath: result.path).lastPathComponent)")
+            if openAfterSend { await store.openInObsidian(result.meetingId) }
         } catch let error as APIError where error.status == 409 {
             conflict = error.message
         } catch {
@@ -427,8 +435,14 @@ struct NoteView: View {
     }
 }
 
-// whether sending a note asks to find its to-dos first, shared with settings
-let askTodosKey = "askTodosBeforeSend"
+// preferences shared with settings
+enum Prefs {
+    // the things 3 features: finding to-dos, send to things, and the to-do badges
+    static let things = "thingsEnabled"
+    // whether sending a note asks to find its to-dos first
+    static let askTodos = "askTodosBeforeSend"
+    static let openAfterSend = "openInObsidianAfterSend"
+}
 
 enum InspectorTab: String, CaseIterable {
     case changes = "Changes"

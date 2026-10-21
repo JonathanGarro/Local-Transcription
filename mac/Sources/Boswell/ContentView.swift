@@ -161,10 +161,11 @@ struct MeetingList: View {
     @State private var renaming: Meeting?
     @State private var newName = ""
     @State private var todoFilter = TodoFilter.all
+    @AppStorage(Prefs.things) private var thingsEnabled = true
 
     private var shown: [Meeting] {
         var all = store.section == .inbox ? store.inbox : store.archive
-        if store.section == .archive {
+        if store.section == .archive && thingsEnabled {
             switch todoFilter {
             case .all: break
             case .sent: all = all.filter { ($0.todosSent ?? 0) > 0 }
@@ -212,7 +213,7 @@ struct MeetingList: View {
         .navigationSubtitle(store.section == .inbox && store.reviewCount > 0 ? "\(store.reviewCount) to review" : "")
         .navigationSplitViewColumnWidth(min: 260, ideal: 320)
         .toolbar {
-            if store.section == .archive {
+            if store.section == .archive && thingsEnabled {
                 ToolbarItem {
                     Menu {
                         Picker("Show", selection: $todoFilter) {
@@ -281,9 +282,12 @@ struct MeetingRow: View {
 // whether a meeting's to-dos went to things
 struct TodoBadge: View {
     let meeting: Meeting
+    @AppStorage(Prefs.things) private var thingsEnabled = true
 
     var body: some View {
-        if let sent = meeting.todosSent, sent > 0 {
+        if !thingsEnabled {
+            EmptyView()
+        } else if let sent = meeting.todosSent, sent > 0 {
             Label("\(Int(sent)) in Things", systemImage: "checkmark.circle")
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(.secondary)

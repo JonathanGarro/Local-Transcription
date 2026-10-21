@@ -3,7 +3,9 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(Store.self) private var store
     @State private var settings: SettingsState?
-    @AppStorage(askTodosKey) private var askTodos = true
+    @AppStorage(Prefs.askTodos) private var askTodos = true
+    @AppStorage(Prefs.things) private var thingsEnabled = true
+    @AppStorage(Prefs.openAfterSend) private var openAfterSend = false
 
     var body: some View {
         Group {
@@ -41,10 +43,22 @@ struct SettingsView: View {
                 }
             }
 
-            Section("Notes") {
+            Section("Things 3") {
+                Toggle(isOn: $thingsEnabled) {
+                    Text("Use Things 3")
+                    Text("Find your to-dos in a meeting or an answer and add them to Things. Off hides the To-dos tab, Send to Things and the to-do badges.")
+                }
                 Toggle(isOn: $askTodos) {
                     Text("Ask to find to-dos before sending")
                     Text("When a note goes to Obsidian before its meeting was checked for to-dos.")
+                }
+                .disabled(!thingsEnabled)
+            }
+
+            Section("Obsidian") {
+                Toggle(isOn: $openAfterSend) {
+                    Text("Open notes in Obsidian after sending")
+                    Text("Shows the note in Obsidian as soon as it's sent.")
                 }
             }
 

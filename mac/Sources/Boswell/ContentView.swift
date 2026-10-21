@@ -124,13 +124,26 @@ struct Sidebar: View {
     }
 }
 
-// a sidebar row, with a little more room between the icon and its name and the name a touch bolder
+// a sidebar row, with a little more room between the icon and its name and the name a touch
+// bolder. icons sit in boxes of one width, so every name starts at the same place
 struct SidebarLabel: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: 10) {
-            configuration.icon
+            SidebarIcon(icon: configuration.icon)
             configuration.title.fontWeight(.medium)
         }
+    }
+}
+
+// the accent color, as sidebars show icons, and white on the selected row
+private struct SidebarIcon<Icon: View>: View {
+    let icon: Icon
+    @Environment(\.backgroundProminence) private var prominence
+
+    var body: some View {
+        icon
+            .foregroundStyle(prominence == .increased ? AnyShapeStyle(.primary) : AnyShapeStyle(.tint))
+            .frame(width: 22, alignment: .center)
     }
 }
 

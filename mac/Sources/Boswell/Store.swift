@@ -7,16 +7,16 @@ enum Place: String, Hashable, CaseIterable {
     case inbox = "Inbox"
     case archive = "Archive"
     case plaud = "From Plaud"
-    case home = "Data"
     case ask = "Ask"
     case people = "People"
     case vocabulary = "Vocabulary"
+    case home = "Data"
     case settings = "Settings"
 
     static let meetings: [Place] = [.inbox, .archive, .plaud]
     // pages with no list column
     var fullWidth: Bool { [.home, .vocabulary, .settings].contains(self) }
-    static let library: [Place] = [.home, .ask, .people, .vocabulary, .settings]
+    static let library: [Place] = [.ask, .people, .vocabulary, .home, .settings]
 
     var icon: String {
         switch self {

@@ -54,7 +54,7 @@ Native so far:
 - **Inbox and Archive:** search, to-do badges and an Archive filter for meetings with to-dos in Things or not yet checked, importing recordings (Cmd+O or drop them on the window), renaming, and a read-only view of meetings imported from Obsidian.
 - **Speakers:** review with clips, suggested names, merging and leaving unnamed.
 - **Transcript:** per-turn playback and a filter.
-- **Note:** autosave, project, Send to Obsidian and Open in Obsidian, and an inspector with two tabs: Changes (the diff) and To-dos, where Find my to-dos sends your to-dos to Things and lists the ones already sent.
+- **Note:** autosave, project, Send to Obsidian and Open in Obsidian, and an inspector with two tabs: Changes (the diff) and To-dos, where Find my to-dos sends your to-dos to Things and lists the ones already sent. Sending a note whose meeting was never checked for to-dos first asks whether to find them, with "Don't ask again" in the dialog and a switch for it in Settings.
 - **Home:** the stat tiles, Swift Charts for meetings per month and by weekday with a hover readout, and the people, teams and projects you meet with most. A person opens in People.
 - **People:** search, sort, each person's meetings in a sortable table that opens them on a double click, and an Edit sheet for name, organizations and teams.
 - **Vocabulary:** an add bar, a meter for the spelling hint space, and a table edited in place that saves as you type, with Delete or right-click to remove.

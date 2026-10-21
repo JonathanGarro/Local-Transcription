@@ -19,6 +19,8 @@ struct NoteView: View {
     @State private var confirmDiscard = false
     @State private var confirmRewrite = false
     @State private var confirmPull = false
+    @State private var confirmTodos = false
+    @AppStorage(askTodosKey) private var askTodos = true
 
     private var job: Job? { store.noteJob(meetingId) ?? note?.job.flatMap { $0.running ? $0 : nil } }
     private var sent: Bool { note?.sentPath != nil }
@@ -79,6 +81,14 @@ struct NoteView: View {
             Button("Rewrite", role: .destructive) { Task { await write() } }
         } message: {
             Text(note?.edited != nil ? "This replaces your edits with a new note." : "This replaces the note with a new one.")
+        }
+        .confirmationDialog("Find your to-dos before sending?", isPresented: $confirmTodos) {
+            Button("Find To-dos First") { Task { await findTodosFirst() } }
+            Button("Send Anyway") { Task { await send(replace: false) } }
+            Button("Cancel", role: .cancel) {}
+                .dialogSuppressionToggle("Don't ask again", isSuppressed: Binding(get: { !askTodos }, set: { askTodos = !$0 }))
+        } message: {
+            Text("This meeting hasn't been checked for to-dos. Sending them to Things first puts their links in the note's action items, so Obsidian gets everything at once.")
         }
         .confirmationDialog("Use the Obsidian version?", isPresented: $confirmPull) {
             Button("Use Obsidian Version", role: .destructive) { Task { await pull() } }
@@ -170,7 +180,7 @@ struct NoteView: View {
                 Label("More", systemImage: "ellipsis.circle")
             }
 
-            Button { Task { await send(replace: false) } } label: {
+            Button { requestSend() } label: {
                 Label(sent ? "Send Again" : "Send to Obsidian", systemImage: "paperplane")
             }
             .buttonStyle(.borderedProminent)
@@ -363,6 +373,28 @@ struct NoteView: View {
         }
     }
 
+    // a first send asks about to-dos when the meeting was never checked and claude can look
+    private func requestSend() {
+        let looking: Bool = { if case .idle = todoState { return false }; return true }()
+        let unchecked = (note?.todosSent ?? []).isEmpty && note?.todosChecked == nil
+        if askTodos && claudeReady && !sent && unchecked && !looking {
+            confirmTodos = true
+        } else {
+            Task { await send(replace: false) }
+        }
+    }
+
+    private func findTodosFirst() async {
+        inspectorTab = .todos
+        showChanges = true
+        todoState = .loading
+        do {
+            todoState = .ready(try await API.post(API.meeting(meetingId, "todos")))
+        } catch {
+            todoState = .error(error.localizedDescription)
+        }
+    }
+
     private func send(replace: Bool) async {
         await flush()
         do {
@@ -394,6 +426,9 @@ struct NoteView: View {
         }
     }
 }
+
+// whether sending a note asks to find its to-dos first, shared with settings
+let askTodosKey = "askTodosBeforeSend"
 
 enum InspectorTab: String, CaseIterable {
     case changes = "Changes"

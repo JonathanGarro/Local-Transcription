@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(Store.self) private var store
     @State private var settings: SettingsState?
+    @AppStorage(askTodosKey) private var askTodos = true
 
     var body: some View {
         Group {
@@ -37,6 +38,13 @@ struct SettingsView: View {
                 } label: {
                     Text("Accent color")
                     Text("Buttons, links, highlights and charts, here and in the web version.")
+                }
+            }
+
+            Section("Notes") {
+                Toggle(isOn: $askTodos) {
+                    Text("Ask to find to-dos before sending")
+                    Text("When a note goes to Obsidian before its meeting was checked for to-dos.")
                 }
             }
 

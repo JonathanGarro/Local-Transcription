@@ -23,7 +23,6 @@ struct VocabularyView: View {
     @State private var used = 0
     @State private var max = 0
     @State private var loaded = false
-    @State private var selection: Set<Row.ID> = []
     @State private var newTerm = ""
     @State private var newVariants = ""
     @State private var saveTask: Task<Void, Never>?
@@ -31,17 +30,21 @@ struct VocabularyView: View {
     @FocusState private var addFocused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        // a scrolling page, like home and settings. a table or plain stack filling a pane of the
+        // two column layout is drawn blank on macOS 26
+        ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 Text("Terms Whisper should spell your way, such as acronyms, project names and jargon. Each term is a spelling hint, and anything it mishears the same way every time can be listed under Also Heard As to be replaced with the term. Changes apply to recordings transcribed from now on. People's names are added as hints on their own.")
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 addBar
                 usage
+                Divider().padding(.vertical, 4)
+                terms
             }
             .padding(20)
-            Divider()
-            table
+            .frame(maxWidth: 900, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .navigationTitle("Vocabulary")
         .navigationSubtitle(loaded ? "\(rows.count) term\(rows.count == 1 ? "" : "s")" : "")
@@ -49,11 +52,6 @@ struct VocabularyView: View {
             ToolbarItem {
                 Button { addFocused = true } label: { Label("Add Term", systemImage: "plus") }
                     .help("Add a term")
-            }
-            ToolbarItem {
-                Button { remove(selection) } label: { Label("Remove", systemImage: "minus") }
-                    .disabled(selection.isEmpty)
-                    .help("Remove the selected terms")
             }
         }
         .task { await load() }
@@ -88,30 +86,36 @@ struct VocabularyView: View {
         }
     }
 
-    private var table: some View {
-        Table($rows, selection: $selection) {
-            TableColumn("Term") { $row in
-                TextField("Term", text: $row.term)
-                    .textFieldStyle(.plain)
-                    .fontWeight(.medium)
-            }
-            .width(min: 140, ideal: 220)
-            TableColumn("Also Heard As") { $row in
-                TextField("Also heard as", text: $row.variants, prompt: Text("none"))
-                    .textFieldStyle(.plain)
-            }
-        }
-        .contextMenu(forSelectionType: Row.ID.self) { ids in
-            Button("Remove") { remove(ids) }
-                .disabled(ids.isEmpty)
-        }
-        .onDeleteCommand { remove(selection) }
-        .overlay {
-            if loaded && rows.isEmpty {
-                ContentUnavailableView("No Terms Yet", systemImage: "character.book.closed",
-                                       description: Text("Add acronyms and names Whisper gets wrong."))
-            } else if !loaded {
-                ProgressView()
+    @ViewBuilder
+    private var terms: some View {
+        if !loaded {
+            ProgressView().frame(maxWidth: .infinity)
+        } else if rows.isEmpty {
+            ContentUnavailableView("No Terms Yet", systemImage: "character.book.closed",
+                                   description: Text("Add acronyms and names Whisper gets wrong."))
+        } else {
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
+                GridRow {
+                    Text("Term")
+                    Text("Also Heard As")
+                    Color.clear.frame(width: 1, height: 1)
+                }
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                ForEach($rows) { $row in
+                    GridRow {
+                        TextField("Term", text: $row.term)
+                            .fontWeight(.medium)
+                            .frame(width: 220)
+                        TextField("Also heard as", text: $row.variants, prompt: Text("none"))
+                        Button { remove([row.id]) } label: { Image(systemName: "minus.circle") }
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(.secondary)
+                            .help("Remove \(row.term)")
+                    }
+                    .textFieldStyle(.roundedBorder)
+                    .contextMenu { Button("Remove") { remove([row.id]) } }
+                }
             }
         }
     }
@@ -132,7 +136,6 @@ struct VocabularyView: View {
 
     private func remove(_ ids: Set<Row.ID>) {
         rows.removeAll { ids.contains($0.id) }
-        selection.subtract(ids)
         saveNow()
     }
 

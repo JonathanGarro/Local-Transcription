@@ -43,6 +43,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // swift run starts a bare binary, which would otherwise have no dock icon or menu bar
         NSApp.setActivationPolicy(.regular)
         NSApp.activate()
+        snapshotIfAsked()
+    }
+
+    // BOSWELL_SNAPSHOT=/path/to/file.png saves a picture of the window a few seconds after
+    // launch, for checking a layout from the command line without screen recording access
+    private func snapshotIfAsked() {
+        guard let path = ProcessInfo.processInfo.environment["BOSWELL_SNAPSHOT"] else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+            guard let view = NSApp.windows.first(where: \.isVisible)?.contentView?.superview,
+                  let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+            view.cacheDisplay(in: view.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }

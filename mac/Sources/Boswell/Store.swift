@@ -58,7 +58,9 @@ enum Stage {
 // the library as the server last reported it, refreshed every couple of seconds
 @MainActor @Observable
 final class Store {
-    var section: Place = .inbox
+    // BOSWELL_PAGE=vocabulary opens on that page, for trying one page from the command line
+    var section: Place = ProcessInfo.processInfo.environment["BOSWELL_PAGE"]
+        .flatMap { page in Place.allCases.first { $0.rawValue.lowercased() == page.lowercased() } } ?? .inbox
     var selection: String?
     var personSelection: String?
     var people: [Person] = []

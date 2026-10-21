@@ -177,11 +177,7 @@ struct VocabularyView: View {
         let sending = entries
         lastSent = sending
         do {
-            var request = URLRequest(url: API.url(["api", "vocabulary"]))
-            request.httpMethod = "PUT"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try JSONEncoder().encode(["entries": sending])
-            let state: Vocabulary = try await API.send(request)
+            let state: Vocabulary = try await API.put(["api", "vocabulary"], ["entries": sending])
             used = state.used
             max = state.max
             // only take the server's list if it changed what was sent, so typing is not interrupted

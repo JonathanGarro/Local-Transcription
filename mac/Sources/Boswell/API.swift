@@ -229,6 +229,34 @@ struct Vocabulary: Codable {
     let max: Int
 }
 
+struct ClaudeModel: Codable, Hashable {
+    let id: String
+    let label: String
+    let input: Double
+    let output: Double
+}
+
+struct Usage: Codable {
+    let total: Double?
+    let requests: Double?
+    let since: String?
+    let today: Double?
+}
+
+struct SettingsState: Codable {
+    let accent: String
+    let claudeModel: String
+    let accents: [String]
+    let models: [ClaudeModel]
+    let key: String?
+    let usage: Usage
+}
+
+struct SettingsChange: Encodable {
+    var accent: String?
+    var claudeModel: String?
+}
+
 // requests
 
 struct ApplyRequest: Encodable {
@@ -282,6 +310,14 @@ enum API {
         return try await send(request)
     }
 
+    static func put<T: Decodable>(_ parts: [String], _ body: some Encodable) async throws -> T {
+        var request = URLRequest(url: url(parts))
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try encoder.encode(body)
+        return try await send(request)
+    }
+
     static func data(_ parts: [String], query: [URLQueryItem] = []) async throws -> Data {
         let (data, response) = try await URLSession.shared.data(from: url(parts, query: query))
         try check(data, response)
@@ -311,7 +347,7 @@ enum API {
         return try await send(request)
     }
 
-    static func send<T: Decodable>(_ request: URLRequest) async throws -> T {
+    private static func send<T: Decodable>(_ request: URLRequest) async throws -> T {
         let (data, response) = try await URLSession.shared.data(for: request)
         try check(data, response)
         return try decoder.decode(T.self, from: data)

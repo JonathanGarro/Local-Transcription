@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import Observation
+import SwiftUI
 
 enum Place: String, Hashable, CaseIterable {
     case inbox = "Inbox"
@@ -12,9 +13,9 @@ enum Place: String, Hashable, CaseIterable {
     case settings = "Settings"
 
     static let meetings: [Place] = [.inbox, .archive]
-    static let native: [Place] = [.inbox, .archive, .people, .vocabulary]
+    static let native: [Place] = [.inbox, .archive, .people, .vocabulary, .settings]
     // pages with no list column
-    var fullWidth: Bool { self == .vocabulary }
+    var fullWidth: Bool { self == .vocabulary || self == .settings }
     static let library: [Place] = [.home, .ask, .people, .vocabulary, .settings]
 
     var icon: String {
@@ -31,6 +32,16 @@ enum Place: String, Hashable, CaseIterable {
 
     // pages not rebuilt natively yet show the web version's page in the window
     var webPage: String? { Place.native.contains(self) ? nil : rawValue.lowercased() }
+}
+
+func accentTint(_ name: String) -> Color {
+    switch name {
+    case "red": .red
+    case "green": .green
+    case "purple": .purple
+    case "orange": .orange
+    default: .blue
+    }
 }
 
 enum Stage {
@@ -53,6 +64,8 @@ final class Store {
     var selection: String?
     var personSelection: String?
     var people: [Person] = []
+    // the accent chosen in settings, shared with the web version
+    var accent = "blue"
     var meetings: [Meeting] = []
     var jobs: [Job] = []
     var owner: String?
@@ -96,6 +109,7 @@ final class Store {
             return
         }
         await refresh()
+        if let settings: SettingsState = try? await API.get(["api", "settings"]) { accent = settings.accent }
         polling = Task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(2))

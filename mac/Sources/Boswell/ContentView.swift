@@ -20,7 +20,7 @@ struct ContentView: View {
                 NavigationSplitView {
                     Sidebar()
                 } detail: {
-                    VocabularyView()
+                    if store.section == .settings { SettingsView() } else { VocabularyView() }
                 }
             } else if store.connected {
                 NavigationSplitView {
@@ -83,6 +83,7 @@ struct ContentView: View {
                       allowsMultipleSelection: true) { result in
             if case .success(let urls) = result { Task { await store.importFiles(urls) } }
         }
+        .tint(accentTint(store.accent))
         .frame(minWidth: 820, minHeight: 560)
     }
 }

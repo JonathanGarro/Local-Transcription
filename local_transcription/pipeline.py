@@ -734,6 +734,42 @@ def _mark_edited(out_dir):
     path.write_text(json.dumps(summary, indent=2))
 
 
+def frontmatter_project(text):
+    """the project a note's frontmatter names, as written by the app or tidied by obsidian:
+    project: '[[X]]', project: "[[X]]", project: X, or a one item list under project:. ""
+    when it is empty, None when the note has no frontmatter or no project line."""
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None
+    for i, line in enumerate(lines[1:], 1):
+        if line.strip() == "---":
+            return None
+        key, sep, value = line.partition(":")
+        if not sep or key.strip().lower() != "project":
+            continue
+        value = value.strip()
+        if not value and i + 1 < len(lines) and lines[i + 1].lstrip().startswith("- "):
+            value = lines[i + 1].lstrip()[2:].strip()
+        value = value.strip("\"'").strip()
+        # yaml's spellings of no value
+        if value.lower() in ("null", "~"):
+            return ""
+        match = re.match(r"^\[\[([^\]|]+)(?:\|[^\]]*)?\]\]$", value)
+        return (match.group(1) if match else value).strip()
+    return None
+
+
+def _project_from_vault(out_dir, text):
+    """obsidian is the master copy once sent, so the library files the meeting under the
+    project its note there names."""
+    project = frontmatter_project(text)
+    if project is None:
+        return
+    meeting_id = Path(out_dir).name
+    if (library.meeting_project(meeting_id) or "") != project:
+        library.set_meeting_project(meeting_id, project)
+
+
 def sync_from_vault(out_dir, force=False):
     """keep a sent note's app copy in step with obsidian, which is the master copy once sent.
     returns one of:
@@ -752,6 +788,7 @@ def sync_from_vault(out_dir, force=False):
     if not vault.exists():
         return "missing"
     vault_text, app_text = vault.read_text(), note.read_text()
+    _project_from_vault(out_dir, vault_text)
     baseline = out_dir / SENT_NOTE
     if vault_text == app_text:
         if not baseline.exists():

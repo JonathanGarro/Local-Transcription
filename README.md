@@ -39,6 +39,18 @@ uv run make_app.py --icon ~/Pictures/my-icon.png
 
 It goes in `~/Applications/Boswell.app` and just starts `app.py` from this folder. Run it again after changing the icon. Without `--icon` it uses `assets/icon.png`. The app's log is `~/Library/Logs/Boswell.log`.
 
+### Native version (in progress)
+
+`mac/` holds a SwiftUI version of the app that uses the same Python server, so all the transcription, naming and note logic stays in Python. It has a real Mac sidebar, toolbar, menus, Settings window, context menus and a Dock badge for meetings that need review. It builds with Xcode's toolchain (SwiftUI's macros don't ship with the Command Line Tools):
+
+```
+uv run make_app.py --native
+```
+
+That builds `~/Applications/Boswell Native.app` next to the web one. It starts `app.py --browser` from this folder, or uses the server if the web version is already open, and stops the server it started when you quit. For development, `cd mac && DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift run`. Set `BOSWELL_URL` to point it at a server on another port.
+
+Native so far: Inbox and Archive with search, importing recordings (Cmd+O or drop them on the window), renaming, speaker review with clips, the transcript with per-turn playback and a filter, and the note editor with autosave, project, diff inspector, Send to Obsidian and Open in Obsidian. Ask, People, Vocabulary, Home, Settings and Find my to-dos open the web version from the Library menu.
+
 - **Inbox:** drop recordings to queue them. One file runs at a time, with live progress. Dropped files are copied into `data/`. A file that was already processed is only re-run if you confirm, because re-running replaces its confirmed names.
 - **From Plaud:** the Inbox lists recordings uploaded to Plaud in the last 14 days. Import downloads the audio with the Plaud CLI (`plaud login` once) and runs it here like a dropped file, so Plaud doesn't need to transcribe it. Recordings already in the app show as such.
 - **Review:** each unknown speaker gets a few short clips with what they said, suggested names with scores, and a name field that searches existing people or creates a new one. You can also mark a speaker as the same person as another speaker (diarization split them), leave a speaker unnamed, or name them without adding the voice to their profile. Identified speakers are collapsed, with a "wrong?" link. Nothing is saved until you press Apply.

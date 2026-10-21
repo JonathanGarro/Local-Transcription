@@ -3,13 +3,15 @@
 usage:
     uv run make_app.py                      # uses assets/icon.png, makes a plain one if missing
     uv run make_app.py --icon ~/Pictures/my-icon.png
+    uv run make_app.py --native             # the swiftui version in mac/, needs xcode
 
-the app goes in ~/Applications/Boswell.app. it only starts this project's
-app.py, so the code, data, and outputs stay where they are. run this again after changing
-the icon. any square png works, 1024x1024 looks best.
+the app goes in ~/Applications/Boswell.app, or Boswell Native.app with --native. it only
+starts this project's app.py, so the code, data, and outputs stay where they are. run this
+again after changing the icon. any square png works, 1024x1024 looks best.
 """
 
 import argparse
+import os
 import plistlib
 import shutil
 import subprocess
@@ -19,10 +21,13 @@ from pathlib import Path
 # config
 BASE_DIR = Path(__file__).parent.resolve()
 APP_NAME = "Boswell"
-APP_DIR = Path.home() / "Applications" / f"{APP_NAME}.app"
+NATIVE_NAME = "Boswell Native"
 ICON_PNG = BASE_DIR / "assets" / "icon.png"
 LOG_FILE = Path.home() / "Library" / "Logs" / f"{APP_NAME}.log"
 BUNDLE_ID = "local.transcription.app"
+NATIVE_BUNDLE_ID = "local.transcription.native"
+MAC_DIR = BASE_DIR / "mac"
+XCODE_DIR = Path("/Applications/Xcode.app/Contents/Developer")
 ICON_SIZES = [16, 32, 128, 256, 512]
 
 
@@ -78,11 +83,26 @@ exec "{python}" app.py >> "{LOG_FILE}" 2>&1
 """
 
 
+def build_native():
+    """compile the swiftui app in mac/ and return the binary."""
+    env = dict(os.environ)
+    # swiftui's macros only ship with xcode, not the command line tools
+    if "DEVELOPER_DIR" not in env and XCODE_DIR.exists():
+        env["DEVELOPER_DIR"] = str(XCODE_DIR)
+    subprocess.run(["swift", "build", "-c", "release"], cwd=MAC_DIR, env=env, check=True)
+    path = subprocess.run(["swift", "build", "-c", "release", "--show-bin-path"], cwd=MAC_DIR, env=env,
+                          check=True, capture_output=True, text=True).stdout.strip()
+    return Path(path) / APP_NAME
+
+
 # main
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--icon", type=Path, help=f"square png to use, copied to {ICON_PNG.relative_to(BASE_DIR)}")
+    parser.add_argument("--native", action="store_true", help="build the swiftui version in mac/")
     args = parser.parse_args()
+    name = NATIVE_NAME if args.native else APP_NAME
+    app_dir = Path.home() / "Applications" / f"{name}.app"
 
     if args.icon:
         source = args.icon.expanduser()
@@ -97,24 +117,35 @@ def main():
         make_default_icon(ICON_PNG)
         print(f"made a plain icon at {ICON_PNG.relative_to(BASE_DIR)}, pass --icon to use your own")
 
-    if APP_DIR.exists():
-        shutil.rmtree(APP_DIR)
-    contents = APP_DIR / "Contents"
+    binary = build_native() if args.native else None
+    if app_dir.exists():
+        shutil.rmtree(app_dir)
+    contents = app_dir / "Contents"
     (contents / "MacOS").mkdir(parents=True)
     (contents / "Resources").mkdir()
     make_icns(ICON_PNG, contents / "Resources" / "icon.icns")
     executable = contents / "MacOS" / APP_NAME
-    executable.write_text(launcher_script())
-    executable.chmod(0o755)
+    if binary:
+        shutil.copy2(binary, executable)
+    else:
+        executable.write_text(launcher_script())
+        executable.chmod(0o755)
+    info = {"CFBundleName": APP_NAME, "CFBundleDisplayName": name,
+            "CFBundleIdentifier": NATIVE_BUNDLE_ID if args.native else BUNDLE_ID, "CFBundleExecutable": APP_NAME,
+            "CFBundleIconFile": "icon", "CFBundlePackageType": "APPL",
+            "CFBundleShortVersionString": "1.0", "LSMinimumSystemVersion": "15.0" if args.native else "13.0",
+            "NSHighResolutionCapable": True}
+    if args.native:
+        # the swift app starts the python server from here
+        info["BoswellProjectDir"] = str(BASE_DIR)
     with (contents / "Info.plist").open("wb") as f:
-        plistlib.dump({"CFBundleName": APP_NAME, "CFBundleDisplayName": APP_NAME,
-                       "CFBundleIdentifier": BUNDLE_ID, "CFBundleExecutable": APP_NAME,
-                       "CFBundleIconFile": "icon", "CFBundlePackageType": "APPL",
-                       "CFBundleShortVersionString": "1.0", "LSMinimumSystemVersion": "13.0",
-                       "NSHighResolutionCapable": True}, f)
+        plistlib.dump(info, f)
+    if binary:
+        # an ad hoc signature, so macos treats the bundle as one app
+        subprocess.run(["codesign", "--force", "--sign", "-", str(app_dir)], check=True, capture_output=True)
     # tell finder and the dock to pick up the new icon
-    subprocess.run(["touch", str(APP_DIR)], check=False)
-    print(f"built {APP_DIR}")
+    subprocess.run(["touch", str(app_dir)], check=False)
+    print(f"built {app_dir}")
     print("open it from ~/Applications, then right-click its dock icon, Options, Keep in Dock")
 
 

@@ -406,6 +406,7 @@ struct PlaudRecording: Codable, Identifiable, Hashable {
     let meetingId: String?
     // new, queued, processing, done or imported
     let status: String
+    let hidden: Bool?
 
     var id: String { plaudId }
 }

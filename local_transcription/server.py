@@ -264,6 +264,10 @@ class AskRequest(BaseModel):
     conversation_id: str | None = None
 
 
+class HideRequest(BaseModel):
+    hidden: bool = True
+
+
 class PlaudRequest(BaseModel):
     plaud_ids: list[str]
 
@@ -582,6 +586,7 @@ def create_app():
         except RuntimeError as err:
             raise HTTPException(502, f"plaud: {err}")
         imported = library.plaud_imports()
+        hidden = library.plaud_hidden()
         meetings = library.meetings()
         # recordings brought in before imports were tracked are known by name
         known = set(meetings["meeting_id"]) | {Path(f).stem for col in ("source_file", "original_file")
@@ -592,11 +597,17 @@ def create_app():
             r["meeting_id"] = imported.get(r["plaud_id"]) or (r["file"] if r["file"] in known else None)
             r["status"] = ("imported" if r["meeting_id"] else queued[r["plaud_id"]]["status"] if r["plaud_id"] in queued
                            else "new")
+            r["hidden"] = r["plaud_id"] in hidden
             # where its row opens: the app's note, else the obsidian one, else the review
             out_dir = pipeline.OUTPUT_DIR / (r["meeting_id"] or "")
             r["open"] = (None if not r["meeting_id"] else "note" if (out_dir / "note.json").exists()
                          else "imported" if library.meeting_sent_path(r["meeting_id"]) else "review")
         return {"days": PLAUD_DAYS, "recordings": recordings}
+
+    @app.post("/api/plaud/{plaud_id}/hide")
+    def plaud_hide(plaud_id: str, request: HideRequest):
+        library.set_plaud_hidden(plaud_id, request.hidden)
+        return {"ok": True}
 
     @app.post("/api/plaud/import")
     def plaud_import(request: PlaudRequest):

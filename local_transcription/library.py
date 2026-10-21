@@ -121,6 +121,12 @@ create table if not exists plaud_files (
     meeting_id text,
     imported text not null
 );
+-- plaud recordings kept out of the from plaud list, such as a meeting already in the app
+-- from another recording
+create table if not exists plaud_hidden (
+    plaud_id text primary key,
+    hidden text not null
+);
 """
 # columns added after the first release, applied to older databases on open
 ADDED_COLUMNS = {
@@ -588,6 +594,20 @@ def save_plaud_import(plaud_id, meeting_id):
     with connect() as con:
         con.execute("insert or replace into plaud_files (plaud_id, meeting_id, imported) values (?, ?, ?)",
                     (plaud_id, meeting_id, _now()))
+
+
+def plaud_hidden():
+    """the plaud ids hidden from the from plaud list."""
+    table = _query("select plaud_id from plaud_hidden")
+    return set(table["plaud_id"]) if len(table) else set()
+
+
+def set_plaud_hidden(plaud_id, hidden):
+    with connect() as con:
+        if hidden:
+            con.execute("insert or replace into plaud_hidden (plaud_id, hidden) values (?, ?)", (plaud_id, _now()))
+        else:
+            con.execute("delete from plaud_hidden where plaud_id = ?", (plaud_id,))
 
 
 def find_meeting_by_source(source_file):

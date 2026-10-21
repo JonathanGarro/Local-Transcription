@@ -7,6 +7,13 @@ struct PlaudList: View {
     @State private var recent: PlaudRecent?
     @State private var error: String?
     @State private var importing: Set<String> = []
+    @State private var showHidden = false
+
+    private var hiddenCount: Int { (recent?.recordings ?? []).filter { $0.hidden == true }.count }
+
+    private var shown: [PlaudRecording] {
+        (recent?.recordings ?? []).filter { showHidden || $0.hidden != true }
+    }
 
     // a plaud import that starts or finishes changes the list
     private var jobKey: String {
@@ -14,14 +21,15 @@ struct PlaudList: View {
     }
 
     private var fresh: [PlaudRecording] {
-        (recent?.recordings ?? []).filter { $0.status == "new" && !importing.contains($0.plaudId) }
+        shown.filter { $0.status == "new" && $0.hidden != true && !importing.contains($0.plaudId) }
     }
 
     var body: some View {
-        List(recent?.recordings ?? []) { r in
+        List(shown) { r in
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(r.name).fontWeight(.medium).lineLimit(2)
+                        .foregroundStyle(r.hidden == true ? .secondary : .primary)
                     Text([r.date, r.duration].compactMap { $0 }.joined(separator: " · "))
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -33,13 +41,20 @@ struct PlaudList: View {
             .contentShape(Rectangle())
             .onTapGesture { if let id = r.meetingId { store.openMeeting(id) } }
             .help(r.meetingId != nil ? "Open the meeting" : "")
+            .contextMenu {
+                if r.hidden == true {
+                    Button("Show in List") { Task { await hide(r, false) } }
+                } else if r.status == "new" {
+                    Button("Hide") { Task { await hide(r, true) } }
+                }
+            }
         }
         .overlay {
             if let error {
                 ContentUnavailableView("Could not reach Plaud", systemImage: "icloud.slash", description: Text(error))
             } else if recent == nil {
                 ProgressView()
-            } else if recent?.recordings.isEmpty == true {
+            } else if shown.isEmpty {
                 ContentUnavailableView("Nothing New", systemImage: "icloud",
                                        description: Text("Nothing uploaded to Plaud in the last \(recent?.days ?? 14) days."))
             }
@@ -48,6 +63,12 @@ struct PlaudList: View {
         .navigationSubtitle(recent.map { "Last \($0.days) days" } ?? "")
         .navigationSplitViewColumnWidth(min: 280, ideal: 340)
         .toolbar {
+            if hiddenCount > 0 || showHidden {
+                ToolbarItem {
+                    Toggle(isOn: $showHidden) { Label("Show Hidden", systemImage: showHidden ? "eye" : "eye.slash") }
+                        .help(showHidden ? "Hide the recordings you hid" : "Show \(hiddenCount) hidden recording\(hiddenCount == 1 ? "" : "s")")
+                }
+            }
             ToolbarItem {
                 Button { Task { await load() } } label: { Label("Refresh", systemImage: "arrow.clockwise") }
                     .help("Check Plaud again")
@@ -63,7 +84,9 @@ struct PlaudList: View {
 
     @ViewBuilder
     private func status(_ r: PlaudRecording) -> some View {
-        if r.status == "new" && !importing.contains(r.plaudId) {
+        if r.hidden == true {
+            StatusText(text: "Hidden", color: .secondary)
+        } else if r.status == "new" && !importing.contains(r.plaudId) {
             Button("Import") { Task { await importRecordings([r.plaudId]) } }
                 .controlSize(.small)
         } else if let job = store.jobs.first(where: { $0.plaudId == r.plaudId }), job.status == "processing" {
@@ -87,6 +110,13 @@ struct PlaudList: View {
         } catch {
             self.error = error.localizedDescription
         }
+    }
+
+    private func hide(_ r: PlaudRecording, _ hidden: Bool) async {
+        await store.run {
+            let _: Ok = try await API.post(["api", "plaud", r.plaudId, "hide"], ["hidden": hidden])
+        }
+        await load()
     }
 
     private func importRecordings(_ ids: [String]) async {

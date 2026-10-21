@@ -506,6 +506,8 @@ enum Prefs {
     // whether a note shows formatted or as markdown to edit
     static let noteMode = "noteMode"
     static let noteTextSize = "noteTextSize"
+    // whether the plaud list leaves out recordings already imported
+    static let hideImported = "plaudHideImported"
 }
 
 enum NoteMode: String {

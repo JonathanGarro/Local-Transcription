@@ -8,11 +8,12 @@ struct PlaudList: View {
     @State private var error: String?
     @State private var importing: Set<String> = []
     @State private var showHidden = false
+    @AppStorage(Prefs.hideImported) private var hideImported = true
 
     private var hiddenCount: Int { (recent?.recordings ?? []).filter { $0.hidden == true }.count }
 
     private var shown: [PlaudRecording] {
-        (recent?.recordings ?? []).filter { showHidden || $0.hidden != true }
+        (recent?.recordings ?? []).filter { (showHidden || $0.hidden != true) && !(hideImported && $0.status == "imported") }
     }
 
     // a plaud import that starts or finishes changes the list
@@ -49,6 +50,14 @@ struct PlaudList: View {
                 }
             }
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            Toggle("Hide Processed", isOn: $hideImported)
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
         .overlay {
             if let error {
                 ContentUnavailableView("Could not reach Plaud", systemImage: "icloud.slash", description: Text(error))
@@ -56,7 +65,9 @@ struct PlaudList: View {
                 ProgressView()
             } else if shown.isEmpty {
                 ContentUnavailableView("Nothing New", systemImage: "icloud",
-                                       description: Text("Nothing uploaded to Plaud in the last \(recent?.days ?? 14) days."))
+                                       description: Text(recent?.recordings.isEmpty == false
+                                           ? "Everything uploaded to Plaud in the last \(recent?.days ?? 14) days is in the app."
+                                           : "Nothing uploaded to Plaud in the last \(recent?.days ?? 14) days."))
             }
         }
         .navigationTitle("Plaud")

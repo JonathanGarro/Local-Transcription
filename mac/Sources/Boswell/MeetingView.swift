@@ -40,7 +40,8 @@ struct MeetingView: View {
         .navigationTitle(store.meeting(meetingId)?.name ?? meetingId)
         .navigationSubtitle(subtitle)
         .toolbar {
-            ToolbarItem(placement: .principal) {
+            // on the leading edge of the meeting's toolbar, by the list
+            ToolbarItem(placement: .navigation) {
                 Picker("View", selection: Binding(get: { tab ?? .note }, set: { tab = $0 })) {
                     ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }

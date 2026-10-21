@@ -51,17 +51,17 @@ That builds `~/Applications/Boswell Native.app` next to the web one, or rebuilds
 
 Native so far:
 
-- **Inbox and Archive:** search, importing recordings (Cmd+O or drop them on the window), renaming, and a read-only view of meetings imported from Obsidian.
+- **Inbox and Archive:** search, to-do badges and an Archive filter for meetings with to-dos in Things or not yet checked, importing recordings (Cmd+O or drop them on the window), renaming, and a read-only view of meetings imported from Obsidian.
 - **Speakers:** review with clips, suggested names, merging and leaving unnamed.
 - **Transcript:** per-turn playback and a filter.
-- **Note:** autosave, project, a diff inspector, Send to Obsidian and Open in Obsidian.
+- **Note:** autosave, project, Send to Obsidian and Open in Obsidian, and an inspector with two tabs: Changes (the diff) and To-dos, where Find my to-dos sends your to-dos to Things and lists the ones already sent.
 - **Home:** the stat tiles, Swift Charts for meetings per month and by weekday with a hover readout, and the people, teams and projects you meet with most. A person opens in People.
 - **People:** search, sort, each person's meetings in a sortable table that opens them on a double click, and an Edit sheet for name, organizations and teams.
 - **Vocabulary:** an add bar, a meter for the spelling hint space, and a table edited in place that saves as you type, with Delete or right-click to remove.
 - **Ask:** conversations in the middle column (Cmd+N for a new one, right-click to rename or delete) and a chat on the right, where Return asks and Shift+Return starts a new line. Meeting links in answers open the meeting, and a link to a moment opens its transcript on that turn. Send to Things under each answer finds your to-dos to check and adjust before they're added.
 - **Settings:** accent color (which tints the native app too), the Claude model, usage, and where the project folder and log are.
 
-Find my to-dos on the Note tab is still web only. Cmd+1 to Cmd+7 switch pages, and Go > Open in Browser opens the current page in a browser.
+Cmd+1 to Cmd+7 switch pages, and Go > Open in Browser opens the current page in a browser.
 
 - **Inbox:** drop recordings to queue them. One file runs at a time, with live progress. Dropped files are copied into `data/`. A file that was already processed is only re-run if you confirm, because re-running replaces its confirmed names.
 - **From Plaud:** the Inbox lists recordings uploaded to Plaud in the last 14 days. Import downloads the audio with the Plaud CLI (`plaud login` once) and runs it here like a dropped file, so Plaud doesn't need to transcribe it. Recordings already in the app show as such.

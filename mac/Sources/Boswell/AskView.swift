@@ -411,13 +411,21 @@ struct TodoPanel: View {
     @Binding var state: TodoState
     var label = "Send to Things"
     let find: () async throws -> FoundTodos
+    // sends the kept to-dos, by default straight to things
+    var add: ([Todo]) async throws -> Added = { todos in
+        try await API.post(["api", "things", "add"], AddTodosRequest(todos: todos))
+    }
+    // runs after adding, in place of the added message
+    var added: ((Added) async -> Void)?
     @State private var adding = false
+    var enabled = true
 
     var body: some View {
         switch state {
         case .idle:
             Button(label) { Task { await start() } }
                 .buttonStyle(.link)
+                .disabled(!enabled)
         case .loading:
             HStack(spacing: 6) {
                 ProgressView().controlSize(.small)
@@ -486,7 +494,18 @@ struct TodoPanel: View {
                 Text(detail(found, t))
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                HStack(spacing: 14) {
+                // side by side when there is room, as in a chat, stacked in a narrow inspector
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 14) { fields(found, item, t) }
+                    VStack(alignment: .leading, spacing: 6) { fields(found, item, t) }
+                }
+            }
+            .opacity(t.keep ? 1 : 0.45)
+        }
+    }
+
+    @ViewBuilder
+    private func fields(_ found: FoundTodos, _ item: Binding<Todo>, _ t: Todo) -> some View {
                     Picker("Project", selection: Binding(get: { t.projectId }, set: { id in
                         item.wrappedValue.projectId = id
                         item.wrappedValue.projectSource = "you"
@@ -510,10 +529,6 @@ struct TodoPanel: View {
                     }
                     .fixedSize()
                     DeadlineField(deadline: item.deadline)
-                }
-            }
-            .opacity(t.keep ? 1 : 0.45)
-        }
     }
 
     private func detail(_ found: FoundTodos, _ t: Todo) -> String {
@@ -532,9 +547,9 @@ struct TodoPanel: View {
         adding = true
         defer { adding = false }
         do {
-            let result: Added = try await API.post(["api", "things", "add"], AddTodosRequest(todos: found.todos.filter(\.keep)))
-            state = .added(result.added)
+            let result = try await add(found.todos.filter(\.keep))
             await store.refresh()
+            if let added { await added(result) } else { state = .added(result.added) }
         } catch {
             store.show(error.localizedDescription)
         }

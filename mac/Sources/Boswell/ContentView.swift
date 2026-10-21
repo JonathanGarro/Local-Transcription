@@ -160,9 +160,18 @@ struct MeetingList: View {
     @State private var search = ""
     @State private var renaming: Meeting?
     @State private var newName = ""
+    @State private var todoFilter = TodoFilter.all
 
     private var shown: [Meeting] {
-        let all = store.section == .inbox ? store.inbox : store.archive
+        var all = store.section == .inbox ? store.inbox : store.archive
+        if store.section == .archive {
+            switch todoFilter {
+            case .all: break
+            case .sent: all = all.filter { ($0.todosSent ?? 0) > 0 }
+            // only notes written here can be checked for to-dos
+            case .unchecked: all = all.filter { $0.note == true && ($0.todosSent ?? 0) == 0 && $0.todosChecked == nil }
+            }
+        }
         guard !search.isEmpty else { return all }
         return all.filter {
             $0.name.localizedCaseInsensitiveContains(search) || ($0.project ?? "").localizedCaseInsensitiveContains(search)
@@ -203,6 +212,20 @@ struct MeetingList: View {
         .navigationSubtitle(store.section == .inbox && store.reviewCount > 0 ? "\(store.reviewCount) to review" : "")
         .navigationSplitViewColumnWidth(min: 260, ideal: 320)
         .toolbar {
+            if store.section == .archive {
+                ToolbarItem {
+                    Menu {
+                        Picker("Show", selection: $todoFilter) {
+                            ForEach(TodoFilter.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                        }
+                        .pickerStyle(.inline)
+                    } label: {
+                        Label("Filter", systemImage: todoFilter == .all ? "line.3.horizontal.decrease.circle"
+                              : "line.3.horizontal.decrease.circle.fill")
+                    }
+                    .help("Filter by to-dos")
+                }
+            }
             ToolbarItem {
                 Button { store.importing = true } label: { Label("Import Recording", systemImage: "plus") }
                     .help("Import a recording to transcribe")
@@ -234,12 +257,9 @@ struct MeetingRow: View {
                 Text(details)
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 4)
+                TodoBadge(meeting: meeting)
                 if meeting.archived == nil {
                     StageBadge(stage: store.stage(meeting))
-                } else if (meeting.todosSent ?? 0) > 0 {
-                    Image(systemName: "checkmark.circle")
-                        .foregroundStyle(.secondary)
-                        .help("To-dos sent to Things")
                 }
             }
             .font(.caption)
@@ -256,6 +276,31 @@ struct MeetingRow: View {
     private var details: String {
         [meeting.date, meeting.minutes.map { "\(Int($0.rounded())) min" }].compactMap { $0 }.joined(separator: " · ")
     }
+}
+
+// whether a meeting's to-dos went to things
+struct TodoBadge: View {
+    let meeting: Meeting
+
+    var body: some View {
+        if let sent = meeting.todosSent, sent > 0 {
+            Label("\(Int(sent)) in Things", systemImage: "checkmark.circle")
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.secondary)
+                .help("Sent to Things from this meeting")
+        } else if let checked = meeting.todosChecked {
+            Text("no to-dos")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .help("Checked \(checked.prefix(10))")
+        }
+    }
+}
+
+enum TodoFilter: String, CaseIterable {
+    case all = "All Meetings"
+    case sent = "To-dos in Things"
+    case unchecked = "Not Checked for To-dos"
 }
 
 struct StageBadge: View {

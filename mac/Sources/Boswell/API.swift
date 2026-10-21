@@ -14,6 +14,7 @@ struct Meeting: Codable, Identifiable, Hashable {
     let sentPath: String?
     let project: String?
     let todosSent: Double?
+    let todosChecked: String?
     let note: Bool?
 
     var id: String { meetingId }
@@ -113,6 +114,15 @@ struct Note: Codable {
     let notesDir: String?
     let vault: String?
     let job: Job?
+    let todosSent: [SentTodo]?
+    let todosChecked: String?
+}
+
+struct SentTodo: Codable, Hashable {
+    let thingsId: String
+    let title: String
+    let added: String?
+    let source: String?
 }
 
 struct Project: Codable, Hashable {
@@ -370,10 +380,13 @@ struct FoundTodos: Codable {
 
 struct AddTodosRequest: Encodable {
     let todos: [Todo]
+    // a meeting whose note's action items become the to-dos added
+    var noteMeetingId: String?
 }
 
 struct Added: Codable {
     let added: Int
+    let vault: String?
 }
 
 // requests

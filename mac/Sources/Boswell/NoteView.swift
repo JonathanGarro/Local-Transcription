@@ -11,6 +11,9 @@ struct NoteView: View {
     @State private var project = ""
     @State private var backend = "local"
     @State private var showChanges = false
+    @State private var inspectorTab = InspectorTab.changes
+    @State private var todoState = TodoState.idle
+    @State private var claudeReady = false
     @State private var diff: NoteDiff?
     @State private var conflict: String?
     @State private var confirmDiscard = false
@@ -40,13 +43,27 @@ struct NoteView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .toolbar { if note?.exists == true && job == nil { toolbar } }
         .inspector(isPresented: $showChanges) {
-            DiffView(diff: diff)
-                .inspectorColumnWidth(min: 300, ideal: 420)
+            VStack(spacing: 0) {
+                Picker("Show", selection: $inspectorTab) {
+                    ForEach(InspectorTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .padding(10)
+                Divider()
+                switch inspectorTab {
+                case .changes: DiffView(diff: diff)
+                case .todos: todos
+                }
+            }
+            .frame(maxHeight: .infinity, alignment: .top)
+            .inspectorColumnWidth(min: 320, ideal: 440)
         }
         .task(id: store.revision) { await load() }
         .onChange(of: job == nil) { if job == nil { Task { await load() } } }
         .onChange(of: text) { scheduleSave() }
         .onChange(of: showChanges) { if showChanges { Task { await loadDiff() } } }
+        .onChange(of: inspectorTab) { if inspectorTab == .changes { Task { await loadDiff() } } }
         .onDisappear { Task { await flush() } }
         .confirmationDialog("Replace the copy in Obsidian?", isPresented: Binding(get: { conflict != nil }, set: { if !$0 { conflict = nil } })) {
             Button("Replace It", role: .destructive) { Task { await send(replace: true) } }
@@ -132,10 +149,15 @@ struct NoteView: View {
             .disabled(!sent)
             .help(sent ? "Open the note in Obsidian" : "Send the note first")
 
-            Button { showChanges.toggle() } label: {
+            Button { toggleInspector(.changes) } label: {
                 Label("Changes", systemImage: "plus.forwardslash.minus")
             }
             .help("Show what changed")
+
+            Button { toggleInspector(.todos) } label: {
+                Label("To-dos", systemImage: "checklist")
+            }
+            .help("Find your to-dos in the transcript and send them to Things")
 
             Menu {
                 Button("Rewrite Note...") { confirmRewrite = true }
@@ -161,6 +183,73 @@ struct NoteView: View {
                 .keyboardShortcut("s")
                 .opacity(0)
                 .frame(width: 0)
+        }
+    }
+
+    private func toggleInspector(_ tab: InspectorTab) {
+        if showChanges && inspectorTab == tab {
+            showChanges = false
+        } else {
+            inspectorTab = tab
+            showChanges = true
+        }
+    }
+
+    // to-dos. claude reads the transcript for the owner's to-dos, and once they are added to
+    // things the note's action items become links to them
+
+    private var todos: some View {
+        let sentTodos = note?.todosSent ?? []
+        let looking: Bool = { if case .idle = todoState { return false }; return true }()
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                if !looking {
+                    if !sentTodos.isEmpty {
+                        Text("Sent to Things").font(.headline)
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(sentTodos, id: \.thingsId) { t in
+                                VStack(alignment: .leading, spacing: 1) {
+                                    if let url = URL(string: "things:///show?id=\(t.thingsId.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? t.thingsId)") {
+                                        Link(t.title, destination: url)
+                                            .help("Open in Things")
+                                    }
+                                    Text("\(t.added?.prefix(10) ?? "")\(t.source == "ask" ? ", from Ask" : "")")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    } else if let checked = note?.todosChecked {
+                        Text("Checked on \(checked.prefix(10)), and nothing was sent to Things.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Claude reads the transcript for tasks you were asked to do or offered to do, to add to Things. The note's action items then become links to them.")
+                            .foregroundStyle(.secondary)
+                    }
+                    if !claudeReady {
+                        Text("Add ANTHROPIC_API_KEY to .env and restart the app to find to-dos.")
+                            .foregroundStyle(.orange)
+                    }
+                }
+                TodoPanel(state: $todoState,
+                          label: sentTodos.isEmpty && note?.todosChecked == nil ? "Find my to-dos" : "Look again",
+                          find: { try await API.post(API.meeting(meetingId, "todos")) },
+                          add: { todos in
+                              // the note on disk is rewritten, so unsaved edits go first
+                              await flush()
+                              return try await API.post(["api", "things", "add"],
+                                                        AddTodosRequest(todos: todos, noteMeetingId: meetingId))
+                          },
+                          added: { result in
+                              todoState = .idle
+                              await load(replaceText: true)
+                              let vault = result.vault == "same" || result.vault == "pulled"
+                              store.show("Added \(result.added) to Things\(vault ? ", and updated the note in Obsidian" : "")")
+                          },
+                          enabled: claudeReady)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -222,6 +311,7 @@ struct NoteView: View {
         project = fetched.project ?? ""
         if lookups == nil, let l = try? await fetchedLookups {
             lookups = l
+            claudeReady = l.claudeReady == true
             backend = l.defaultBackend ?? "local"
         }
         if showChanges { await loadDiff() }
@@ -303,6 +393,11 @@ struct NoteView: View {
             await load(replaceText: true)
         }
     }
+}
+
+enum InspectorTab: String, CaseIterable {
+    case changes = "Changes"
+    case todos = "To-dos"
 }
 
 struct DiffView: View {

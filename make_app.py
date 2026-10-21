@@ -11,6 +11,7 @@ the icon. any square png works, 1024x1024 looks best.
 """
 
 import argparse
+import json
 import os
 import plistlib
 import shutil
@@ -28,7 +29,6 @@ BUNDLE_ID = "local.transcription.native"
 URL_SCHEME = "boswell"
 MAC_DIR = BASE_DIR / "mac"
 XCODE_DIR = Path("/Applications/Xcode.app/Contents/Developer")
-ICON_SIZES = [16, 32, 128, 256, 512]
 INSTALL_DIRS = [Path("/Applications"), Path.home() / "Applications"]
 
 
@@ -40,18 +40,16 @@ def make_default_icon(path):
     size = 1024
     image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
-    # macos icons sit inside a margin, with the rounded square at about 80 percent
-    inset, radius = 100, 185
+    # full bleed, since macos 26 masks icons to its own squircle and sets anything
+    # smaller on a dark backdrop
     top, bottom = (47, 111, 222), (24, 52, 110)
     gradient = Image.new("RGBA", (size, size))
     for y in range(size):
         t = y / size
         gradient.paste(tuple(int(a + (b - a) * t) for a, b in zip(top, bottom)) + (255,), (0, y, size, y + 1))
-    mask = Image.new("L", (size, size), 0)
-    ImageDraw.Draw(mask).rounded_rectangle((inset, inset, size - inset, size - inset), radius, fill=255)
-    image.paste(gradient, mask=mask)
-    heights = [120, 260, 420, 300, 520, 360, 200, 330, 150]
-    bar, gap = 44, 30
+    image.paste(gradient)
+    heights = [150, 320, 520, 370, 640, 450, 250, 410, 190]
+    bar, gap = 54, 37
     left = (size - (len(heights) * bar + (len(heights) - 1) * gap)) // 2
     for i, h in enumerate(heights):
         x = left + i * (bar + gap)
@@ -60,17 +58,29 @@ def make_default_icon(path):
     image.save(path)
 
 
-def make_icns(png, target):
-    """convert a png into the .icns file mac apps use."""
+def xcode_env():
+    """the environment for xcode's tools. swiftui's macros and actool only ship with
+    xcode, not the command line tools."""
+    env = dict(os.environ)
+    if "DEVELOPER_DIR" not in env and XCODE_DIR.exists():
+        env["DEVELOPER_DIR"] = str(XCODE_DIR)
+    return env
+
+
+def make_icon(png, resources):
+    """compile a png into the asset catalog mac apps use. macos 26 shrinks icons that
+    only come as an .icns onto a dark squircle, so it goes in an icon composer icon."""
     with tempfile.TemporaryDirectory() as tmp:
-        iconset = Path(tmp) / "icon.iconset"
-        iconset.mkdir()
-        for size in ICON_SIZES:
-            for scale in (1, 2):
-                name = f"icon_{size}x{size}{'@2x' if scale == 2 else ''}.png"
-                subprocess.run(["sips", "-z", str(size * scale), str(size * scale), str(png),
-                                "--out", str(iconset / name)], check=True, capture_output=True)
-        subprocess.run(["iconutil", "-c", "icns", str(iconset), "-o", str(target)], check=True)
+        icon = Path(tmp) / "AppIcon.icon"
+        (icon / "Assets").mkdir(parents=True)
+        shutil.copy2(png, icon / "Assets" / "art.png")
+        (icon / "icon.json").write_text(json.dumps({
+            "groups": [{"layers": [{"image-name": "art.png", "name": "art", "glass": False}]}],
+            "supported-platforms": {"squares": "shared"}}))
+        subprocess.run(["xcrun", "actool", str(icon), "--compile", str(resources), "--platform", "macosx",
+                        "--minimum-deployment-target", "26.0", "--app-icon", "AppIcon",
+                        "--output-partial-info-plist", str(Path(tmp) / "partial.plist")],
+                       env=xcode_env(), check=True, capture_output=True)
 
 
 def signing_identity():
@@ -87,10 +97,7 @@ def signing_identity():
 
 def build_native():
     """compile the swiftui app in mac/ and return the binary."""
-    env = dict(os.environ)
-    # swiftui's macros only ship with xcode, not the command line tools
-    if "DEVELOPER_DIR" not in env and XCODE_DIR.exists():
-        env["DEVELOPER_DIR"] = str(XCODE_DIR)
+    env = xcode_env()
     subprocess.run(["swift", "build", "-c", "release"], cwd=MAC_DIR, env=env, check=True)
     path = subprocess.run(["swift", "build", "-c", "release", "--show-bin-path"], cwd=MAC_DIR, env=env,
                           check=True, capture_output=True, text=True).stdout.strip()
@@ -125,12 +132,12 @@ def main():
     contents = app_dir / "Contents"
     (contents / "MacOS").mkdir(parents=True)
     (contents / "Resources").mkdir()
-    make_icns(ICON_PNG, contents / "Resources" / "icon.icns")
+    make_icon(ICON_PNG, contents / "Resources")
     shutil.copy2(binary, contents / "MacOS" / APP_NAME)
     with (contents / "Info.plist").open("wb") as f:
         plistlib.dump({"CFBundleName": APP_NAME, "CFBundleDisplayName": APP_NAME,
                        "CFBundleIdentifier": BUNDLE_ID, "CFBundleExecutable": APP_NAME,
-                       "CFBundleIconFile": "icon", "CFBundlePackageType": "APPL",
+                       "CFBundleIconFile": "AppIcon", "CFBundleIconName": "AppIcon", "CFBundlePackageType": "APPL",
                        "CFBundleShortVersionString": "1.0", "LSMinimumSystemVersion": "26.0",
                        "NSHighResolutionCapable": True,
                        "CFBundleURLTypes": [{"CFBundleURLName": f"{BUNDLE_ID}.links",

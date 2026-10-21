@@ -275,7 +275,7 @@ struct ChatView: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .foregroundStyle(.white)
-                    .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 14))
+                    .background(store.accentColor, in: RoundedRectangle(cornerRadius: 14))
             }
             if let error = turn.error {
                 Label("Something went wrong: \(error)", systemImage: "exclamationmark.triangle")

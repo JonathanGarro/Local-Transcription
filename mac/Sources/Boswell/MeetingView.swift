@@ -169,7 +169,7 @@ struct SpeakersView: View {
                 if let d = decisions[spk.speaker] {
                     Label(describe(d), systemImage: "arrow.turn.down.right")
                         .font(.callout)
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(store.accentColor)
                 }
             }
             .padding(6)
@@ -212,7 +212,7 @@ struct SpeakersView: View {
                         Text("\(s.name)  \(Text(percent(s.score)).foregroundStyle(.secondary))")
                     }
                     .buttonStyle(.bordered)
-                    .tint(chosen ? .accentColor : nil)
+                    .tint(chosen ? store.accentColor : nil)
                 }
             }
         }
@@ -385,7 +385,7 @@ struct TranscriptView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.vertical, 4)
-            .listRowBackground(highlighted == turn.id ? Color.accentColor.opacity(0.15) : nil)
+            .listRowBackground(highlighted == turn.id ? store.accentColor.opacity(0.15) : nil)
         }
         .onChange(of: transcript?.turns.count) { focus(proxy) }
         .onChange(of: store.focusTime) { focus(proxy) }

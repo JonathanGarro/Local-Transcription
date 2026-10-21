@@ -4,6 +4,7 @@ import SwiftUI
 // obsidian's, then headings, nested lists, checkboxes, quotes and paragraphs. bold, italic,
 // code and links work inline, and [[wikilinks]] show in the accent color
 struct NoteMarkdown: View {
+    @Environment(Store.self) private var store
     let text: String
     // the body text size in points, the rest scales from it
     var size: CGFloat = 13
@@ -93,8 +94,8 @@ struct NoteMarkdown: View {
                         Text(name)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 2)
-                            .foregroundStyle(Color.accentColor)
-                            .background(Color.accentColor.opacity(0.12), in: Capsule())
+                            .foregroundStyle(store.accentColor)
+                            .background(store.accentColor.opacity(0.12), in: Capsule())
                     } else {
                         Text(value)
                     }
@@ -223,7 +224,7 @@ struct NoteMarkdown: View {
     private func view(_ block: Block) -> some View {
         switch block {
         case .heading(let n, let s):
-            Text(Self.inline(s))
+            Text(Self.inline(s, accent: store.accentColor))
                 .font(.system(size: size * (n == 1 ? 1.75 : n == 2 ? 1.35 : n == 3 ? 1.15 : 1),
                               weight: n == 1 ? .bold : .semibold))
                 .padding(.top, n <= 2 ? 10 : 4)
@@ -231,11 +232,11 @@ struct NoteMarkdown: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 if let checked {
                     Image(systemName: checked ? "checkmark.square.fill" : "square")
-                        .foregroundStyle(checked ? Color.accentColor : .secondary)
+                        .foregroundStyle(checked ? store.accentColor : .secondary)
                 } else {
                     Text(["•", "◦", "▪"][level % 3]).foregroundStyle(.secondary)
                 }
-                Text(Self.inline(s))
+                Text(Self.inline(s, accent: store.accentColor))
                     .strikethrough(checked == true, color: .secondary)
                     .foregroundStyle(checked == true ? .secondary : .primary)
             }
@@ -243,18 +244,18 @@ struct NoteMarkdown: View {
         case .numbered(let level, let n, let s):
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("\(n).").foregroundStyle(.secondary).monospacedDigit()
-                Text(Self.inline(s))
+                Text(Self.inline(s, accent: store.accentColor))
             }
             .padding(.leading, CGFloat(level) * 20 + 4)
         case .quote(let s):
-            Text(Self.inline(s))
+            Text(Self.inline(s, accent: store.accentColor))
                 .foregroundStyle(.secondary)
                 .padding(.leading, 12)
                 .overlay(alignment: .leading) { Rectangle().fill(.quaternary).frame(width: 3) }
         case .rule:
             Divider().padding(.vertical, 6)
         case .paragraph(let s):
-            Text(Self.inline(s)).lineSpacing(2)
+            Text(Self.inline(s, accent: store.accentColor)).lineSpacing(2)
         case .code(let s):
             Text(s)
                 .font(.system(size: size - 1, design: .monospaced))
@@ -267,7 +268,7 @@ struct NoteMarkdown: View {
 
     // [[wikilinks]] become links to a placeholder scheme while markdown is parsed, then plain
     // accent colored text, since they have nowhere to open here
-    private static func inline(_ s: String) -> AttributedString {
+    private static func inline(_ s: String, accent: Color) -> AttributedString {
         let marked = s.replacing(#/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/#) { m in
             let label = String(m.2 ?? m.1)
             return "[\(label)](wikilink:\(label.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""))"
@@ -277,7 +278,7 @@ struct NoteMarkdown: View {
         }
         for run in result.runs where run.link?.scheme == "wikilink" {
             result[run.range].link = nil
-            result[run.range].foregroundColor = .accentColor
+            result[run.range].foregroundColor = accent
         }
         return result
     }

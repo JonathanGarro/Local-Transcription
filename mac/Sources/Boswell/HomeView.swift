@@ -93,6 +93,7 @@ struct HomeView: View {
 
 // columns over time, with the hovered month's count above the chart
 struct MonthChart: View {
+    @Environment(Store.self) private var store
     let rows: [Count]
     @State private var hovered: String?
 
@@ -110,7 +111,7 @@ struct MonthChart: View {
                 Chart(rows, id: \.label) { row in
                     BarMark(x: .value("Month", row.label), y: .value("Meetings", row.value), width: .ratio(0.7))
                         .clipShape(UnevenRoundedRectangle(topLeadingRadius: 4, topTrailingRadius: 4))
-                        .foregroundStyle(Color.accentColor.opacity(hovered == nil || hovered == row.label ? 1 : 0.45))
+                        .foregroundStyle(store.accentColor.opacity(hovered == nil || hovered == row.label ? 1 : 0.45))
                 }
                 .chartXSelection(value: $hovered)
                 .chartXAxis {
@@ -152,6 +153,7 @@ struct MonthChart: View {
 }
 
 struct WeekdayChart: View {
+    @Environment(Store.self) private var store
     let rows: [Count]
     @State private var hovered: String?
 
@@ -159,7 +161,7 @@ struct WeekdayChart: View {
         Chart(rows, id: \.label) { row in
             BarMark(x: .value("Day", row.label), y: .value("Meetings", row.value), width: .ratio(0.55))
                 .clipShape(UnevenRoundedRectangle(topLeadingRadius: 4, topTrailingRadius: 4))
-                .foregroundStyle(Color.accentColor.opacity(hovered == nil || hovered == row.label ? 1 : 0.45))
+                .foregroundStyle(store.accentColor.opacity(hovered == nil || hovered == row.label ? 1 : 0.45))
                 .annotation(position: .top, spacing: 4) {
                     if hovered == row.label {
                         Text("\(Int(row.value))").font(.caption.weight(.medium)).monospacedDigit()
@@ -179,6 +181,7 @@ struct WeekdayChart: View {
 
 // longest first, a thin bar per row with its count, and an action when a row can open something
 struct RankedBars: View {
+    @Environment(Store.self) private var store
     let rows: [Count]
     var note: (Count) -> String? = { _ in nil }
     var open: (Count) -> (() -> Void)? = { _ in nil }
@@ -208,7 +211,7 @@ struct RankedBars: View {
                 Text(row.label)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .foregroundStyle(linked ? Color.accentColor : .primary)
+                    .foregroundStyle(linked ? store.accentColor : .primary)
                 Spacer(minLength: 8)
                 Text("\(Int(row.value))").monospacedDigit()
                 if let extra = note(row) {
@@ -219,7 +222,7 @@ struct RankedBars: View {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(.quaternary.opacity(0.6))
-                    Capsule().fill(Color.accentColor)
+                    Capsule().fill(store.accentColor)
                         .frame(width: max(4, geo.size.width * row.value / top))
                 }
             }

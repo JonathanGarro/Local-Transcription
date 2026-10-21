@@ -80,7 +80,7 @@ struct ContentView: View {
         .overlay {
             if dropping {
                 RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 3, dash: [8]))
+                    .strokeBorder(store.accentColor, style: StrokeStyle(lineWidth: 3, dash: [8]))
                     .padding(6)
                     .allowsHitTesting(false)
             }

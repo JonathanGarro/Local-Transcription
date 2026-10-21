@@ -78,7 +78,7 @@ struct VocabularyView: View {
         VStack(alignment: .leading, spacing: 4) {
             Gauge(value: Double(Swift.min(used, Swift.max(max, 1))), in: 0...Double(Swift.max(max, 1))) {}
                 .gaugeStyle(.accessoryLinearCapacity)
-                .tint(used > max ? .red : .accentColor)
+                .tint(used > max ? .red : store.accentColor)
                 .frame(maxWidth: 420)
             Text("Spelling hints use \(used) of \(max) characters\(used > max ? ", so the last terms are left out. Fixes still apply to them" : "").")
                 .font(.caption)

@@ -114,7 +114,7 @@ struct PersonView: View {
                     .font(.title2.weight(.semibold))
                     .foregroundStyle(.white)
                     .frame(width: 52, height: 52)
-                    .background(Color.accentColor.gradient, in: Circle())
+                    .background(store.accentColor.gradient, in: Circle())
                 VStack(alignment: .leading, spacing: 3) {
                     Text(person.name).font(.title.weight(.semibold))
                     if !person.subtitle.isEmpty {

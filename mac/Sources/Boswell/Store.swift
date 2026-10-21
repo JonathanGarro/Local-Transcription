@@ -73,6 +73,8 @@ final class Store {
     private var pendingLink: URL?
     // the accent chosen in settings
     var accent = "blue"
+    // Color.accentColor is the system's, so views that draw in the accent use this
+    var accentColor: Color { accentTint(accent) }
     var meetings: [Meeting] = []
     var jobs: [Job] = []
     var owner: String?

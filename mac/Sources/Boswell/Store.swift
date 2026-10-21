@@ -5,15 +5,15 @@ import SwiftUI
 
 enum Place: String, Hashable, CaseIterable {
     case inbox = "Inbox"
-    case archive = "Archive"
     case plaud = "From Plaud"
+    case archive = "Archive"
     case ask = "Ask"
     case people = "People"
     case vocabulary = "Vocabulary"
     case home = "Data"
     case settings = "Settings"
 
-    static let meetings: [Place] = [.inbox, .archive, .plaud]
+    static let meetings: [Place] = [.inbox, .plaud, .archive]
     // pages with no list column
     var fullWidth: Bool { [.home, .vocabulary, .settings].contains(self) }
     static let library: [Place] = [.ask, .people, .vocabulary, .home, .settings]

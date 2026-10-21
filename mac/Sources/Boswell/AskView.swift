@@ -489,49 +489,73 @@ struct TodoPanel: View {
     private func row(_ found: FoundTodos, _ i: Int) -> some View {
         let item = todo(i, found.todos[i])
         let t = item.wrappedValue
-        return HStack(alignment: .top, spacing: 10) {
-            Toggle("", isOn: item.keep).labelsHidden()
-            VStack(alignment: .leading, spacing: 6) {
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Toggle("", isOn: item.keep).labelsHidden()
                 TextField("Title", text: item.title)
                     .textFieldStyle(.roundedBorder)
+            }
+            // everything else sits under the title, past the checkbox
+            VStack(alignment: .leading, spacing: 10) {
                 Text(detail(found, t))
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                // side by side when there is room, as in a chat, stacked in a narrow inspector
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 14) { fields(found, item, t) }
-                    VStack(alignment: .leading, spacing: 6) { fields(found, item, t) }
+                    .fixedSize(horizontal: false, vertical: true)
+                Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 8) {
+                    GridRow {
+                        fieldLabel("Project")
+                        VStack(alignment: .leading, spacing: 2) {
+                            projectPicker(found, item, t)
+                            if let source = ["charter": "from the project charter", "claude": "Claude's pick"][t.projectSource ?? ""] {
+                                Text(source).font(.caption).foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                    GridRow {
+                        fieldLabel("When")
+                        Picker("When", selection: item.when) {
+                            Text("No date").tag("")
+                            Text("Today").tag("today")
+                            Text("Tomorrow").tag("tomorrow")
+                            if !["", "today", "tomorrow"].contains(t.when) { Text(t.when).tag(t.when) }
+                        }
+                        .labelsHidden()
+                        .frame(maxWidth: Self.fieldWidth, alignment: .leading)
+                    }
+                    GridRow {
+                        fieldLabel("Deadline")
+                        DeadlineField(deadline: item.deadline)
+                    }
                 }
             }
+            .padding(.leading, 24)
             .opacity(t.keep ? 1 : 0.45)
         }
     }
 
-    @ViewBuilder
-    private func fields(_ found: FoundTodos, _ item: Binding<Todo>, _ t: Todo) -> some View {
-                    Picker("Project", selection: Binding(get: { t.projectId }, set: { id in
-                        item.wrappedValue.projectId = id
-                        item.wrappedValue.projectSource = "you"
-                    })) {
-                        Text("Inbox").tag("")
-                        ForEach(found.areas, id: \.self) { area in
-                            SwiftUI.Section(area) {
-                                ForEach(found.projects.filter { $0.area == area }, id: \.id) { Text($0.name).tag($0.id) }
-                            }
-                        }
-                    }
-                    .fixedSize()
-                    if let source = ["charter": "from the project charter", "claude": "Claude's pick"][t.projectSource ?? ""] {
-                        Text(source).font(.caption).foregroundStyle(.tertiary)
-                    }
-                    Picker("When", selection: item.when) {
-                        Text("No date").tag("")
-                        Text("Today").tag("today")
-                        Text("Tomorrow").tag("tomorrow")
-                        if !["", "today", "tomorrow"].contains(t.when) { Text(t.when).tag(t.when) }
-                    }
-                    .fixedSize()
-                    DeadlineField(deadline: item.deadline)
+    // the menus share one width, so they line up whatever they show
+    private static let fieldWidth: CGFloat = 300
+
+    private func fieldLabel(_ text: String) -> some View {
+        Text(text)
+            .foregroundStyle(.secondary)
+            .gridColumnAlignment(.trailing)
+    }
+
+    private func projectPicker(_ found: FoundTodos, _ item: Binding<Todo>, _ t: Todo) -> some View {
+        Picker("Project", selection: Binding(get: { t.projectId }, set: { id in
+            item.wrappedValue.projectId = id
+            item.wrappedValue.projectSource = "you"
+        })) {
+            Text("Inbox").tag("")
+            ForEach(found.areas, id: \.self) { area in
+                SwiftUI.Section(area) {
+                    ForEach(found.projects.filter { $0.area == area }, id: \.id) { Text($0.name).tag($0.id) }
+                }
+            }
+        }
+        .labelsHidden()
+        .frame(maxWidth: Self.fieldWidth, alignment: .leading)
     }
 
     private func detail(_ found: FoundTodos, _ t: Todo) -> String {
@@ -570,17 +594,22 @@ struct DeadlineField: View {
         return f
     }()
 
+    private var date: Date? { Self.format.date(from: deadline) }
+
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             Toggle("Deadline", isOn: Binding(get: { !deadline.isEmpty }, set: { on in
                 deadline = on ? Self.format.string(from: Calendar.current.date(byAdding: .day, value: 7, to: .now) ?? .now) : ""
             }))
-            if let date = Self.format.date(from: deadline) {
-                DatePicker("", selection: Binding(get: { date }, set: { deadline = Self.format.string(from: $0) }),
-                           displayedComponents: .date)
-                    .labelsHidden()
-                    .datePickerStyle(.field)
-            }
+            .labelsHidden()
+            // always laid out and only shown with a deadline, so turning it on moves nothing
+            DatePicker("Deadline", selection: Binding(get: { date ?? .now }, set: { deadline = Self.format.string(from: $0) }),
+                       displayedComponents: .date)
+                .labelsHidden()
+                .datePickerStyle(.field)
+                .opacity(date == nil ? 0 : 1)
+                .disabled(date == nil)
+                .accessibilityHidden(date == nil)
         }
         .fixedSize()
     }

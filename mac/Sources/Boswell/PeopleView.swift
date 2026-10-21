@@ -53,7 +53,7 @@ struct PeopleList: View {
                                              description: Text("People are added when you name a speaker.")) }
             }
         }
-        .searchable(text: $search, placement: .sidebar, prompt: "Name, organization or team")
+        .safeAreaInset(edge: .top) { ListSearch(text: $search, prompt: "Name, organization or team") }
         .navigationTitle("People")
         .navigationSubtitle("\(store.people.count) people")
         .navigationSplitViewColumnWidth(min: 240, ideal: 290)

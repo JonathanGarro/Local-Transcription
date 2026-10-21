@@ -212,7 +212,7 @@ struct MeetingList: View {
                 }
             }
         }
-        .searchable(text: $search, placement: .sidebar, prompt: "Search \(store.section.rawValue)")
+        .safeAreaInset(edge: .top) { ListSearch(text: $search, prompt: "Search \(store.section.rawValue)") }
         .navigationTitle(store.section.rawValue)
         .navigationSubtitle(store.section == .inbox && store.reviewCount > 0 ? "\(store.reviewCount) to review" : "")
         .navigationSplitViewColumnWidth(min: 260, ideal: 320)
@@ -280,6 +280,42 @@ struct MeetingRow: View {
 
     private var details: String {
         [meeting.date, meeting.minutes.map { "\(Int($0.rounded())) min" }].compactMap { $0 }.joined(separator: " · ")
+    }
+}
+
+// a search field at the top of a list column. the toolbar's own search field would sit at the
+// far right of the window, over the meeting's pane, and push its buttons away from the edge
+struct ListSearch: View {
+    @Binding var text: String
+    let prompt: String
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField(prompt, text: $text)
+                .textFieldStyle(.plain)
+                .focused($focused)
+                .onExitCommand { text = ""; focused = false }
+            if !text.isEmpty {
+                Button { text = "" } label: { Image(systemName: "xmark.circle.fill") }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+                    .help("Clear the search")
+            }
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        // cmd+f finds in the list, as the toolbar's search field did
+        .background {
+            Button("Find") { focused = true }
+                .keyboardShortcut("f")
+                .opacity(0)
+                .allowsHitTesting(false)
+        }
     }
 }
 

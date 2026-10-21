@@ -141,7 +141,6 @@ struct SpeakersView: View {
                     .keyboardShortcut(.return, modifiers: .command)
                     .help("Name the speakers and update the transcript")
             }
-            DefaultToolbarItem(kind: .search)
         }
         .task {
             let found: [Person] = (try? await API.get(["api", "people"])) ?? []
@@ -424,7 +423,6 @@ struct TranscriptView: View {
                 Button { Task { await store.reveal(meetingId) } } label: { Label("Show in Finder", systemImage: "folder") }
                     .help("Show the transcript file in Finder")
             }
-            DefaultToolbarItem(kind: .search)
         }
         .task(id: store.revision) { transcript = try? await API.get(API.meeting(meetingId, "transcript")) }
     }

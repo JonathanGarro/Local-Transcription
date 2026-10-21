@@ -51,8 +51,6 @@ struct NoteView: View {
             ToolbarItem { TabPicker(tab: $tab) }
             ToolbarSpacer(.flexible)
             if note?.exists == true && job == nil { toolbar }
-            // the list's search field, right after this tab's buttons
-            DefaultToolbarItem(kind: .search)
         }
         // cmd+s saves right away, autosave does it anyway
         .background {

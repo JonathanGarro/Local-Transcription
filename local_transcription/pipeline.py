@@ -12,6 +12,7 @@ import re
 import threading
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
 
 import numpy as np
 import pandas as pd
@@ -531,7 +532,7 @@ def render_note_file(out_dir, meta, segments, speakers):
         project = library.meeting_project(out_dir.name)
         return set_frontmatter(out_dir / "note.md", {
             "project": notes.wikilink(project) if project else "",
-            "transcript": json.dumps(transcript_uri(out_dir), ensure_ascii=False)})
+            "transcript": json.dumps(transcript_link(out_dir), ensure_ascii=False)})
     (out_dir / "note.md").write_text(generated_note(out_dir, meta, segments, speakers, summary))
     return out_dir / "note.md"
 
@@ -540,7 +541,7 @@ def generated_note(out_dir, meta, segments, speakers, summary):
     """the note as the app writes it, from the saved summary and current names."""
     title, date = meeting_title(meta)
     return notes.render_note(summary, date, title, segments, link_people(speakers), summary.get("owner_id"),
-                             library.meeting_project(out_dir.name), transcript_uri(out_dir))
+                             library.meeting_project(out_dir.name), transcript_link(out_dir))
 
 
 def meeting_title(meta):
@@ -549,9 +550,11 @@ def meeting_title(meta):
     return meta.get("title") or title, meta.get("date") or date
 
 
-def transcript_uri(out_dir):
-    # a file link, so it opens from the vault copy of the note too
-    return (Path(out_dir) / "transcript.md").resolve().as_uri()
+def transcript_link(out_dir):
+    """a boswell:// link that opens the meeting's transcript in the mac app, or in the iphone
+    app, from the note in obsidian. the transcript file itself is outside the vault, where
+    obsidian can't open it."""
+    return f"boswell://meeting?id={quote(Path(out_dir).name, safe='')}&tab=transcript"
 
 
 def set_frontmatter(note_path, values):

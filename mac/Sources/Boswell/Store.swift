@@ -227,6 +227,10 @@ final class Store {
             return true
         }
         openMeeting(id, at: parts.queryItems?.first { $0.name == "at" }?.value.flatMap(Double.init))
+        // a note's transcript link names the tab to open on
+        if let tab = parts.queryItems?.first(where: { $0.name == "tab" })?.value, let shown = Tab(rawValue: tab.capitalized) {
+            showTab = shown
+        }
         return true
     }
 }

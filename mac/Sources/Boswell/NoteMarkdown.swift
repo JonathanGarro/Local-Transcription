@@ -67,6 +67,10 @@ struct NoteMarkdown: View {
     private func values(_ p: Property) -> some View {
         if p.values.isEmpty {
             Text("Empty").foregroundStyle(.tertiary)
+        } else if p.key == "transcript", let openTranscript, p.values.count == 1, URL(string: p.values[0])?.scheme != nil {
+            Button("Show transcript", action: openTranscript)
+                .buttonStyle(.link)
+                .help("Show the transcript")
         } else if p.values.count == 1, let url = URL(string: p.values[0]), url.scheme == "file" {
             let name = url.deletingLastPathComponent().lastPathComponent.removingPercentEncoding ?? url.lastPathComponent
             if let openTranscript, url.lastPathComponent == "transcript.md" {

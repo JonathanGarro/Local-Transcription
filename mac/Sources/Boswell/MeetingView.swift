@@ -73,8 +73,9 @@ struct MeetingView: View {
             detail = loaded
             // open where the meeting is in its workflow, as the inbox does
             if tab == nil {
-                tab = store.focusTime != nil ? .transcript
-                    : loaded.status != "done" ? .speakers : loaded.note == true ? .note : .transcript
+                tab = store.showTab ?? (store.focusTime != nil ? .transcript
+                    : loaded.status != "done" ? .speakers : loaded.note == true ? .note : .transcript)
+                store.showTab = nil
             }
         } catch {
             self.error = error.localizedDescription

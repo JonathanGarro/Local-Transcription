@@ -61,7 +61,8 @@ final class Store {
     // BOSWELL_PAGE=vocabulary opens on that page, for trying one page from the command line
     var section: Place = ProcessInfo.processInfo.environment["BOSWELL_PAGE"]
         .flatMap { page in Place.allCases.first { $0.rawValue.lowercased() == page.lowercased() } } ?? .inbox
-    var selection: String?
+    // BOSWELL_MEETING=<meeting id> selects that meeting at launch, with BOSWELL_PAGE=archive say
+    var selection: String? = ProcessInfo.processInfo.environment["BOSWELL_MEETING"]
     var personSelection: String?
     var people: [Person] = []
     let chat = Chat()

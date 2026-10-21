@@ -5,6 +5,8 @@ import SwiftUI
 // code and links work inline, and [[wikilinks]] show in the accent color
 struct NoteMarkdown: View {
     let text: String
+    // the body text size in points, the rest scales from it
+    var size: CGFloat = 13
     // the transcript property opens the meeting's transcript tab, since its file is outside
     // the vault and obsidian could not open it
     var openTranscript: (() -> Void)?
@@ -36,10 +38,12 @@ struct NoteMarkdown: View {
                         .padding(.top, i == 0 ? 0 : Self.gap(blocks[i - 1], block))
                 }
             }
+            .font(.system(size: size))
             .textSelection(.enabled)
             .padding(24)
             .frame(maxWidth: 780, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            // the note sits in the middle of the pane
+            .frame(maxWidth: .infinity)
         }
     }
 
@@ -56,7 +60,7 @@ struct NoteMarkdown: View {
                 }
             }
         }
-        .font(.callout)
+        .font(.system(size: size - 1))
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
@@ -220,7 +224,8 @@ struct NoteMarkdown: View {
         switch block {
         case .heading(let n, let s):
             Text(Self.inline(s))
-                .font(n == 1 ? .title.bold() : n == 2 ? .title2.weight(.semibold) : n == 3 ? .title3.weight(.semibold) : .headline)
+                .font(.system(size: size * (n == 1 ? 1.75 : n == 2 ? 1.35 : n == 3 ? 1.15 : 1),
+                              weight: n == 1 ? .bold : .semibold))
                 .padding(.top, n <= 2 ? 10 : 4)
         case .bullet(let level, let s, let checked):
             HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -252,7 +257,7 @@ struct NoteMarkdown: View {
             Text(Self.inline(s)).lineSpacing(2)
         case .code(let s):
             Text(s)
-                .font(.system(.callout, design: .monospaced))
+                .font(.system(size: size - 1, design: .monospaced))
                 .lineSpacing(3)
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)

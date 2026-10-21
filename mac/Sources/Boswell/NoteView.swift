@@ -25,6 +25,7 @@ struct NoteView: View {
     @AppStorage(Prefs.things) private var thingsEnabled = true
     @AppStorage(Prefs.openAfterSend) private var openAfterSend = false
     @AppStorage(Prefs.noteMode) private var mode = NoteMode.preview
+    @AppStorage(Prefs.noteTextSize) private var textSize = 13.0
 
     private var job: Job? { store.noteJob(meetingId) ?? note?.job.flatMap { $0.running ? $0 : nil } }
     private var sent: Bool { note?.sentPath != nil }
@@ -145,22 +146,51 @@ struct NoteView: View {
                 .help(mode == .preview ? "Showing the note formatted, switch to markdown to edit it" : "Editing the markdown")
                 projectField
                 Spacer()
+                textSizeSlider
                 Text(status)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 240, alignment: .trailing)
+                    .help(status)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
             Divider()
             switch mode {
             case .preview:
-                NoteMarkdown(text: text, openTranscript: { store.showTab = .transcript })
+                NoteMarkdown(text: text, size: textSize, openTranscript: { store.showTab = .transcript })
             case .source:
                 TextEditor(text: $text)
-                    .font(.system(.body, design: .monospaced))
+                    .font(.system(size: textSize, design: .monospaced))
                     .scrollContentBackground(.hidden)
                     .contentMargins(16, for: .scrollContent)
             }
+        }
+    }
+
+    private static let textSizes: ClosedRange<Double> = 10...24
+
+    // the note's text size, for both the formatted view and the markdown. cmd+= and cmd+- step it
+    private var textSizeSlider: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "textformat.size.smaller").foregroundStyle(.secondary)
+            Slider(value: $textSize, in: Self.textSizes, step: 1)
+                .controlSize(.mini)
+                .frame(width: 90)
+            Image(systemName: "textformat.size.larger").foregroundStyle(.secondary)
+        }
+        .help("Text size")
+        .background {
+            Button("Bigger") { textSize = min(textSize + 1, Self.textSizes.upperBound) }
+                .keyboardShortcut("=")
+                .opacity(0)
+                .allowsHitTesting(false)
+            Button("Smaller") { textSize = max(textSize - 1, Self.textSizes.lowerBound) }
+                .keyboardShortcut("-")
+                .opacity(0)
+                .allowsHitTesting(false)
         }
     }
 
@@ -464,6 +494,7 @@ enum Prefs {
     static let openAfterSend = "openInObsidianAfterSend"
     // whether a note shows formatted or as markdown to edit
     static let noteMode = "noteMode"
+    static let noteTextSize = "noteTextSize"
 }
 
 enum NoteMode: String {

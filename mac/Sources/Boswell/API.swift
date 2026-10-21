@@ -122,13 +122,64 @@ struct Project: Codable, Hashable {
 
 struct Lookups: Codable {
     let projects: [Project]
+    let organizations: [String]?
+    let teams: [String]?
     let defaultBackend: String?
     let claudeReady: Bool?
 }
 
-struct Person: Codable, Hashable {
+struct Person: Codable, Hashable, Identifiable {
     let personId: String
     let name: String
+    let organizations: String?
+    let teams: String?
+    let entries: Double?
+    let profileSeconds: Double?
+    let meetings: Double?
+    let lastHeard: String?
+
+    var id: String { personId }
+    // the server joins lists with ", "
+    var organizationList: [String] { organizations.map { $0.components(separatedBy: ", ") } ?? [] }
+    var teamList: [String] { teams.map { $0.components(separatedBy: ", ") } ?? [] }
+    var subtitle: String { (organizationList + teamList).joined(separator: " · ") }
+}
+
+struct PersonMeeting: Codable, Hashable, Identifiable {
+    let meetingId: String
+    let title: String?
+    let date: String?
+    let sourceType: String?
+    let meetingStatus: String?
+    let project: String?
+    let status: String?
+    let minutes: Double?
+
+    var id: String { meetingId }
+    // tables sort by these, optionals are not comparable
+    var sortDate: String { date ?? "" }
+    var sortTitle: String { title ?? meetingId }
+
+    // how the person came to be in the meeting
+    var taggedBy: String {
+        let names = ["confirmed": "confirmed", "matched": "voice match", "mic": "mic", "imported": "from note",
+                     "skipped": "left unnamed"]
+        return (status ?? "").split(separator: ",").map { names[String($0)] ?? String($0) }.joined(separator: ", ")
+    }
+}
+
+struct DetailsRequest: Encodable {
+    let organizations: [String]
+    let teams: [String]
+}
+
+struct ImportedMeeting: Codable {
+    let title: String?
+    let date: String?
+    let project: String?
+    let people: [String]
+    let markdown: String?
+    let processed: Bool
 }
 
 // a diff part is sent as [text, changed]

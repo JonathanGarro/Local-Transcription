@@ -14,6 +14,14 @@ struct MeetingView: View {
     @State private var error: String?
 
     var body: some View {
+        if store.meeting(meetingId)?.sourceType == "obsidian" {
+            ImportedView(meetingId: meetingId)
+        } else {
+            processed
+        }
+    }
+
+    private var processed: some View {
         Group {
             if let detail, let tab {
                 switch tab {

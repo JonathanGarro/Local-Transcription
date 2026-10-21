@@ -12,6 +12,7 @@ enum Place: String, Hashable, CaseIterable {
     case settings = "Settings"
 
     static let meetings: [Place] = [.inbox, .archive]
+    static let native: [Place] = [.inbox, .archive, .people]
     static let library: [Place] = [.home, .ask, .people, .vocabulary, .settings]
 
     var icon: String {
@@ -27,7 +28,7 @@ enum Place: String, Hashable, CaseIterable {
     }
 
     // pages not rebuilt natively yet show the web version's page in the window
-    var webPage: String? { Place.meetings.contains(self) ? nil : rawValue.lowercased() }
+    var webPage: String? { Place.native.contains(self) ? nil : rawValue.lowercased() }
 }
 
 enum Stage {
@@ -48,6 +49,8 @@ enum Stage {
 final class Store {
     var section: Place = .inbox
     var selection: String?
+    var personSelection: String?
+    var people: [Person] = []
     var meetings: [Meeting] = []
     var jobs: [Job] = []
     var owner: String?
@@ -168,13 +171,24 @@ final class Store {
         }
     }
 
+    func loadPeople() async {
+        if let found: [Person] = try? await API.get(["api", "people"]) { people = found }
+    }
+
+    func person(_ id: String?) -> Person? { people.first { $0.personId == id } }
+
+    func openMeeting(_ id: String) {
+        guard let m = meeting(id) else { return show("That meeting is not in the library") }
+        section = m.archived == nil ? .inbox : .archive
+        selection = id
+    }
+
     // a meeting link clicked in one of the web pages opens the meeting natively
     func openRoute(_ hash: String) {
         let parts = hash.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
         guard parts.count > 2, ["review", "transcript", "imported"].contains(parts[1]),
-              let id = parts[2].removingPercentEncoding, let m = meeting(id) else { return }
-        section = m.archived == nil ? .inbox : .archive
-        selection = id
+              let id = parts[2].removingPercentEncoding else { return }
+        openMeeting(id)
     }
 
     func openWebVersion(_ path: String = "") {

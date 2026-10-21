@@ -20,9 +20,16 @@ struct ContentView: View {
                 NavigationSplitView {
                     Sidebar()
                 } content: {
-                    MeetingList()
+                    if store.section == .people { PeopleList() } else { MeetingList() }
                 } detail: {
-                    if let id = store.selection, store.meeting(id) != nil {
+                    if store.section == .people {
+                        if let id = store.personSelection, store.person(id) != nil {
+                            PersonView(personId: id)
+                                .id(id)
+                        } else {
+                            ContentUnavailableView("No Person Selected", systemImage: "person.2")
+                        }
+                    } else if let id = store.selection, store.meeting(id) != nil {
                         MeetingView(meetingId: id)
                             .id(id)
                     } else {

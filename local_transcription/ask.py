@@ -254,7 +254,7 @@ def title(question, answer_text):
 
 TODO_SYSTEM = """You turn an answer about {owner}'s meetings into to-dos for {owner}'s task manager. Today is {today}.
 
-Include only actions assigned to {owner} or that {owner} took on, never things other people will do or points raised without anyone owning them. Write each title as a short imperative, like "Walk through the comment and review flow". In notes, say who asked for it and the detail needed to act on it, in a sentence or two, without links.
+Include actions assigned to {owner} or that {owner} took on, help {owner} offered that the others took up, and follow-ups the others clearly expect from {owner}, such as answering an invitation to meet again or sending examples they asked to see. Leave out things other people will do and points raised without anyone owning them. {owner} checks every to-do before it is added, so when one is a judgment call, include it and say why in notes. Write each title as a short imperative, like "Walk through the comment and review flow". In notes, say who asked for it and the detail needed to act on it, in a sentence or two, without links.
 
 meeting_id is the meeting the action came from, from the answer's meeting links, and seconds the moment in it when the answer links one, else -1. project_id is the id of the project below that fits the action or its meeting's project best, or "" when none fits. when is "today", "tomorrow", or a YYYY-MM-DD date only when the answer says when to start, else "". deadline is a YYYY-MM-DD date only when the answer gives one, such as "before Wednesday's demo", else "".
 
@@ -264,7 +264,7 @@ Projects:
 
 MEETING_TODO_SYSTEM = """You read the transcript of one of {owner}'s meetings and list {owner}'s to-dos from it for their task manager. Today is {today}.
 
-Include only tasks someone asked {owner} to do, and tasks {owner} committed to doing ("I'll send that over", "let me look into it"). Leave out tasks for other people, general "we should" ideas nobody took on, and things already done in the meeting. Speaker names come from voice matching and can be wrong now and then, so go by who is being addressed as well as who is talking. If {owner} has no tasks, return an empty list.
+Include tasks someone asked {owner} to do, tasks {owner} committed to doing ("I'll send that over", "let me look into it"), help {owner} offered that the others took up, and follow-ups the others clearly expect from {owner}, such as answering an invitation to meet again or sending examples they asked to see. Leave out tasks for other people, general "we should" ideas nobody took on, and things already done in the meeting. {owner} checks every to-do before it is added, so when one is a judgment call, include it and say why in notes. Speaker names come from voice matching and can be wrong now and then, so go by who is being addressed as well as who is talking. If {owner} has no tasks, return an empty list.
 
 Write each title as a short imperative, like "Send Maya the dashboard mockups". In notes, say who asked for it, or that {owner} offered, and the detail needed to act on it, in a sentence or two. seconds is the time of the line where it was asked or offered, from the [m:ss] stamps, else -1. project_id is the id of the project below that fits the task or the meeting's project best, or "" when none fits. when is "today", "tomorrow", or a YYYY-MM-DD date only when the meeting says when to start, else "". deadline is a YYYY-MM-DD date only when one is given, such as "by Friday", else "".
 
@@ -290,9 +290,11 @@ def _todos(system, content, projects, purpose):
         todos: list[Todo]
 
     client, model = _client(), settings.claude_model()
+    # high effort, since which offers count as to-dos is a judgment call. thinking counts
+    # against max_tokens, so leave room for it
     response = client.messages.parse(
-        model=model, max_tokens=8000, output_format=Todos, system=system,
-        messages=[{"role": "user", "content": content}])
+        model=model, max_tokens=16000, output_format=Todos, output_config={"effort": "high"},
+        system=system, messages=[{"role": "user", "content": content}])
     library.record_usage(response.model, purpose, response.usage, settings.cost(
         response.model, response.usage.input_tokens, response.usage.output_tokens,
         response.usage.cache_creation_input_tokens, response.usage.cache_read_input_tokens))

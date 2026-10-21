@@ -1,7 +1,7 @@
 import Foundation
 
 // the python server holds all of the app's logic. this starts it from the project folder,
-// or uses one already running, like the web version's.
+// or uses one already running, such as one started by hand with uv run app.py.
 final class Server {
     static let shared = Server()
 
@@ -49,7 +49,7 @@ final class Server {
 
         let p = Process()
         p.executableURL = python
-        p.arguments = ["app.py", "--browser"]
+        p.arguments = ["app.py"]
         p.currentDirectoryURL = projectDir
         // apps opened from finder get a bare PATH, so add homebrew for ffmpeg and ffprobe
         var env = ProcessInfo.processInfo.environment

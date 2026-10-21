@@ -207,14 +207,8 @@ struct ChatView: View {
             composer
         }
         .navigationTitle(chat.turns.isEmpty ? "New Conversation" : chat.title ?? "New Conversation")
-        .environment(\.openURL, OpenURLAction { url in
-            // meeting links in answers open the meeting here, at the moment when given
-            guard url.scheme == "boswell", let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
-                  let id = parts.queryItems?.first(where: { $0.name == "id" })?.value else { return .systemAction }
-            let at = parts.queryItems?.first { $0.name == "at" }?.value.flatMap(Double.init)
-            store.openMeeting(id, at: at)
-            return .handled
-        })
+        // meeting links in answers open the meeting here, at the moment when given
+        .environment(\.openURL, OpenURLAction { url in store.open(link: url) ? .handled : .systemAction })
         .onAppear { focused = true }
     }
 

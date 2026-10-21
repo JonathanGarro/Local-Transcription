@@ -18,9 +18,8 @@ from urllib.parse import quote
 
 import numpy as np
 import soundfile as sf
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, Response
-from fastapi.staticfiles import StaticFiles
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
 from local_transcription import ask, audio, directory, keychain, library, notes, pipeline, plaud, projects, render, settings, things, vocab
@@ -28,7 +27,6 @@ from local_transcription import ask, audio, directory, keychain, library, notes,
 # config
 BASE_DIR = Path(__file__).parent.parent
 DATA_DIR = BASE_DIR / "data"
-WEB_DIR = Path(__file__).parent / "web"
 AUDIO_TYPES = {".m4a", ".mp3", ".wav"}
 CHANNELS = {"left": 0, "right": 1}
 # progress messages from pipeline.run, in order, mapped to a share of the job
@@ -297,6 +295,23 @@ class DetailsRequest(BaseModel):
     teams: list[str] = []
 
 
+FORWARD_PAGE = """<!doctype html>
+<meta charset="utf-8">
+<title>Boswell</title>
+<body style="font: 15px -apple-system, sans-serif; margin: 40px; color: #555">
+<p id="message">Boswell runs as a Mac app now. Open it from your Applications folder.</p>
+<script>
+  const [, page, id, tab, at] = location.hash.split("/");
+  if (["transcript", "review", "imported"].includes(page) && id) {
+    const link = "boswell://meeting?id=" + encodeURIComponent(decodeURIComponent(id))
+      + (tab === "at" && at ? "&at=" + at : "");
+    document.getElementById("message").innerHTML = 'Opening the meeting in Boswell. <a href="' + link + '">Open it</a> if nothing happens.';
+    location.replace(link);
+  }
+</script>
+"""
+
+
 # main
 def create_app():
     app = FastAPI(title="Boswell", docs_url=None, redoc_url=None)
@@ -375,13 +390,12 @@ def create_app():
     # thread and the page polls it. conversations are saved in the library after each answer
     asks = {}
 
-    def meeting_link(meeting_id):
-        """where a meeting opens: its transcript when recorded here, else its imported note."""
-        if (pipeline.OUTPUT_DIR / meeting_id / "segments.json").exists():
-            return f"#/transcript/{quote(meeting_id)}"
-        if library.meeting_sent_path(meeting_id):
-            return f"#/imported/{quote(meeting_id)}"
-        return None
+    def meeting_link(meeting_id, seconds=-1):
+        """a boswell:// link the mac app opens the meeting from, at a moment of its transcript
+        when given. None for a meeting with neither a transcript nor an imported note."""
+        if not (pipeline.OUTPUT_DIR / meeting_id / "segments.json").exists() and not library.meeting_sent_path(meeting_id):
+            return None
+        return f"boswell://meeting?id={quote(meeting_id, safe='')}" + (f"&at={seconds}" if seconds >= 0 else "")
 
     def run_ask(ask_id, conversation_id, question):
         job = asks[ask_id]
@@ -500,7 +514,7 @@ def create_app():
                 "meetings": {m: {"title": v["title"], "date": v["date"]} for m, v in meetings.items()}}
 
     @app.post("/api/things/add")
-    def add_todos(request: AddTodosRequest, http: Request):
+    def add_todos(request: AddTodosRequest):
         dated = re.compile(r"^\d{4}-\d{2}-\d{2}$")
         rows = library.meetings().set_index("meeting_id")
         added = []
@@ -518,9 +532,9 @@ def create_app():
                 sent = library.meeting_sent_path(todo.meeting_id)
                 if sent:
                     notes.append(f"obsidian://open?path={quote(sent, safe='')}")
-                link = meeting_link(todo.meeting_id)
-                if link and link.startswith("#/transcript/"):
-                    notes.append(f"{str(http.base_url).rstrip('/')}/{link}" + (f"/at/{todo.seconds}" if todo.seconds >= 0 else ""))
+                link = meeting_link(todo.meeting_id, todo.seconds)
+                if link:
+                    notes.append(link)
             try:
                 added.append({"title": todo.title.strip(), "id": things.add_todo(
                     todo.title.strip(), "\n\n".join(n for n in notes if n), todo.project_id, when, deadline)})
@@ -872,5 +886,11 @@ def create_app():
             raise HTTPException(400, str(err))
         return {"ok": True}
 
-    app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
+    @app.get("/", response_class=HTMLResponse)
+    def forward():
+        # to-dos added to things before the mac app link to the old web version, as
+        # http://127.0.0.1:8765/#/transcript/ID/at/SECONDS. the part after # never reaches the
+        # server, so this page reads it and hands the meeting to the mac app
+        return FORWARD_PAGE
+
     return app

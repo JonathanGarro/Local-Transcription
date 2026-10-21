@@ -26,59 +26,38 @@ Accept the model terms at https://hf.co/pyannote/speaker-diarization-community-1
 
 ## App
 
-```
-uv run app.py              # opens the app window
-uv run app.py --browser    # or serve on http://127.0.0.1:8765 and use a browser
-```
-
-To keep it in the Dock, build a Mac app with your own icon (any square PNG, 1024x1024 is best):
+Boswell is a Mac app, in `mac/`, written in SwiftUI. All the transcription, naming and note logic is in Python, in a server the app starts in the background and stops when you quit. Build it with your own icon (any square PNG, 1024x1024 is best):
 
 ```
 uv run make_app.py --icon ~/Pictures/my-icon.png
 ```
 
-It goes in `~/Applications/Boswell.app` and just starts `app.py` from this folder. Run it again after changing the icon. Without `--icon` it uses `assets/icon.png`. The app's log is `~/Library/Logs/Boswell.log`.
+It goes in `/Applications/Boswell.app`, or is rebuilt wherever you moved it. Run it again after changing the code or the icon. Without `--icon` it uses `assets/icon.png`. It needs Xcode, since SwiftUI's macros don't ship with the Command Line Tools, and is signed with your Apple Development certificate when Xcode has made one, so macOS remembers that it may use the Documents folder across rebuilds. Without one it falls back to an ad hoc signature, and macOS asks again after every rebuild. The server's log is `~/Library/Logs/Boswell.log`.
 
-### Native version (in progress)
+For development, `uv run app.py` runs the server on its own at http://127.0.0.1:8765 (the app uses it when it's already running), and `cd mac && DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift run` runs the app. Set `BOSWELL_URL` to point the app at a server on another port.
 
-`mac/` holds a SwiftUI version of the app that uses the same Python server, so all the transcription, naming and note logic stays in Python. It has a real Mac sidebar, toolbar, menus, context menus and a Dock badge for meetings that need review. It builds with Xcode's toolchain (SwiftUI's macros don't ship with the Command Line Tools):
+The flow: drop a recording on the window or import one from Plaud, it is transcribed, you confirm speakers if asked, the note is written automatically with `SUMMARY_BACKEND` once every speaker is named, then you review and send it. Cmd+1 to Cmd+8 switch pages.
 
-```
-uv run make_app.py --native
-```
-
-That builds `~/Applications/Boswell Native.app` next to the web one, or rebuilds it in `/Applications` if you moved it there. It starts `app.py --browser` from this folder, or uses the server if the web version is already open, and stops the server it started when you quit. It's signed with your Apple Development certificate when Xcode has made one, so macOS remembers that it may use the Documents folder across rebuilds. Without one it falls back to an ad hoc signature, and macOS asks again after every rebuild. For development, `cd mac && DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift run`. Set `BOSWELL_URL` to point it at a server on another port.
-
-Native so far:
-
-- **Inbox and Archive:** search, to-do badges and an Archive filter for meetings with to-dos in Things or not yet checked, importing recordings (Cmd+O or drop them on the window), renaming, and a read-only view of meetings imported from Obsidian.
-- **Speakers:** review with clips, suggested names, merging and leaving unnamed.
-- **Transcript:** per-turn playback and a filter.
-- **Note:** autosave, project, Send to Obsidian and Open in Obsidian, and an inspector with two tabs: Changes (the diff) and To-dos, where Find my to-dos sends your to-dos to Things and lists the ones already sent. Sending a note whose meeting was never checked for to-dos first asks whether to find them, with "Don't ask again" in the dialog and a switch for it in Settings.
-- **Home:** the stat tiles, Swift Charts for meetings per month and by weekday with a hover readout, and the people, teams and projects you meet with most. A person opens in People.
-- **People:** search, sort, each person's meetings in a sortable table that opens them on a double click, and an Edit sheet for name, organizations and teams.
-- **Vocabulary:** an add bar, a meter for the spelling hint space, and a table edited in place that saves as you type, with Delete or right-click to remove.
-- **Ask:** conversations in the middle column (Cmd+N for a new one, right-click to rename or delete) and a chat on the right, where Return asks and Shift+Return starts a new line. Meeting links in answers open the meeting, and a link to a moment opens its transcript on that turn. Send to Things under each answer finds your to-dos to check and adjust before they're added.
-- **Settings:** accent color (which tints the native app too), Things 3 (on or off, which hides the To-dos tab, Send to Things and the to-do badges, and whether sending asks to find to-dos first), Obsidian (open a note in Obsidian as soon as it's sent), the Claude model, usage, and where the project folder and log are. The Things and Obsidian switches are kept by the native app only.
-
-Cmd+1 to Cmd+7 switch pages, and Go > Open in Browser opens the current page in a browser.
-
-- **Inbox:** drop recordings to queue them. One file runs at a time, with live progress. Dropped files are copied into `data/`. A file that was already processed is only re-run if you confirm, because re-running replaces its confirmed names.
-- **From Plaud:** the Inbox lists recordings uploaded to Plaud in the last 14 days. Import downloads the audio with the Plaud CLI (`plaud login` once) and runs it here like a dropped file, so Plaud doesn't need to transcribe it. Recordings already in the app show as such.
-- **Review:** each unknown speaker gets a few short clips with what they said, suggested names with scores, and a name field that searches existing people or creates a new one. You can also mark a speaker as the same person as another speaker (diarization split them), leave a speaker unnamed, or name them without adding the voice to their profile. Identified speakers are collapsed, with a "wrong?" link. Nothing is saved until you press Apply.
-- **Transcript:** click any line to play from there, show the file in Finder, or copy the markdown.
-- **Note:** writes the meeting note (see below), with a choice of model and project.
-- **Find my to-dos:** on the Note tab, Claude reads the transcript for tasks you were asked to do or offered to do, leaving out other people's tasks and ideas nobody took on. You review them like Send to Things on the Ask page, and once added, they appear in the note as an Action Items section of links to the Things to-dos (`things:///show?id=…`), so Things is where they get ticked off. A sent note's Obsidian copy is updated too when it hasn't been edited there since. Every to-do sent to Things, from a note or from Ask, is recorded against its meeting: the Archive and Inbox show how many each meeting has in Things (or "no to-dos" when it was checked and none were sent), the Archive can filter to meetings whose to-dos haven't been checked yet, and the Note tab lists what was sent. Looking again leaves out the ones already sent.
-- **Editing the note:** click the note to edit it, and it saves as you type. Once edited, **Show changes** shows a git style diff with changed words highlighted, compared with the note before your first edit (kept as `note_original.md`). **Discard my edits** goes back to the generated note.
+- **Inbox:** drop m4a, mp3 or wav recordings on the window, or press Cmd+O, to queue them. One file runs at a time, with live progress in the sidebar. Dropped files are copied into `data/`, and the source (Plaud or a split Zoom call) is detected. A file that was already processed is skipped, because re-running replaces its confirmed names. Each meeting shows where it is: needs review, writing note, ready to send or no note yet. Right-click to rename, show it in Finder or open it in Obsidian. The Dock icon shows how many meetings need review.
+- **Archive:** sent meetings, searchable, with a filter for meetings with to-dos in Things or not yet checked. **Move to Inbox** on the right-click menu brings one back. Meetings imported from Obsidian open as their note, read only.
+- **From Plaud:** recordings uploaded to Plaud in the last 14 days. Import downloads the audio with the Plaud CLI (`plaud login` once) and runs it here like a dropped file, so Plaud doesn't need to transcribe it. Recordings already in the app show as such, and open their meeting.
+- **Speakers:** each unknown speaker gets a few short clips with what they said, suggested names with scores, and a name field that suggests existing people or creates a new one. You can also mark a speaker as the same person as another speaker (diarization split them), leave a speaker unnamed, or name them without adding the voice to their profile. Identified speakers are collapsed, with a "Wrong?" link. Nothing is saved until you press Save Names (Cmd+Return).
+- **Transcript:** play any turn, filter the transcript, copy it as markdown, or show the file in Finder. A link to a moment, from an answer or a to-do, opens the transcript on that turn.
+- **Note:** the meeting note (see below), with its project. Click into it to edit, and it saves as you type (Cmd+S saves at once). The inspector has two tabs. **Changes** shows a git style diff with changed words highlighted, compared with the note before your first edit (kept as `note_original.md`), or with the Obsidian copy once sent. **To-dos** is Find my to-dos. The More menu can rewrite the note, discard your edits, copy the note or show it in Finder.
+- **Find my to-dos:** Claude reads the transcript for tasks you were asked to do or offered to do, leaving out other people's tasks and ideas nobody took on. You check and adjust them (project, when, deadline), and once added, they appear in the note as an Action Items section of links to the Things to-dos (`things:///show?id=…`), so Things is where they get ticked off. A sent note's Obsidian copy is updated too when it hasn't been edited there since. Every to-do sent to Things, from a note or from Ask, is recorded against its meeting: the Inbox and Archive show how many each meeting has in Things (or "no to-dos" when it was checked and none were sent), and the To-dos tab lists what was sent. Looking again leaves out the ones already sent. Sending a note whose meeting was never checked first asks whether to find them, with "Don't ask again" in the dialog and a switch for it in Settings. Each to-do's note in Things links back to the meeting with a `boswell://` link that opens it in the app, at the moment it came from.
 - **Send to Obsidian:** after you review the note, copies it into `MEETING_NOTES_DIR` as `<date> - <heading>.md` and moves the meeting to the Archive. An existing file with that name is only replaced after a second click. The meeting's folder in `outputs/` is renamed to the same name, so it matches what you see in Obsidian. The recording in `data/` is renamed to match too, and the playback WAVs are deleted to save space (about 115 MB an hour, three times that for split Zoom calls). They are rebuilt from the recording in a second or two whenever you play an archived meeting, and cleared again the next time the app starts. Dropping the recording in again under its old name is still recognized.
 
 Once sent, the Obsidian copy is the master copy. Opening a sent note in the app loads the Obsidian version if it changed there. If you also edited it in the app, nothing is overwritten: the note says it changed in both places, **Show changes** compares the app copy with Obsidian, and you choose **Use Obsidian version** or **Send again**. Send again over a note you edited in Obsidian asks before replacing it. The app keeps what it last sent as `note_sent.md` to tell which side changed. Renaming a sent meeting and sending it again renames its note in Obsidian rather than leaving the old file behind, and links to the old name anywhere in the vault are updated to the new one, as Obsidian does when you rename a note inside it. **Move to Inbox** in the Archive brings a meeting back.
 
-The flow is: drop a file in the Inbox, it is transcribed, you confirm speakers if asked, the note is written automatically with `SUMMARY_BACKEND` once every speaker is named, then you review and send it.
-- **Ask:** questions about past meetings, such as "what did Daniel and I agree to last time?", answered by Claude (an Anthropic API key, see below). It looks meetings up by person, project, title and date, reads their notes and transcripts, and searches every transcript, then answers with links to the meetings and the moments it used. The notes and transcript excerpts it reads go to the Anthropic API. Audio and voice profiles never do. Each conversation is saved in the library and named by Claude after its first answer. They're listed under the question box, where one can be reopened to carry on, renamed or deleted. Under each answer, **Send to Things** has Claude pick out the actions assigned to you as Things 3 to-dos, filed under one of your open Things projects in the areas named by `THINGS_AREAS` in `.env` (Work Projects and Work General by default). The project comes from the meeting's project charter in the project index when its `things project` property links one, else Claude picks the best fit, else it goes to the Things Inbox. You check and adjust them, then they're added with a note linking back to the meeting. The first time, macOS asks to let Boswell control Things.
-- **People:** everyone in the library with their name, organizations, teams, meetings and voice clips. Organizations and teams are read from and saved to each person's Obsidian note. Edits rewrite every past transcript and note they appear in.
+- **Ask:** questions about past meetings, such as "what did Daniel and I agree to last time?", answered by Claude (an Anthropic API key, see below). It looks meetings up by person, project, title and date, reads their notes and transcripts, and searches every transcript, then answers with links to the meetings and the moments it used. The notes and transcript excerpts it reads go to the Anthropic API. Audio and voice profiles never do. Each conversation is saved in the library and named by Claude after its first answer. They're listed in the middle column (Cmd+N for a new one, right-click to rename or delete). Return asks and Shift+Return starts a new line. Under each answer, **Send to Things** has Claude pick out the actions assigned to you as Things 3 to-dos, filed under one of your open Things projects in the areas named by `THINGS_AREAS` in `.env` (Work Projects and Work General by default). The project comes from the meeting's project charter in the project index when its `things project` property links one, else Claude picks the best fit, else it goes to the Things Inbox. You check and adjust them, then they're added with a note linking back to the meeting. The first time, macOS asks to let Boswell control Things.
+- **Home:** totals for meetings, hours, people and voices, your share of talk time, meetings per month and by weekday, and the people, teams and projects you meet with most. A person opens in People.
+- **People:** everyone in the library, searchable and sortable, with their organizations, teams, voice profile and meetings. Double-click a meeting to open it. Edit (Cmd+E) changes the name, organizations and teams. Organizations and teams are read from and saved to each person's Obsidian note. Edits rewrite every past transcript and note they appear in.
+- **Vocabulary:** terms Whisper should spell your way (see Custom vocabulary below), with a meter for how much of the spelling hint they use.
+- **Settings:** accent color, Things 3 (on or off, which hides the To-dos tab, Send to Things and the to-do badges, and whether sending asks to find to-dos first), Obsidian (open a note in Obsidian as soon as it's sent), the Anthropic API key, the Claude model, usage, and where the project folder and log are.
 
-The server listens on 127.0.0.1 only and the page loads nothing from the internet.
+Links to the old web version in to-dos already in Things (`http://127.0.0.1:8765/#/transcript/…`) still work while the app is open: the server answers them with a page that hands the meeting to the app.
+
+The server listens on 127.0.0.1 only and loads nothing from the internet.
 
 ## Command line
 
@@ -189,7 +168,7 @@ Two backends, chosen per note or with `SUMMARY_BACKEND` in `.env`:
 | Data | nothing leaves the Mac | transcript text goes to the Anthropic API, never audio or voice profiles |
 | Needs | the model in the Hugging Face cache | an Anthropic API key (see below) |
 
-**The Anthropic API key** is kept in the macOS Keychain, as an item named Boswell. Add, replace, check or remove it in the native app's Settings, which only ever show it masked. The server, the web version and the scripts all read it from there. A key in `.env` as `ANTHROPIC_API_KEY` still works, and Settings has **Move to Keychain**, which copies it into the Keychain and takes that one line out of `.env`. When both are set, the Keychain wins.
+**The Anthropic API key** is kept in the macOS Keychain, as an item named Boswell. Add, replace, check or remove it in the native app's Settings, which only ever show it masked. The server and the scripts all read it from there. A key in `.env` as `ANTHROPIC_API_KEY` still works, and Settings has **Move to Keychain**, which copies it into the Keychain and takes that one line out of `.env`. When both are set, the Keychain wins.
 
 To download the local model once, run with the hub online:
 
@@ -229,8 +208,10 @@ uv run import_plaud.py --retime
 
 ```
 local_transcription/   pipeline modules (audio, diarize, asr, merge, embed, match, library, render, pipeline)
-local_transcription/server.py, web/   local api and app pages
-app.py                 open the app window
+local_transcription/server.py   local api the mac app uses
+mac/                   the mac app, in swiftui
+app.py                 run the server
+make_app.py            build the mac app
 transcribe.py          process a recording
 confirm.py             confirm names and grow profiles
 summarize.py           write an obsidian meeting note

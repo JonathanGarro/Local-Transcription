@@ -10,6 +10,7 @@ struct BoswellApp: App {
             ContentView()
                 .environment(store)
                 .task { await store.start() }
+                .onOpenURL { store.open(link: $0) }
         }
         .defaultSize(width: 1200, height: 820)
         .commands {
@@ -31,8 +32,6 @@ struct BoswellApp: App {
                     Button(place.rawValue) { store.section = place }
                         .keyboardShortcut(KeyEquivalent(Character("\(i + 1)")))
                 }
-                Divider()
-                Button("Open in Browser") { store.openWebVersion(store.section.route) }
             }
         }
 

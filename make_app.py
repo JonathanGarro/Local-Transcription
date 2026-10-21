@@ -1,14 +1,13 @@
-"""build a mac app you can keep in the dock, with your own icon.
+"""build the mac app in mac/ into an app you can keep in the dock, with your own icon.
 
 usage:
     uv run make_app.py                      # uses assets/icon.png, makes a plain one if missing
     uv run make_app.py --icon ~/Pictures/my-icon.png
-    uv run make_app.py --native             # the swiftui version in mac/, needs xcode
 
-the app goes in ~/Applications/Boswell.app, or Boswell Native.app with --native, or is
-rebuilt where it is if you moved it to /Applications. it only
-starts this project's app.py, so the code, data, and outputs stay where they are. run this
-again after changing the icon. any square png works, 1024x1024 looks best.
+it needs xcode, whose tools have swiftui's macros. the app goes in /Applications/Boswell.app,
+or is rebuilt where it is if you moved it to ~/Applications. it starts this project's app.py,
+so the code, data, and outputs stay where they are. run this again after changing the code or
+the icon. any square png works, 1024x1024 looks best.
 """
 
 import argparse
@@ -22,15 +21,15 @@ from pathlib import Path
 # config
 BASE_DIR = Path(__file__).parent.resolve()
 APP_NAME = "Boswell"
-NATIVE_NAME = "Boswell Native"
 ICON_PNG = BASE_DIR / "assets" / "icon.png"
-LOG_FILE = Path.home() / "Library" / "Logs" / f"{APP_NAME}.log"
-BUNDLE_ID = "local.transcription.app"
-NATIVE_BUNDLE_ID = "local.transcription.native"
+# kept from when the app was called boswell native, since macos remembers its folder access by it
+BUNDLE_ID = "local.transcription.native"
+# boswell://meeting?id=... links, from answers and from to-dos in things, open the app
+URL_SCHEME = "boswell"
 MAC_DIR = BASE_DIR / "mac"
 XCODE_DIR = Path("/Applications/Xcode.app/Contents/Developer")
 ICON_SIZES = [16, 32, 128, 256, 512]
-INSTALL_DIRS = [Path.home() / "Applications", Path("/Applications")]
+INSTALL_DIRS = [Path("/Applications"), Path.home() / "Applications"]
 
 
 # helpers
@@ -74,17 +73,6 @@ def make_icns(png, target):
         subprocess.run(["iconutil", "-c", "icns", str(iconset), "-o", str(target)], check=True)
 
 
-def launcher_script():
-    # exec keeps one process, so the dock shows one icon for the app
-    # apps opened from finder get a bare PATH, so add homebrew for ffmpeg and ffprobe
-    python = BASE_DIR / ".venv" / "bin" / "python"
-    return f"""#!/bin/bash
-export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
-cd "{BASE_DIR}" || exit 1
-exec "{python}" app.py >> "{LOG_FILE}" 2>&1
-"""
-
-
 def signing_identity():
     """the apple development certificate xcode made, if there is one. macos remembers
     permissions like documents folder access by the app's signature, and an ad hoc one
@@ -113,12 +101,10 @@ def build_native():
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--icon", type=Path, help=f"square png to use, copied to {ICON_PNG.relative_to(BASE_DIR)}")
-    parser.add_argument("--native", action="store_true", help="build the swiftui version in mac/")
     args = parser.parse_args()
-    name = NATIVE_NAME if args.native else APP_NAME
     # rebuild in place if the app was moved to /Applications, so there is only one copy
-    app_dir = next((d / f"{name}.app" for d in INSTALL_DIRS if (d / f"{name}.app").exists()),
-                   INSTALL_DIRS[0] / f"{name}.app")
+    app_dir = next((d / f"{APP_NAME}.app" for d in INSTALL_DIRS if (d / f"{APP_NAME}.app").exists()),
+                   INSTALL_DIRS[0] / f"{APP_NAME}.app")
 
     if args.icon:
         source = args.icon.expanduser()
@@ -133,38 +119,34 @@ def main():
         make_default_icon(ICON_PNG)
         print(f"made a plain icon at {ICON_PNG.relative_to(BASE_DIR)}, pass --icon to use your own")
 
-    binary = build_native() if args.native else None
+    binary = build_native()
     if app_dir.exists():
         shutil.rmtree(app_dir)
     contents = app_dir / "Contents"
     (contents / "MacOS").mkdir(parents=True)
     (contents / "Resources").mkdir()
     make_icns(ICON_PNG, contents / "Resources" / "icon.icns")
-    executable = contents / "MacOS" / APP_NAME
-    if binary:
-        shutil.copy2(binary, executable)
-    else:
-        executable.write_text(launcher_script())
-        executable.chmod(0o755)
-    info = {"CFBundleName": APP_NAME, "CFBundleDisplayName": name,
-            "CFBundleIdentifier": NATIVE_BUNDLE_ID if args.native else BUNDLE_ID, "CFBundleExecutable": APP_NAME,
-            "CFBundleIconFile": "icon", "CFBundlePackageType": "APPL",
-            "CFBundleShortVersionString": "1.0", "LSMinimumSystemVersion": "15.0" if args.native else "13.0",
-            "NSHighResolutionCapable": True}
-    if args.native:
-        # the swift app starts the python server from here
-        info["BoswellProjectDir"] = str(BASE_DIR)
+    shutil.copy2(binary, contents / "MacOS" / APP_NAME)
     with (contents / "Info.plist").open("wb") as f:
-        plistlib.dump(info, f)
-    if binary:
-        identity = signing_identity()
-        if identity == "-":
-            print("no apple development certificate, so macos will ask for folder access again after each rebuild")
-        subprocess.run(["codesign", "--force", "--sign", identity, str(app_dir)], check=True, capture_output=True)
-    # tell finder and the dock to pick up the new icon
+        plistlib.dump({"CFBundleName": APP_NAME, "CFBundleDisplayName": APP_NAME,
+                       "CFBundleIdentifier": BUNDLE_ID, "CFBundleExecutable": APP_NAME,
+                       "CFBundleIconFile": "icon", "CFBundlePackageType": "APPL",
+                       "CFBundleShortVersionString": "1.0", "LSMinimumSystemVersion": "15.0",
+                       "NSHighResolutionCapable": True,
+                       "CFBundleURLTypes": [{"CFBundleURLName": f"{BUNDLE_ID}.links",
+                                             "CFBundleURLSchemes": [URL_SCHEME]}],
+                       # the swift app starts the python server from here
+                       "BoswellProjectDir": str(BASE_DIR)}, f)
+    identity = signing_identity()
+    if identity == "-":
+        print("no apple development certificate, so macos will ask for folder access again after each rebuild")
+    subprocess.run(["codesign", "--force", "--sign", identity, str(app_dir)], check=True, capture_output=True)
+    # tell finder and the dock to pick up the new icon, and launch services the link type
     subprocess.run(["touch", str(app_dir)], check=False)
+    subprocess.run(["/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
+                    "-f", str(app_dir)], check=False)
     print(f"built {app_dir}")
-    print("open it from ~/Applications, then right-click its dock icon, Options, Keep in Dock")
+    print("open it, then right-click its dock icon, Options, Keep in Dock")
 
 
 if __name__ == "__main__":

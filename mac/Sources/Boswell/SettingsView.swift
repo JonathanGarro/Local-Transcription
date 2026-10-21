@@ -43,7 +43,7 @@ struct SettingsView: View {
                     }
                 } label: {
                     Text("Accent color")
-                    Text("Buttons, links, highlights and charts, here and in the web version.")
+                    Text("Buttons, links, highlights and charts.")
                 }
             }
 
@@ -153,7 +153,7 @@ struct SettingsView: View {
 
     private func keyHint(_ s: SettingsState) -> String {
         switch s.keySource {
-        case "keychain": return "Kept in the macOS Keychain. Used by this app, the web version and the scripts."
+        case "keychain": return "Kept in the macOS Keychain. Used by this app and the scripts."
         case "env": return "Read from ANTHROPIC_API_KEY in .env. Move it to the Keychain to keep it out of a plain text file."
         default: return "Needed for Ask, finding to-dos and Claude notes. Create one in the Anthropic Console."
         }

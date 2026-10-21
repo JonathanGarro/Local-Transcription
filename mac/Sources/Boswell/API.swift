@@ -31,6 +31,7 @@ struct Job: Codable, Identifiable, Hashable {
     let progress: Double?
     let error: String?
     let meetingId: String?
+    let plaudId: String?
 
     var id: String { jobId }
     var running: Bool { status == "queued" || status == "processing" }
@@ -97,6 +98,7 @@ struct Turn: Codable, Identifiable, Hashable {
 
 struct Transcript: Codable {
     let turns: [Turn]
+    let markdown: String
     let path: String
 }
 
@@ -366,7 +368,7 @@ struct Todo: Codable, Hashable, Identifiable {
         seconds = try c.decodeIfPresent(Int.self, forKey: .seconds) ?? -1
         projectId = try c.decodeIfPresent(String.self, forKey: .projectId) ?? ""
         projectSource = try c.decodeIfPresent(String.self, forKey: .projectSource)
-        // like the web version, a to-do with no date starts as today
+        // a to-do with no date starts as today
         let found = try c.decodeIfPresent(String.self, forKey: .when) ?? ""
         when = found.isEmpty ? "today" : found
         deadline = try c.decodeIfPresent(String.self, forKey: .deadline) ?? ""
@@ -394,6 +396,23 @@ struct AddTodosRequest: Encodable {
 struct Added: Codable {
     let added: Int
     let vault: String?
+}
+
+struct PlaudRecording: Codable, Identifiable, Hashable {
+    let plaudId: String
+    let name: String
+    let date: String?
+    let duration: String?
+    let meetingId: String?
+    // new, queued, processing, done or imported
+    let status: String
+
+    var id: String { plaudId }
+}
+
+struct PlaudRecent: Codable {
+    let days: Int
+    let recordings: [PlaudRecording]
 }
 
 // requests

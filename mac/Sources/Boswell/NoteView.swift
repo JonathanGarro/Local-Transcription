@@ -182,6 +182,7 @@ struct NoteView: View {
                     Button("Discard My Edits...") { confirmDiscard = true }
                 }
                 Divider()
+                Button("Copy Note") { store.copy(text, "note") }
                 Button("Show in Finder") { Task { await store.reveal(meetingId) } }
             } label: {
                 Label("More", systemImage: "ellipsis.circle")

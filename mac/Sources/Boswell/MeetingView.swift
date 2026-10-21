@@ -391,6 +391,13 @@ struct TranscriptView: View {
         }
         .toolbar {
             ToolbarItem {
+                Button { if let transcript { store.copy(transcript.markdown, "transcript") } } label: {
+                    Label("Copy Transcript", systemImage: "doc.on.doc")
+                }
+                .disabled(transcript == nil)
+                .help("Copy the transcript as markdown")
+            }
+            ToolbarItem {
                 Button { Task { await store.reveal(meetingId) } } label: { Label("Show in Finder", systemImage: "folder") }
                     .help("Show the transcript file in Finder")
             }

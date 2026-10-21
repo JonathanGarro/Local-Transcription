@@ -25,11 +25,15 @@ struct ContentView: View {
                     switch store.section {
                     case .people: PeopleList()
                     case .ask: ConversationList()
+                    case .plaud: PlaudList()
                     default: MeetingList()
                     }
                 } detail: {
                     if store.section == .ask {
                         ChatView()
+                    } else if store.section == .plaud {
+                        ContentUnavailableView("From Plaud", systemImage: "icloud.and.arrow.down",
+                                               description: Text("Import a recording to download its audio and transcribe it here, so Plaud's own transcription minutes aren't used. Imported ones open in the Inbox."))
                     } else if store.section == .people {
                         if let id = store.personSelection, store.person(id) != nil {
                             PersonView(personId: id)

@@ -6,13 +6,14 @@ import SwiftUI
 enum Place: String, Hashable, CaseIterable {
     case inbox = "Inbox"
     case archive = "Archive"
+    case plaud = "From Plaud"
     case home = "Home"
     case ask = "Ask"
     case people = "People"
     case vocabulary = "Vocabulary"
     case settings = "Settings"
 
-    static let meetings: [Place] = [.inbox, .archive]
+    static let meetings: [Place] = [.inbox, .archive, .plaud]
     // pages with no list column
     var fullWidth: Bool { [.home, .vocabulary, .settings].contains(self) }
     static let library: [Place] = [.home, .ask, .people, .vocabulary, .settings]
@@ -21,6 +22,7 @@ enum Place: String, Hashable, CaseIterable {
         switch self {
         case .inbox: "tray"
         case .archive: "archivebox"
+        case .plaud: "icloud.and.arrow.down"
         case .home: "house"
         case .ask: "bubble.left.and.text.bubble.right"
         case .people: "person.2"
@@ -28,9 +30,6 @@ enum Place: String, Hashable, CaseIterable {
         case .settings: "gearshape"
         }
     }
-
-    // the same page in the web version
-    var route: String { "#/\(rawValue.lowercased())" }
 }
 
 func accentTint(_ name: String) -> Color {
@@ -66,7 +65,8 @@ final class Store {
     let chat = Chat()
     // a moment to show in the transcript of the meeting being opened
     var focusTime: Double?
-    // the accent chosen in settings, shared with the web version
+    private var pendingLink: URL?
+    // the accent chosen in settings
     var accent = "blue"
     var meetings: [Meeting] = []
     var jobs: [Job] = []
@@ -111,6 +111,10 @@ final class Store {
             return
         }
         await refresh()
+        if let link = pendingLink {
+            pendingLink = nil
+            open(link: link)
+        }
         if let settings: SettingsState = try? await API.get(["api", "settings"]) { accent = settings.accent }
         polling = Task {
             while !Task.isCancelled {
@@ -128,6 +132,12 @@ final class Store {
         owner = state.owner
         if !finished.isEmpty { revision += 1 }
         NSApp.dockTile.badgeLabel = reviewCount > 0 ? "\(reviewCount)" : nil
+    }
+
+    func copy(_ text: String, _ what: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        show("Copied the \(what)")
     }
 
     func show(_ text: String) {
@@ -202,9 +212,20 @@ final class Store {
         focusTime = seconds
     }
 
-    func openWebVersion(_ path: String = "") {
-        // appending(path:) would escape the # of the page's routes
-        if let url = URL(string: Server.shared.baseURL.absoluteString + "/" + path) { NSWorkspace.shared.open(url) }
+    // boswell://meeting?id=ID&at=SECONDS, from answers and from to-dos in things. returns
+    // false for a link that is not one of these
+    @discardableResult
+    func open(link url: URL) -> Bool {
+        guard url.scheme == "boswell", url.host == "meeting",
+              let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let id = parts.queryItems?.first(where: { $0.name == "id" })?.value else { return false }
+        // a link that launched the app waits for the library to load
+        guard connected, !meetings.isEmpty else {
+            pendingLink = url
+            return true
+        }
+        openMeeting(id, at: parts.queryItems?.first { $0.name == "at" }?.value.flatMap(Double.init))
+        return true
     }
 }
 

@@ -3,6 +3,7 @@ import SwiftUI
 struct NoteView: View {
     @Environment(Store.self) private var store
     let meetingId: String
+    @Binding var tab: Tab
     @State private var note: Note?
     @State private var lookups: Lookups?
     @State private var text = ""
@@ -46,7 +47,11 @@ struct NoteView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .toolbar { if note?.exists == true && job == nil { toolbar } }
+        .toolbar {
+            ToolbarItem { TabPicker(tab: $tab) }
+            ToolbarSpacer(.flexible)
+            if note?.exists == true && job == nil { toolbar }
+        }
         .inspector(isPresented: $showChanges) {
             VStack(spacing: 0) {
                 // with things off, the inspector is only the changes

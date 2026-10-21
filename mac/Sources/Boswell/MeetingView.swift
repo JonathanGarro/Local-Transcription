@@ -25,9 +25,9 @@ struct MeetingView: View {
         Group {
             if let detail, let tab {
                 switch tab {
-                case .speakers: SpeakersView(detail: detail) { self.detail = $0 }
-                case .transcript: TranscriptView(meetingId: meetingId)
-                case .note: NoteView(meetingId: meetingId)
+                case .speakers: SpeakersView(detail: detail, tab: tabBinding) { self.detail = $0 }
+                case .transcript: TranscriptView(meetingId: meetingId, tab: tabBinding)
+                case .note: NoteView(meetingId: meetingId, tab: tabBinding)
                 }
             } else if let error {
                 ContentUnavailableView("Could not load this meeting", systemImage: "exclamationmark.triangle",
@@ -39,16 +39,6 @@ struct MeetingView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationTitle(store.meeting(meetingId)?.name ?? meetingId)
         .navigationSubtitle(subtitle)
-        .toolbar {
-            // on the leading edge of the meeting's toolbar, by the list
-            ToolbarItem(placement: .navigation) {
-                Picker("View", selection: Binding(get: { tab ?? .note }, set: { tab = $0 })) {
-                    ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .fixedSize()
-            }
-        }
         .task(id: store.revision) { await load() }
         .onChange(of: store.focusTime) { if store.focusTime != nil { tab = .transcript } }
         .onChange(of: store.showTab) {
@@ -59,6 +49,8 @@ struct MeetingView: View {
         }
         .onDisappear { Player.shared.stop() }
     }
+
+    private var tabBinding: Binding<Tab> { Binding(get: { tab ?? .note }, set: { tab = $0 }) }
 
     private var subtitle: String {
         guard let detail else { return "" }
@@ -92,9 +84,25 @@ enum Decision: Equatable {
     case same(String)
 }
 
+// the speakers, transcript and note switcher. each tab puts it first in its own toolbar, then
+// a flexible spacer, so it sits at the left of the meeting's pane and the tab's buttons at the right
+struct TabPicker: View {
+    @Binding var tab: Tab
+
+    var body: some View {
+        Picker("View", selection: $tab) {
+            ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
+    }
+}
+
 struct SpeakersView: View {
     @Environment(Store.self) private var store
     let detail: MeetingDetail
+    @Binding var tab: Tab
     let updated: (MeetingDetail) -> Void
     @State private var decisions: [String: Decision] = [:]
     @State private var expanded: Set<String> = []
@@ -123,7 +131,9 @@ struct SpeakersView: View {
             .frame(maxWidth: .infinity)
         }
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
+            ToolbarItem { TabPicker(tab: $tab) }
+            ToolbarSpacer(.flexible)
+            ToolbarItem {
                 Button(saving ? "Saving" : "Save Names") { Task { await apply() } }
                     .buttonStyle(.borderedProminent)
                     .disabled(decisions.isEmpty || saving)
@@ -198,7 +208,7 @@ struct SpeakersView: View {
                     Button {
                         decisions[spk.speaker] = chosen ? nil : .name(s.name, enroll: enroll(spk))
                     } label: {
-                        Text(s.name) + Text("  \(percent(s.score))").foregroundStyle(.secondary)
+                        Text("\(s.name)  \(Text(percent(s.score)).foregroundStyle(.secondary))")
                     }
                     .buttonStyle(.bordered)
                     .tint(chosen ? .accentColor : nil)
@@ -335,6 +345,7 @@ struct SpeakersView: View {
 struct TranscriptView: View {
     @Environment(Store.self) private var store
     let meetingId: String
+    @Binding var tab: Tab
     @State private var transcript: Transcript?
     @State private var filter = ""
     @State private var highlighted: Double?
@@ -398,6 +409,8 @@ struct TranscriptView: View {
             .background(.bar)
         }
         .toolbar {
+            ToolbarItem { TabPicker(tab: $tab) }
+            ToolbarSpacer(.flexible)
             ToolbarItem {
                 Button { if let transcript { store.copy(transcript.markdown, "transcript") } } label: {
                     Label("Copy Transcript", systemImage: "doc.on.doc")

@@ -131,7 +131,7 @@ def main():
         plistlib.dump({"CFBundleName": APP_NAME, "CFBundleDisplayName": APP_NAME,
                        "CFBundleIdentifier": BUNDLE_ID, "CFBundleExecutable": APP_NAME,
                        "CFBundleIconFile": "icon", "CFBundlePackageType": "APPL",
-                       "CFBundleShortVersionString": "1.0", "LSMinimumSystemVersion": "15.0",
+                       "CFBundleShortVersionString": "1.0", "LSMinimumSystemVersion": "26.0",
                        "NSHighResolutionCapable": True,
                        "CFBundleURLTypes": [{"CFBundleURLName": f"{BUNDLE_ID}.links",
                                              "CFBundleURLSchemes": [URL_SCHEME]}],

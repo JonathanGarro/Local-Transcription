@@ -32,7 +32,7 @@ struct BoswellApp: App {
                         .keyboardShortcut(KeyEquivalent(Character("\(i + 1)")))
                 }
                 Divider()
-                Button("Open in Browser") { store.openWebVersion(store.section.webPage.map { "#/\($0)" } ?? "") }
+                Button("Open in Browser") { store.openWebVersion(store.section.route) }
             }
         }
 

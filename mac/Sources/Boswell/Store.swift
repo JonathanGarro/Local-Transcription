@@ -13,7 +13,6 @@ enum Place: String, Hashable, CaseIterable {
     case settings = "Settings"
 
     static let meetings: [Place] = [.inbox, .archive]
-    static let native: [Place] = [.inbox, .archive, .home, .people, .vocabulary, .settings]
     // pages with no list column
     var fullWidth: Bool { [.home, .vocabulary, .settings].contains(self) }
     static let library: [Place] = [.home, .ask, .people, .vocabulary, .settings]
@@ -30,8 +29,8 @@ enum Place: String, Hashable, CaseIterable {
         }
     }
 
-    // pages not rebuilt natively yet show the web version's page in the window
-    var webPage: String? { Place.native.contains(self) ? nil : rawValue.lowercased() }
+    // the same page in the web version
+    var route: String { "#/\(rawValue.lowercased())" }
 }
 
 func accentTint(_ name: String) -> Color {
@@ -64,6 +63,9 @@ final class Store {
     var selection: String?
     var personSelection: String?
     var people: [Person] = []
+    let chat = Chat()
+    // a moment to show in the transcript of the meeting being opened
+    var focusTime: Double?
     // the accent chosen in settings, shared with the web version
     var accent = "blue"
     var meetings: [Meeting] = []
@@ -193,18 +195,11 @@ final class Store {
 
     func person(_ id: String?) -> Person? { people.first { $0.personId == id } }
 
-    func openMeeting(_ id: String) {
+    func openMeeting(_ id: String, at seconds: Double? = nil) {
         guard let m = meeting(id) else { return show("That meeting is not in the library") }
         section = m.archived == nil ? .inbox : .archive
         selection = id
-    }
-
-    // a meeting link clicked in one of the web pages opens the meeting natively
-    func openRoute(_ hash: String) {
-        let parts = hash.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
-        guard parts.count > 2, ["review", "transcript", "imported"].contains(parts[1]),
-              let id = parts[2].removingPercentEncoding else { return }
-        openMeeting(id)
+        focusTime = seconds
     }
 
     func openWebVersion(_ path: String = "") {

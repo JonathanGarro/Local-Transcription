@@ -49,6 +49,7 @@ struct MeetingView: View {
             }
         }
         .task(id: store.revision) { await load() }
+        .onChange(of: store.focusTime) { if store.focusTime != nil { tab = .transcript } }
         .onDisappear { Player.shared.stop() }
     }
 
@@ -65,7 +66,10 @@ struct MeetingView: View {
             let loaded: MeetingDetail = try await API.get(API.meeting(meetingId))
             detail = loaded
             // open where the meeting is in its workflow, as the inbox does
-            if tab == nil { tab = loaded.status != "done" ? .speakers : loaded.note == true ? .note : .transcript }
+            if tab == nil {
+                tab = store.focusTime != nil ? .transcript
+                    : loaded.status != "done" ? .speakers : loaded.note == true ? .note : .transcript
+            }
         } catch {
             self.error = error.localizedDescription
         }
@@ -325,6 +329,7 @@ struct TranscriptView: View {
     let meetingId: String
     @State private var transcript: Transcript?
     @State private var filter = ""
+    @State private var highlighted: Double?
 
     private var turns: [Turn] {
         let all = transcript?.turns ?? []
@@ -334,6 +339,7 @@ struct TranscriptView: View {
 
     var body: some View {
         let player = Player.shared
+        ScrollViewReader { proxy in
         List(turns) { turn in
             let key = "turn-\(turn.start)"
             HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -359,6 +365,10 @@ struct TranscriptView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.vertical, 4)
+            .listRowBackground(highlighted == turn.id ? Color.accentColor.opacity(0.15) : nil)
+        }
+        .onChange(of: transcript?.turns.count) { focus(proxy) }
+        .onChange(of: store.focusTime) { focus(proxy) }
         }
         .overlay {
             if transcript == nil { ProgressView() }
@@ -386,6 +396,20 @@ struct TranscriptView: View {
             }
         }
         .task(id: store.revision) { transcript = try? await API.get(API.meeting(meetingId, "transcript")) }
+    }
+
+    // a link to a moment opens on the turn it falls in
+    private func focus(_ proxy: ScrollViewProxy) {
+        guard let time = store.focusTime, let turns = transcript?.turns, !turns.isEmpty else { return }
+        let turn = turns.last { $0.start <= time + 0.5 } ?? turns[0]
+        filter = ""
+        highlighted = turn.id
+        store.focusTime = nil
+        Task {
+            // let the list lay out before scrolling
+            try? await Task.sleep(for: .milliseconds(100))
+            withAnimation { proxy.scrollTo(turn.id, anchor: .center) }
+        }
     }
 
     // a steady color per speaker, so a conversation reads at a glance

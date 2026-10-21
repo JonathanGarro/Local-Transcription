@@ -8,15 +8,7 @@ struct ContentView: View {
     var body: some View {
         @Bindable var store = store
         Group {
-            if store.connected, let page = store.section.webPage {
-                NavigationSplitView {
-                    Sidebar()
-                } detail: {
-                    WebPane(page: page)
-                        .id(page)
-                        .navigationTitle(store.section.rawValue)
-                }
-            } else if store.connected, store.section.fullWidth {
+            if store.connected, store.section.fullWidth {
                 NavigationSplitView {
                     Sidebar()
                 } detail: {
@@ -30,9 +22,15 @@ struct ContentView: View {
                 NavigationSplitView {
                     Sidebar()
                 } content: {
-                    if store.section == .people { PeopleList() } else { MeetingList() }
+                    switch store.section {
+                    case .people: PeopleList()
+                    case .ask: ConversationList()
+                    default: MeetingList()
+                    }
                 } detail: {
-                    if store.section == .people {
+                    if store.section == .ask {
+                        ChatView()
+                    } else if store.section == .people {
                         if let id = store.personSelection, store.person(id) != nil {
                             PersonView(personId: id)
                                 .id(id)

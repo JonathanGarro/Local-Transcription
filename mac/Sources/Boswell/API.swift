@@ -277,6 +277,105 @@ struct HomeStats: Codable {
     let teamsTop: [Count]
 }
 
+struct Conversation: Codable, Identifiable, Hashable {
+    let conversationId: String
+    let title: String?
+    let updated: String?
+    let questions: Double?
+
+    var id: String { conversationId }
+}
+
+struct ConversationPage: Codable {
+    let items: [Conversation]
+    let page: Int
+    let pages: Int
+    let total: Int
+}
+
+struct SavedTurn: Codable {
+    let question: String
+    let answer: String?
+    let links: [String: String]?
+}
+
+struct SavedConversation: Codable {
+    let title: String?
+    let turns: [SavedTurn]
+}
+
+struct AskStarted: Codable {
+    let askId: String
+    let conversationId: String
+}
+
+struct AskStatus: Codable {
+    let status: String
+    let steps: [String]?
+    let answer: String?
+    let links: [String: String]?
+    let title: String?
+    let error: String?
+}
+
+struct ThingsProject: Codable, Hashable {
+    let id: String
+    let name: String
+    let area: String?
+}
+
+// a to-do claude found, checked and adjusted before it goes to things
+struct Todo: Codable, Hashable, Identifiable {
+    var id = UUID()
+    var keep = true
+    var title: String
+    var notes: String
+    var meetingId: String
+    var seconds: Int
+    var projectId: String
+    var projectSource: String?
+    var when: String
+    var deadline: String
+
+    enum CodingKeys: String, CodingKey {
+        case title, notes, meetingId, seconds, projectId, projectSource, when, deadline
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        title = try c.decodeIfPresent(String.self, forKey: .title) ?? ""
+        notes = try c.decodeIfPresent(String.self, forKey: .notes) ?? ""
+        meetingId = try c.decodeIfPresent(String.self, forKey: .meetingId) ?? ""
+        seconds = try c.decodeIfPresent(Int.self, forKey: .seconds) ?? -1
+        projectId = try c.decodeIfPresent(String.self, forKey: .projectId) ?? ""
+        projectSource = try c.decodeIfPresent(String.self, forKey: .projectSource)
+        // like the web version, a to-do with no date starts as today
+        let found = try c.decodeIfPresent(String.self, forKey: .when) ?? ""
+        when = found.isEmpty ? "today" : found
+        deadline = try c.decodeIfPresent(String.self, forKey: .deadline) ?? ""
+    }
+}
+
+struct MeetingRef: Codable, Hashable {
+    let title: String?
+    let date: String?
+}
+
+struct FoundTodos: Codable {
+    var todos: [Todo]
+    let projects: [ThingsProject]
+    let areas: [String]
+    let meetings: [String: MeetingRef]
+}
+
+struct AddTodosRequest: Encodable {
+    let todos: [Todo]
+}
+
+struct Added: Codable {
+    let added: Int
+}
+
 // requests
 
 struct ApplyRequest: Encodable {

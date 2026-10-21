@@ -59,7 +59,7 @@ struct PlaudList: View {
                                        description: Text("Nothing uploaded to Plaud in the last \(recent?.days ?? 14) days."))
             }
         }
-        .navigationTitle("From Plaud")
+        .navigationTitle("Plaud")
         .navigationSubtitle(recent.map { "Last \($0.days) days" } ?? "")
         .navigationSplitViewColumnWidth(min: 280, ideal: 340)
         .toolbar {

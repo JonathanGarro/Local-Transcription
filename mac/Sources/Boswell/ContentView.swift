@@ -32,7 +32,7 @@ struct ContentView: View {
                     if store.section == .ask {
                         ChatView()
                     } else if store.section == .plaud {
-                        ContentUnavailableView("From Plaud", systemImage: "icloud.and.arrow.down",
+                        ContentUnavailableView("Plaud", systemImage: "icloud.and.arrow.down",
                                                description: Text("Import a recording to download its audio and transcribe it here, so Plaud's own transcription minutes aren't used. Imported ones open in the Inbox."))
                     } else if store.section == .people {
                         if let id = store.personSelection, store.person(id) != nil {

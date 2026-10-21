@@ -5,7 +5,7 @@ import SwiftUI
 
 enum Place: String, Hashable, CaseIterable {
     case inbox = "Inbox"
-    case plaud = "From Plaud"
+    case plaud = "Plaud"
     case archive = "Archive"
     case ask = "Ask"
     case people = "People"

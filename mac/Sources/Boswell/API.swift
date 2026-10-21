@@ -218,6 +218,17 @@ struct UploadResult: Codable {
 
 struct Ok: Codable {}
 
+struct VocabEntry: Codable, Hashable {
+    var term: String
+    var variants: [String]
+}
+
+struct Vocabulary: Codable {
+    let entries: [VocabEntry]
+    let used: Int
+    let max: Int
+}
+
 // requests
 
 struct ApplyRequest: Encodable {
@@ -300,7 +311,7 @@ enum API {
         return try await send(request)
     }
 
-    private static func send<T: Decodable>(_ request: URLRequest) async throws -> T {
+    static func send<T: Decodable>(_ request: URLRequest) async throws -> T {
         let (data, response) = try await URLSession.shared.data(for: request)
         try check(data, response)
         return try decoder.decode(T.self, from: data)

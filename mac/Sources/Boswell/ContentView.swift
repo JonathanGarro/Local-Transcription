@@ -16,6 +16,12 @@ struct ContentView: View {
                         .id(page)
                         .navigationTitle(store.section.rawValue)
                 }
+            } else if store.connected, store.section.fullWidth {
+                NavigationSplitView {
+                    Sidebar()
+                } detail: {
+                    VocabularyView()
+                }
             } else if store.connected {
                 NavigationSplitView {
                     Sidebar()

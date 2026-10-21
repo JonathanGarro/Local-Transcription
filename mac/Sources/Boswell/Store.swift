@@ -12,7 +12,9 @@ enum Place: String, Hashable, CaseIterable {
     case settings = "Settings"
 
     static let meetings: [Place] = [.inbox, .archive]
-    static let native: [Place] = [.inbox, .archive, .people]
+    static let native: [Place] = [.inbox, .archive, .people, .vocabulary]
+    // pages with no list column
+    var fullWidth: Bool { self == .vocabulary }
     static let library: [Place] = [.home, .ask, .people, .vocabulary, .settings]
 
     var icon: String {

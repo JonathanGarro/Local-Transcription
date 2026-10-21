@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Boswell – Meeting notes, written on your Mac</title>
+  <meta name="description" content="Boswell transcribes your meetings, recognizes who is speaking and writes the note, all on your Mac. Audio and voice profiles never leave it.">
+  <meta property="og:title" content="Boswell">
+  <meta property="og:description" content="Meeting notes, written on your Mac.">
+  <meta property="og:image" content="icon.png">
+  <meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0b0b0d" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="favicon.png">
+  <link rel="apple-touch-icon" href="icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="nav">
+  <a class="brand" href="#top"><img src="icon.png" alt="" width="28" height="28"> Boswell</a>
+  <nav>
+    <a href="#features">Features</a>
+    <a href="#privacy">Privacy</a>
+    <a href="#workflow">Workflow</a>
+  </nav>
+</header>
+
+<main id="top">
+
+  <!-- hero -->
+  <section class="hero">
+    <img class="hero-icon" src="icon.png" alt="Boswell app icon" width="128" height="128">
+    <h1>Every meeting,<br>written down.</h1>
+    <p class="lede">Boswell transcribes your recordings, recognizes who&rsquo;s speaking and writes the note. All on your Mac.</p>
+    <div class="cta">
+      <span class="pill">Coming soon for Mac</span>
+      <span class="fine">Requires a Mac with Apple silicon</span>
+    </div>
+  </section>
+
+  <!-- the app window -->
+  <section class="shot reveal" aria-label="Boswell's Inbox with a meeting note open">
+    <div class="window">
+      <div class="win-sidebar">
+        <div class="lights"><i></i><i></i><i></i></div>
+        <p class="side-head">Meetings</p>
+        <p class="side-item active"><span class="ico">&#9993;</span>Inbox <b>2</b></p>
+        <p class="side-item"><span class="ico">&#9729;</span>Plaud</p>
+        <p class="side-item"><span class="ico">&#9636;</span>Archive</p>
+        <p class="side-head">Library</p>
+        <p class="side-item"><span class="ico">&#10070;</span>Ask</p>
+        <p class="side-item"><span class="ico">&#9786;</span>People</p>
+        <p class="side-item"><span class="ico">&#9998;</span>Vocabulary</p>
+        <p class="side-item"><span class="ico">&#9632;</span>Data</p>
+      </div>
+      <div class="win-list">
+        <p class="list-title">Inbox</p>
+        <div class="row selected">
+          <strong>Quarterly Planning</strong>
+          <span>Oct 20 · 48 min · Maya, Daniel, Priya</span>
+          <em class="tag ready">Ready to send</em>
+        </div>
+        <div class="row">
+          <strong>Design Review</strong>
+          <span>Oct 20 · 31 min · 4 speakers</span>
+          <em class="tag review">Needs review</em>
+        </div>
+        <div class="row">
+          <strong>1:1 with Sam</strong>
+          <span>Oct 19 · 27 min · Sam Okafor</span>
+          <em class="tag writing">Writing note</em>
+        </div>
+        <div class="row">
+          <strong>Vendor Call</strong>
+          <span>Oct 17 · 52 min · Lena, Marco</span>
+          <em class="tag ready">Ready to send</em>
+        </div>
+      </div>
+      <div class="win-note">
+        <div class="note-tabs"><span class="on">Note</span><span>Transcript</span><span>Speakers</span></div>
+        <h3>2026-10-20 - Quarterly Planning</h3>
+        <div class="props">
+          <span>people</span><em>Maya Chen, Daniel Ortiz, Priya Nair</em>
+          <span>project</span><em>Q1 Roadmap</em>
+        </div>
+        <h4>Agenda</h4>
+        <ul>
+          <li>Review last quarter&rsquo;s launch metrics</li>
+          <li>Agree on three priorities for Q1</li>
+          <li>Staffing for the onboarding redesign</li>
+        </ul>
+        <h4>Discussion</h4>
+        <p>Maya walked through retention, which held at 82% after the pricing change. Daniel argued the onboarding redesign should come first, since most churn happens in week one. Priya will scope it with design before Friday.</p>
+        <h4>Action Items</h4>
+        <ul class="todos">
+          <li><span class="box"></span>Send Priya the week-one churn numbers</li>
+          <li><span class="box"></span>Draft the Q1 priorities doc</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- features -->
+  <section id="features" class="feature reveal">
+    <div class="copy">
+      <p class="kicker">Speakers</p>
+      <h2>Knows who&rsquo;s talking.</h2>
+      <p>Boswell learns each person&rsquo;s voice the first time you name them. After that, it recognizes them in every meeting, and only asks about the voices it hasn&rsquo;t heard before.</p>
+    </div>
+    <div class="card speakers">
+      <p class="card-head">Speaker 3 <span>· 6 min of talk</span></p>
+      <p class="quote">&ldquo;If we move the launch to March we&rsquo;ll have time to test the new flow.&rdquo;</p>
+      <div class="match"><span>Lena Fischer</span><i style="--w:86%"></i><b>0.86</b></div>
+      <div class="match dim"><span>Priya Nair</span><i style="--w:41%"></i><b>0.41</b></div>
+      <div class="name-field">Lena Fischer<span class="caret"></span></div>
+      <div class="btn">Save Names</div>
+    </div>
+  </section>
+
+  <section class="feature flip reveal">
+    <div class="copy">
+      <p class="kicker">Notes</p>
+      <h2>Notes that write themselves.</h2>
+      <p>Once every speaker has a name, Boswell writes the note: an agenda, the discussion and the full transcript, with the right people and project filled in. Review it, change what you like, and send it to Obsidian.</p>
+    </div>
+    <div class="card note">
+      <p class="card-head">Design Review</p>
+      <p class="line"><b>Agenda</b></p>
+      <p class="line">Walk through the new settings page</p>
+      <p class="line">Decide on the empty states</p>
+      <p class="line"><b>Discussion</b></p>
+      <p class="line">Marco liked the grouped layout but wants fewer toggles on the first screen&hellip;</p>
+      <p class="diff"><del>three</del> <ins>two</ins> sections, with the rest under Advanced.</p>
+    </div>
+  </section>
+
+  <section class="feature reveal">
+    <div class="copy">
+      <p class="kicker">Ask</p>
+      <h2>Ask your meetings anything.</h2>
+      <p>What did you and Sam agree to last time? Where does the roadmap stand? Boswell searches your notes and transcripts and answers with links to the exact moments it used.</p>
+    </div>
+    <div class="card chat">
+      <p class="bubble me">What did Sam and I agree on last week?</p>
+      <p class="bubble">You agreed Sam takes over the vendor contract from November, and you&rsquo;ll introduce Sam to Lena first. <a>1:1 with Sam, 12:40</a></p>
+      <p class="bubble me">Did anyone follow up on the contract?</p>
+      <p class="bubble typing"><i></i><i></i><i></i></p>
+    </div>
+  </section>
+
+  <section class="feature flip reveal">
+    <div class="copy">
+      <p class="kicker">To-dos</p>
+      <h2>Never lose a promise.</h2>
+      <p>Find my to-dos picks out what you were asked to do and what you offered, and leaves everyone else&rsquo;s tasks alone. Check them over, then add them to Things in one click.</p>
+    </div>
+    <div class="card todos-card">
+      <p class="todo"><span class="box on"></span>Send Priya the week-one churn numbers<small>Q1 Roadmap · Friday</small></p>
+      <p class="todo"><span class="box on"></span>Draft the Q1 priorities doc<small>Q1 Roadmap · Next week</small></p>
+      <p class="todo"><span class="box"></span>Introduce Sam to Lena<small>You offered, Sam said yes</small></p>
+      <div class="btn">Add 2 to Things</div>
+    </div>
+  </section>
+
+  <!-- privacy -->
+  <section id="privacy" class="privacy reveal">
+    <div class="lock" aria-hidden="true">
+      <svg viewBox="0 0 48 48" width="56" height="56"><rect x="9" y="21" width="30" height="22" rx="6" fill="currentColor"/><path d="M16 21v-6a8 8 0 0 1 16 0v6" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/></svg>
+    </div>
+    <h2>Your meetings stay yours.</h2>
+    <p class="lede">Transcription, speaker recognition and voice profiles all run on your Mac. Nothing goes to a server unless you ask for it.</p>
+    <div class="grid3">
+      <div>
+        <h3>On-device transcription</h3>
+        <p>Whisper runs on your Mac&rsquo;s GPU. Audio never leaves it.</p>
+      </div>
+      <div>
+        <h3>Private voice profiles</h3>
+        <p>Voices are kept in a local library. Delete a person and their voice goes with them.</p>
+      </div>
+      <div>
+        <h3>Your choice of model</h3>
+        <p>Write notes with a local model, or choose Claude for a sharper one. Only the text is sent, and only when you pick it.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- speed -->
+  <section class="stats reveal">
+    <div><b>2&ndash;3 min</b><span>to transcribe a 30 minute meeting</span></div>
+    <div><b>2&ndash;8</b><span>speakers told apart in one recording</span></div>
+    <div><b>0</b><span>minutes of audio sent off your Mac</span></div>
+  </section>
+
+  <!-- workflow -->
+  <section id="workflow" class="workflow reveal">
+    <h2>Fits how you already work.</h2>
+    <p class="lede">Bring recordings in from where you make them, and send notes and to-dos where you keep them.</p>
+    <div class="tiles">
+      <div class="tile"><h3>Plaud</h3><p>Import recordings straight from your Plaud, without using its transcription minutes.</p></div>
+      <div class="tile"><h3>Zoom calls</h3><p>Recordings with your mic on one channel and the call on the other are split, so you&rsquo;re always named right.</p></div>
+      <div class="tile"><h3>Obsidian</h3><p>Notes land in your vault with people, teams and projects linked, and links back to the moment in the transcript.</p></div>
+      <div class="tile"><h3>Things 3</h3><p>To-dos go to Things with their project and deadline, and the note links to each one.</p></div>
+    </div>
+  </section>
+
+  <section class="closing reveal">
+    <img src="icon.png" alt="" width="88" height="88">
+    <h2>Named for the man who wrote everything down.</h2>
+    <p class="lede">James Boswell followed Samuel Johnson around London for twenty years and wrote down what he said. This one is a little quieter about it.</p>
+    <span class="pill">Coming soon for Mac</span>
+  </section>
+
+</main>
+
+<footer>
+  <p>Boswell · Made on a Mac, for the Mac.</p>
+</footer>
+
+<script>
+  // fade sections in as they scroll into view
+  const io = new IntersectionObserver(entries => {
+    for (const e of entries) if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target) }
+  }, { threshold: 0.15 })
+  document.querySelectorAll(".reveal").forEach(el => io.observe(el))
+</script>
+</body>
+</html>

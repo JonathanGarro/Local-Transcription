@@ -16,3 +16,4 @@ outputs/
 
 # editor settings
 .idea/
+.DS_Store

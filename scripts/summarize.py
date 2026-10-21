@@ -2,9 +2,9 @@
 processed recording.
 
 usage:
-    uv run summarize.py "outputs/<recording>"                       # local model, nothing leaves the mac
-    uv run summarize.py "outputs/<recording>" --backend claude      # sends transcript text to the claude api
-    uv run summarize.py "outputs/<recording>" --project "Customer Dashboard"
+    uv run scripts/summarize.py "outputs/<recording>"                       # local model, nothing leaves the mac
+    uv run scripts/summarize.py "outputs/<recording>" --backend claude      # sends transcript text to the claude api
+    uv run scripts/summarize.py "outputs/<recording>" --project "Customer Dashboard"
 """
 
 import argparse
@@ -13,7 +13,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # config
-BASE_DIR = Path(__file__).parent
+# the project folder, one up from scripts/
+BASE_DIR = Path(__file__).resolve().parent.parent
 # values already set in the shell take precedence over .env
 load_dotenv(BASE_DIR / ".env")
 

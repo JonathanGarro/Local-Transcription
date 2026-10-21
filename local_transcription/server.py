@@ -323,7 +323,7 @@ def create_app():
     jobs = Jobs()
     pipeline.register_existing()
     # wavs rebuilt to replay an archived meeting are not kept between launches. a meeting with
-    # no run.json yet is still being processed, by import_plaud.py say, and needs its wavs
+    # no run.json yet is still being processed, by scripts/import_plaud.py say, and needs its wavs
     for meeting_id in library.meetings().query("archived.notna()")["meeting_id"] if len(library.meetings()) else []:
         if (pipeline.OUTPUT_DIR / meeting_id / "run.json").exists():
             pipeline.drop_audio(pipeline.OUTPUT_DIR / meeting_id)

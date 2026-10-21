@@ -2,10 +2,10 @@
 can be confirmed and added to profiles. needs the plaud cli, logged in.
 
 usage:
-    uv run import_plaud.py "2026-10-13 - Customer Dashboard Review with Maya"
-    uv run import_plaud.py --next 5      # the newest imported meetings not yet processed
-    uv run import_plaud.py --hours 4     # keep going through the newest until 4 hours have passed
-    uv run import_plaud.py --retime      # give meetings done before the note's transcript was used that transcript
+    uv run scripts/import_plaud.py "2026-10-13 - Customer Dashboard Review with Maya"
+    uv run scripts/import_plaud.py --next 5      # the newest imported meetings not yet processed
+    uv run scripts/import_plaud.py --hours 4     # keep going through the newest until 4 hours have passed
+    uv run scripts/import_plaud.py --retime      # give meetings done before the note's transcript was used that transcript
 
 each meeting then needs review in the app, where names from its note are suggested first.
 """
@@ -17,7 +17,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # config
-BASE_DIR = Path(__file__).parent
+# the project folder, one up from scripts/
+BASE_DIR = Path(__file__).resolve().parent.parent
 # values already set in the shell take precedence over .env
 load_dotenv(BASE_DIR / ".env")
 

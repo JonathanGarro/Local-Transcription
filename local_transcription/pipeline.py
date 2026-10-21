@@ -123,7 +123,7 @@ def write_review(out_dir, speakers, segments):
     review.insert(1, "label", review["speaker"].map(display_names(speakers, segments)))
     review["sample_at"] = review["speaker"].map(samples["start"]).map(render.fmt_time)
     review["sample_text"] = review["speaker"].map(samples["text"]).str.slice(0, SAMPLE_CHARS)
-    # fill in or correct this column, then run confirm.py
+    # fill in or correct this column, then run scripts/confirm.py
     review["name"] = speakers["name"].fillna("")
     path = out_dir / "review.csv"
     review.to_csv(path, index=False)

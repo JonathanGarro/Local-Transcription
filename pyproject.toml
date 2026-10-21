@@ -27,3 +27,12 @@ dependencies = [
 bench = [
     "faster-whisper==1.2.1",
 ]
+
+# installs local_transcription into the environment, linked to this folder, so the scripts in
+# scripts/ can import it
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["local_transcription"]

@@ -18,8 +18,8 @@ On a 30 minute meeting the whole run takes about 2 to 3 minutes on an M3 Max. ml
 ```
 uv sync
 cp .env.example .env    # add a Hugging Face read token
-uv run check_setup.py   # downloads and tests the models
-uv run check_setup.py --offline
+uv run scripts/check_setup.py   # downloads and tests the models
+uv run scripts/check_setup.py --offline
 ```
 
 Accept the model terms at https://hf.co/pyannote/speaker-diarization-community-1 with the account that owns the token. After the offline check passes, uncomment `HF_HUB_OFFLINE=1` in `.env`.
@@ -64,7 +64,7 @@ The server listens on 127.0.0.1 only and loads nothing from the internet.
 Put recordings in `data/`. File names like `2026-10-14 - Manager Check-In.mp3` give the transcript its date and title.
 
 ```
-uv run transcribe.py "data/2026-10-14 - Manager Check-In.mp3" --source plaud
+uv run scripts/transcribe.py "data/2026-10-14 - Manager Check-In.mp3" --source plaud
 ```
 
 Outputs go to `outputs/<recording name>/`:
@@ -92,13 +92,13 @@ Set `MIC_CHANNEL=right` in `.env` if your setup is reversed, or pass `--split of
 Either fill in the `name` column of `review.csv` and run:
 
 ```
-uv run confirm.py "outputs/2026-10-14 - Manager Check-In"
+uv run scripts/confirm.py "outputs/2026-10-14 - Manager Check-In"
 ```
 
 or name speakers directly:
 
 ```
-uv run confirm.py "outputs/2026-10-14 - Manager Check-In" SPEAKER_01=Alex SPEAKER_00=Priya
+uv run scripts/confirm.py "outputs/2026-10-14 - Manager Check-In" SPEAKER_01=Alex SPEAKER_00=Priya
 ```
 
 Confirming re-renders the transcript and adds that speaker's voice from this meeting to their profile. Use `--no-enroll` to rename without touching profiles, or `--skip SPEAKER_00` to leave a speaker unnamed (for example a video playing on someone's side). Confirming the same speaker again replaces the entry it added before.
@@ -106,8 +106,8 @@ Confirming re-renders the transcript and adds that speaker's voice from this mee
 ### Enrolling from a clip
 
 ```
-uv run enroll.py "data/priya_sample.wav" "Priya"
-uv run enroll.py "data/meeting.mp3" "Priya" --start 5:20 --end 6:10 --source plaud
+uv run scripts/enroll.py "data/priya_sample.wav" "Priya"
+uv run scripts/enroll.py "data/meeting.mp3" "Priya" --start 5:20 --end 6:10 --source plaud
 ```
 
 The clip should contain only that person. 20 seconds or more works best.
@@ -115,12 +115,12 @@ The clip should contain only that person. 20 seconds or more works best.
 ### Managing profiles
 
 ```
-uv run manage_profiles.py list
-uv run manage_profiles.py show "Priya"              # entries with similarity to the mean
-uv run manage_profiles.py rename "Katherine" "Kathryn"  # updates every past transcript
-uv run manage_profiles.py merge "Pri" "Priya"       # fold the first person into the second
-uv run manage_profiles.py remove-entry <id>
-uv run manage_profiles.py delete "Priya"
+uv run scripts/manage_profiles.py list
+uv run scripts/manage_profiles.py show "Priya"              # entries with similarity to the mean
+uv run scripts/manage_profiles.py rename "Katherine" "Kathryn"  # updates every past transcript
+uv run scripts/manage_profiles.py merge "Pri" "Priya"       # fold the first person into the second
+uv run scripts/manage_profiles.py remove-entry <id>
+uv run scripts/manage_profiles.py delete "Priya"
 ```
 
 People, voice entries and meetings live in `data/library.db` (SQLite). Each person has a stable id, and each voice entry records the meeting and speaker it came from. The profile vector is the mean of a person's current entries, so pruning takes effect on the next run. Deleting a person removes their entries and vacuums the database file. Past transcripts keep their name as plain text.
@@ -138,8 +138,8 @@ Every term, plus every profile name, is passed to Whisper as a spelling hint on 
 ## Meeting notes
 
 ```
-uv run summarize.py "outputs/2026-10-13 - Dashboard Review"
-uv run summarize.py "outputs/2026-10-13 - Dashboard Review" --backend claude --project "Customer Dashboard"
+uv run scripts/summarize.py "outputs/2026-10-13 - Dashboard Review"
+uv run scripts/summarize.py "outputs/2026-10-13 - Dashboard Review" --backend claude --project "Customer Dashboard"
 ```
 
 Writes `note.md` in the Obsidian layout: frontmatter, Agenda, Discussion and Transcript. The model writes the agenda and discussion. An Action Items section is added only once you run Find my to-dos and send them to Things, holding just those to-dos as links. Code fills in the rest:
@@ -156,8 +156,8 @@ Projects come from your Obsidian project index. Set `PROJECT_INDEX_DIR` in `.env
 Obsidian is the source of truth for teams and organizations. Set `PEOPLE_DIR` in `.env` to the folder with one note per person, named by their full name. The app reads the `teams` and `organizations` properties of a person's note each time a note or the People page needs them, so a change in Obsidian shows up on the next note. Saving them in the People page, or with the command below, writes those two properties back into the note and leaves the rest of it alone. Someone with no note yet gets one in the vault's Person layout. The pickers suggest the notes in the `Teams` and `Organizations` folders next to `PEOPLE_DIR`. The app matches a person to a note by name, so rename people in both places, renaming the note in Obsidian so its links follow.
 
 ```
-uv run manage_profiles.py set "Maya Chen" --org "Northwind Foundation" --team "Operations Team"
-uv run manage_profiles.py projects --add "Customer Dashboard"
+uv run scripts/manage_profiles.py set "Maya Chen" --org "Northwind Foundation" --team "Operations Team"
+uv run scripts/manage_profiles.py projects --add "Customer Dashboard"
 ```
 
 Two backends, chosen per note or with `SUMMARY_BACKEND` in `.env`:
@@ -181,7 +181,7 @@ HF_HUB_OFFLINE=0 uv run python -c "from huggingface_hub import snapshot_download
 Meeting notes already in Obsidian, from before this app, can be brought into the Archive once:
 
 ```
-uv run import_obsidian.py    # reads MEETING_NOTES_DIR from .env
+uv run scripts/import_obsidian.py    # reads MEETING_NOTES_DIR from .env
 ```
 
 Each note becomes an archived meeting with no recording. The note stays in the vault and the app reads it from there, so edit it in Obsidian. The `people` and `project` in its frontmatter are linked to the library, so the People page counts those meetings too. Names the library does not know are listed and left unlinked. Notes the app sent itself are skipped, and running it again only adds new notes.
@@ -189,15 +189,15 @@ Each note becomes an archived meeting with no recording. The note stays in the v
 Imported notes that link to a Plaud recording can then be reprocessed here, so their voices can be confirmed and added to profiles. This needs the Plaud CLI (`@plaud-ai/cli` on npm), logged in:
 
 ```
-uv run import_plaud.py "2026-10-13 - Customer Dashboard Review with Maya"
-uv run import_plaud.py --next 5    # the newest imported meetings not yet processed
-uv run import_plaud.py --hours 4   # newest first, starting no new meeting after 4 hours
+uv run scripts/import_plaud.py "2026-10-13 - Customer Dashboard Review with Maya"
+uv run scripts/import_plaud.py --next 5    # the newest imported meetings not yet processed
+uv run scripts/import_plaud.py --hours 4   # newest first, starting no new meeting after 4 hours
 ```
 
 The audio is downloaded into `data/` and runs into the same meeting, which keeps its Obsidian note and stays in the Archive with a Review button. The recording is not transcribed again. The note already has the transcript with the names you fixed, and Plaud's copy of it has timestamps, so lining the two up gives each note line its time. The app's Transcript tab reads like the note and still plays from any line, and only who spoke when is worked out from the audio, for voice profiles. Review suggests names from the note first, by how each speaker's turns overlap the named lines. Lines the note leaves as `Speaker 3` fall back to voice matching. Meetings reprocessed before this can take the note's transcript without reprocessing:
 
 ```
-uv run import_plaud.py --retime
+uv run scripts/import_plaud.py --retime
 ```
 
 ## Privacy
@@ -207,18 +207,20 @@ uv run import_plaud.py --retime
 ## Layout
 
 ```
-local_transcription/   pipeline modules (audio, diarize, asr, merge, embed, match, library, render, pipeline)
-local_transcription/server.py   local api the mac app uses
-mac/                   the mac app, in swiftui
-app.py                 run the server
+app.py                 run the server the mac app talks to
 make_app.py            build the mac app
-transcribe.py          process a recording
-confirm.py             confirm names and grow profiles
-summarize.py           write an obsidian meeting note
-import_obsidian.py     import older obsidian notes into the archive
-import_plaud.py        reprocess imported notes from their plaud recordings
-enroll.py              add a voice sample
-manage_profiles.py     list, prune, delete profiles
-check_setup.py         verify ffmpeg, token, and models
-probe_recordings.py    benchmark backends on sample files
+local_transcription/   the engine and its local api: audio, diarize, asr, merge, embed, match,
+                       library, render, pipeline, notes, ask, server
+mac/                   the mac app, in swiftui
+scripts/               command line tools
+  transcribe.py          process a recording
+  confirm.py             confirm names and grow profiles
+  summarize.py           write an obsidian meeting note
+  import_obsidian.py     import older obsidian notes into the archive
+  import_plaud.py        reprocess imported notes from their plaud recordings
+  enroll.py              add a voice sample
+  manage_profiles.py     list, prune, delete profiles
+  check_setup.py         verify ffmpeg, token, and models
+assets/                the app icon
+data/, outputs/        recordings and the library, and what's made from them (never committed)
 ```

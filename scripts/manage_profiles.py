@@ -1,15 +1,15 @@
 """list, inspect, rename, merge, prune, or delete people in the local voice library.
 
 usage:
-    uv run manage_profiles.py list
-    uv run manage_profiles.py show "Priya"
-    uv run manage_profiles.py rename "Katherine" "Kathryn"       # updates every past transcript
-    uv run manage_profiles.py merge "Pri" "Priya"            # fold the first person into the second
-    uv run manage_profiles.py set "Maya Chen" --org "Northwind Foundation" --team "Operations Team"   # writes her obsidian note
-    uv run manage_profiles.py projects                         # list projects
-    uv run manage_profiles.py projects --add "Customer Dashboard"
-    uv run manage_profiles.py remove-entry 3f9a1c2b7d
-    uv run manage_profiles.py delete "Priya"
+    uv run scripts/manage_profiles.py list
+    uv run scripts/manage_profiles.py show "Priya"
+    uv run scripts/manage_profiles.py rename "Katherine" "Kathryn"       # updates every past transcript
+    uv run scripts/manage_profiles.py merge "Pri" "Priya"            # fold the first person into the second
+    uv run scripts/manage_profiles.py set "Maya Chen" --org "Northwind Foundation" --team "Operations Team"   # writes her obsidian note
+    uv run scripts/manage_profiles.py projects                         # list projects
+    uv run scripts/manage_profiles.py projects --add "Customer Dashboard"
+    uv run scripts/manage_profiles.py remove-entry 3f9a1c2b7d
+    uv run scripts/manage_profiles.py delete "Priya"
 """
 
 import argparse
@@ -19,7 +19,8 @@ import pandas as pd
 from dotenv import load_dotenv
 
 # config
-BASE_DIR = Path(__file__).parent
+# the project folder, one up from scripts/
+BASE_DIR = Path(__file__).resolve().parent.parent
 # values already set in the shell take precedence over .env
 load_dotenv(BASE_DIR / ".env")
 

@@ -1,9 +1,9 @@
 """transcribe a recording and label speakers using enrolled voice profiles.
 
 usage:
-    uv run transcribe.py "data/2026-10-14 - Manager Check-In.mp3"
-    uv run transcribe.py "data/call.mp3" --source zoom --num-speakers 5
-    uv run transcribe.py "data/call.mp3" --split off     # treat a stereo file as one mix
+    uv run scripts/transcribe.py "data/2026-10-14 - Manager Check-In.mp3"
+    uv run scripts/transcribe.py "data/call.mp3" --source zoom --num-speakers 5
+    uv run scripts/transcribe.py "data/call.mp3" --split off     # treat a stereo file as one mix
 """
 
 import argparse
@@ -13,7 +13,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # config
-BASE_DIR = Path(__file__).parent
+# the project folder, one up from scripts/
+BASE_DIR = Path(__file__).resolve().parent.parent
 # values already set in the shell take precedence over .env
 load_dotenv(BASE_DIR / ".env")
 CHANNELS = {"left": 0, "right": 1}
@@ -56,7 +57,7 @@ def main():
     if review:
         print(f"review:     {review.relative_to(BASE_DIR)}")
         print("fill in the name column, then run:")
-        print(f'    uv run confirm.py "{out_dir.relative_to(BASE_DIR)}"')
+        print(f'    uv run scripts/confirm.py "{out_dir.relative_to(BASE_DIR)}"')
 
 
 if __name__ == "__main__":

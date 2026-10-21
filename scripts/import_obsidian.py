@@ -1,8 +1,8 @@
 """import meeting notes already in obsidian into the app's archive, without recordings.
 
 usage:
-    uv run import_obsidian.py                       # the MEETING_NOTES_DIR folder from .env
-    uv run import_obsidian.py "/path/to/Meeting Notes"
+    uv run scripts/import_obsidian.py                       # the MEETING_NOTES_DIR folder from .env
+    uv run scripts/import_obsidian.py "/path/to/Meeting Notes"
 
 safe to run again, notes already in the library are left alone.
 """
@@ -13,7 +13,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # config
-BASE_DIR = Path(__file__).parent
+# the project folder, one up from scripts/
+BASE_DIR = Path(__file__).resolve().parent.parent
 # values already set in the shell take precedence over .env
 load_dotenv(BASE_DIR / ".env")
 

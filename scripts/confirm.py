@@ -1,10 +1,10 @@
 """confirm speaker names for a processed recording and add them to voice profiles.
 
 usage:
-    uv run confirm.py "outputs/<recording>"                          # use the name column in review.csv
-    uv run confirm.py "outputs/<recording>" SPEAKER_01=Alex SPEAKER_00=Priya
-    uv run confirm.py "outputs/<recording>" SPEAKER_01=Alex --no-enroll
-    uv run confirm.py "outputs/<recording>" --skip SPEAKER_00      # leave a speaker unnamed
+    uv run scripts/confirm.py "outputs/<recording>"                          # use the name column in review.csv
+    uv run scripts/confirm.py "outputs/<recording>" SPEAKER_01=Alex SPEAKER_00=Priya
+    uv run scripts/confirm.py "outputs/<recording>" SPEAKER_01=Alex --no-enroll
+    uv run scripts/confirm.py "outputs/<recording>" --skip SPEAKER_00      # leave a speaker unnamed
 """
 
 import argparse
@@ -15,7 +15,8 @@ import pandas as pd
 from local_transcription import pipeline
 
 # config
-BASE_DIR = Path(__file__).parent
+# the project folder, one up from scripts/
+BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 # helpers

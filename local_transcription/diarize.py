@@ -21,7 +21,7 @@ def load_pipeline():
 
     pipeline = Pipeline.from_pretrained(DIARIZATION_REPO, token=os.environ.get("HF_TOKEN"))
     if pipeline is None:
-        raise RuntimeError(f"could not load {DIARIZATION_REPO}, run check_setup.py")
+        raise RuntimeError(f"could not load {DIARIZATION_REPO}, run uv run scripts/check_setup.py")
     device = "mps" if torch.backends.mps.is_available() else "cpu"
     pipeline.to(torch.device(device))
     return pipeline

@@ -1,8 +1,8 @@
 """enroll a voice sample: extract an embedding and add it to that person's profile.
 
 usage:
-    uv run enroll.py "data/priya_sample.wav" "Priya"
-    uv run enroll.py "data/meeting.mp3" "Priya" --start 5:20 --end 6:10 --source plaud
+    uv run scripts/enroll.py "data/priya_sample.wav" "Priya"
+    uv run scripts/enroll.py "data/meeting.mp3" "Priya" --start 5:20 --end 6:10 --source plaud
 """
 
 import argparse
@@ -11,7 +11,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # config
-BASE_DIR = Path(__file__).parent
+# the project folder, one up from scripts/
+BASE_DIR = Path(__file__).resolve().parent.parent
 # values already set in the shell take precedence over .env
 load_dotenv(BASE_DIR / ".env")
 OUTPUT_DIR = BASE_DIR / "outputs" / "enroll"

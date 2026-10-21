@@ -1,9 +1,9 @@
 """confirm ffmpeg, the hugging face token, and model downloads all work.
 
 usage:
-    uv run check_setup.py            # download models if needed and test them
-    uv run check_setup.py --bench    # also download and test faster-whisper
-    uv run check_setup.py --offline  # verify everything loads from cache only
+    uv run scripts/check_setup.py            # download models if needed and test them
+    uv run scripts/check_setup.py --bench    # also download and test faster-whisper
+    uv run scripts/check_setup.py --offline  # verify everything loads from cache only
 """
 
 import argparse
@@ -17,7 +17,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # config
-BASE_DIR = Path(__file__).parent
+# the project folder, one up from scripts/
+BASE_DIR = Path(__file__).resolve().parent.parent
 # values already set in the shell take precedence over .env
 load_dotenv(BASE_DIR / ".env")
 OUTPUT_DIR = BASE_DIR / "outputs" / "check"

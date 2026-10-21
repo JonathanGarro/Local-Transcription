@@ -102,6 +102,7 @@ struct Sidebar: View {
             SwiftUI.Section("Meetings") {
                 ForEach(Place.meetings, id: \.self) { place in
                     Label(place.rawValue, systemImage: place.icon)
+                        .labelStyle(SidebarLabel())
                         .badge(place == .inbox ? store.inbox.count : 0)
                         .tag(place)
                 }
@@ -109,6 +110,7 @@ struct Sidebar: View {
             SwiftUI.Section("Library") {
                 ForEach(Place.library, id: \.self) { place in
                     Label(place.rawValue, systemImage: place.icon)
+                        .labelStyle(SidebarLabel())
                         .tag(place)
                 }
             }
@@ -118,6 +120,16 @@ struct Sidebar: View {
             if !store.jobs.isEmpty {
                 JobsView()
             }
+        }
+    }
+}
+
+// a sidebar row, with a little more room between the icon and its name and the name a touch bolder
+struct SidebarLabel: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 10) {
+            configuration.icon
+            configuration.title.fontWeight(.medium)
         }
     }
 }

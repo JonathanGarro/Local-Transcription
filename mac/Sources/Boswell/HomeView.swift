@@ -10,7 +10,7 @@ struct HomeView: View {
             if let stats { content(stats) } else { ProgressView() }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .navigationTitle("Home")
+        .navigationTitle("Data")
         .navigationSubtitle("Every meeting, processed here or imported from Obsidian")
         .task(id: store.revision) {
             stats = try? await API.get(["api", "home"])

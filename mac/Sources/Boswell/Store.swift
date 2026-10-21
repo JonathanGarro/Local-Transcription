@@ -5,8 +5,29 @@ import Observation
 enum Place: String, Hashable, CaseIterable {
     case inbox = "Inbox"
     case archive = "Archive"
+    case home = "Home"
+    case ask = "Ask"
+    case people = "People"
+    case vocabulary = "Vocabulary"
+    case settings = "Settings"
 
-    var icon: String { self == .inbox ? "tray" : "archivebox" }
+    static let meetings: [Place] = [.inbox, .archive]
+    static let library: [Place] = [.home, .ask, .people, .vocabulary, .settings]
+
+    var icon: String {
+        switch self {
+        case .inbox: "tray"
+        case .archive: "archivebox"
+        case .home: "house"
+        case .ask: "bubble.left.and.text.bubble.right"
+        case .people: "person.2"
+        case .vocabulary: "character.book.closed"
+        case .settings: "gearshape"
+        }
+    }
+
+    // pages not rebuilt natively yet show the web version's page in the window
+    var webPage: String? { Place.meetings.contains(self) ? nil : rawValue.lowercased() }
 }
 
 enum Stage {
@@ -145,6 +166,15 @@ final class Store {
             let _: Ok = try await API.post(["api", "jobs", job.jobId, "dismiss"])
             await refresh()
         }
+    }
+
+    // a meeting link clicked in one of the web pages opens the meeting natively
+    func openRoute(_ hash: String) {
+        let parts = hash.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count > 2, ["review", "transcript", "imported"].contains(parts[1]),
+              let id = parts[2].removingPercentEncoding, let m = meeting(id) else { return }
+        section = m.archived == nil ? .inbox : .archive
+        selection = id
     }
 
     func openWebVersion(_ path: String = "") {

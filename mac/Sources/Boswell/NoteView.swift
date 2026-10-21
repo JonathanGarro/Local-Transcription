@@ -361,19 +361,3 @@ struct DiffView: View {
         return result
     }
 }
-
-struct SettingsView: View {
-    @Environment(Store.self) private var store
-
-    var body: some View {
-        Form {
-            LabeledContent("Project folder", value: Server.shared.projectDir.path)
-            LabeledContent("Server", value: Server.shared.baseURL.absoluteString)
-            LabeledContent("Log", value: Server.shared.logFile.path)
-            Button("Open Settings in the Web Version") { store.openWebVersion("#/settings") }
-        }
-        .formStyle(.grouped)
-        .frame(width: 520)
-        .fixedSize(horizontal: false, vertical: true)
-    }
-}

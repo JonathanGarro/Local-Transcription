@@ -8,7 +8,15 @@ struct ContentView: View {
     var body: some View {
         @Bindable var store = store
         Group {
-            if store.connected {
+            if store.connected, let page = store.section.webPage {
+                NavigationSplitView {
+                    Sidebar()
+                } detail: {
+                    WebPane(page: page)
+                        .id(page)
+                        .navigationTitle(store.section.rawValue)
+                }
+            } else if store.connected {
                 NavigationSplitView {
                     Sidebar()
                 } content: {
@@ -71,10 +79,18 @@ struct Sidebar: View {
 
     var body: some View {
         List(selection: Binding(get: { store.section }, set: { if let s = $0 { store.section = s } })) {
-            ForEach(Place.allCases, id: \.self) { section in
-                Label(section.rawValue, systemImage: section.icon)
-                    .badge(section == .inbox ? store.inbox.count : 0)
-                    .tag(section)
+            SwiftUI.Section("Meetings") {
+                ForEach(Place.meetings, id: \.self) { place in
+                    Label(place.rawValue, systemImage: place.icon)
+                        .badge(place == .inbox ? store.inbox.count : 0)
+                        .tag(place)
+                }
+            }
+            SwiftUI.Section("Library") {
+                ForEach(Place.library, id: \.self) { place in
+                    Label(place.rawValue, systemImage: place.icon)
+                        .tag(place)
+                }
             }
         }
         .navigationSplitViewColumnWidth(min: 170, ideal: 190)

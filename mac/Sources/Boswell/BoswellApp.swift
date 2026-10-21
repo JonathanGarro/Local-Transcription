@@ -13,34 +13,29 @@ struct BoswellApp: App {
         }
         .defaultSize(width: 1200, height: 820)
         .commands {
+            // the settings page lives in the sidebar
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings...") { store.section = .settings }
+                    .keyboardShortcut(",")
+            }
             CommandGroup(replacing: .newItem) {
                 Button("Import Recording...") { store.importing = true }
                     .keyboardShortcut("o")
             }
             CommandGroup(after: .sidebar) {
-                Button("Inbox") { store.section = .inbox }
-                    .keyboardShortcut("1")
-                Button("Archive") { store.section = .archive }
-                    .keyboardShortcut("2")
-                Divider()
                 Button("Refresh") { Task { await store.refresh(); store.revision += 1 } }
                     .keyboardShortcut("r")
             }
-            CommandMenu("Library") {
-                // the parts of the app not yet rebuilt natively open the web version
-                Button("Ask...") { store.openWebVersion("#/ask") }
-                Button("People") { store.openWebVersion("#/people") }
-                Button("Vocabulary") { store.openWebVersion("#/vocabulary") }
-                Button("Home") { store.openWebVersion("#/home") }
+            CommandMenu("Go") {
+                ForEach(Array(Place.allCases.enumerated()), id: \.offset) { i, place in
+                    Button(place.rawValue) { store.section = place }
+                        .keyboardShortcut(KeyEquivalent(Character("\(i + 1)")))
+                }
                 Divider()
-                Button("Open Web Version") { store.openWebVersion() }
+                Button("Open in Browser") { store.openWebVersion(store.section.webPage.map { "#/\($0)" } ?? "") }
             }
         }
 
-        Settings {
-            SettingsView()
-                .environment(store)
-        }
     }
 }
 

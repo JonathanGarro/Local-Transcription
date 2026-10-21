@@ -5,7 +5,8 @@ usage:
     uv run make_app.py --icon ~/Pictures/my-icon.png
     uv run make_app.py --native             # the swiftui version in mac/, needs xcode
 
-the app goes in ~/Applications/Boswell.app, or Boswell Native.app with --native. it only
+the app goes in ~/Applications/Boswell.app, or Boswell Native.app with --native, or is
+rebuilt where it is if you moved it to /Applications. it only
 starts this project's app.py, so the code, data, and outputs stay where they are. run this
 again after changing the icon. any square png works, 1024x1024 looks best.
 """
@@ -29,6 +30,7 @@ NATIVE_BUNDLE_ID = "local.transcription.native"
 MAC_DIR = BASE_DIR / "mac"
 XCODE_DIR = Path("/Applications/Xcode.app/Contents/Developer")
 ICON_SIZES = [16, 32, 128, 256, 512]
+INSTALL_DIRS = [Path.home() / "Applications", Path("/Applications")]
 
 
 # helpers
@@ -102,7 +104,9 @@ def main():
     parser.add_argument("--native", action="store_true", help="build the swiftui version in mac/")
     args = parser.parse_args()
     name = NATIVE_NAME if args.native else APP_NAME
-    app_dir = Path.home() / "Applications" / f"{name}.app"
+    # rebuild in place if the app was moved to /Applications, so there is only one copy
+    app_dir = next((d / f"{name}.app" for d in INSTALL_DIRS if (d / f"{name}.app").exists()),
+                   INSTALL_DIRS[0] / f"{name}.app")
 
     if args.icon:
         source = args.icon.expanduser()

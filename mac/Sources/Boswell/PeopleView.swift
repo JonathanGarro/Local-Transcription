@@ -152,8 +152,6 @@ struct PersonView: View {
                 }
             }
             TableColumn("Project") { Text($0.project ?? "").foregroundStyle(.secondary) }
-            TableColumn("Tagged By") { Text($0.taggedBy).foregroundStyle(.secondary) }
-                .width(min: 80, ideal: 100)
             TableColumn("Minutes") { m in
                 Text(m.minutes.map { String(format: "%.1f", $0) } ?? "").monospacedDigit()
                     .frame(maxWidth: .infinity, alignment: .trailing)

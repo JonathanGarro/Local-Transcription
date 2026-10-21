@@ -7,6 +7,7 @@ struct SettingsView: View {
     @State private var confirmRemove = false
     @State private var check: KeyCheck?
     @State private var checking = false
+    @State private var width: CGFloat = 0
     @AppStorage(Prefs.askTodos) private var askTodos = true
     @AppStorage(Prefs.things) private var thingsEnabled = true
     @AppStorage(Prefs.openAfterSend) private var openAfterSend = false
@@ -139,8 +140,10 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(maxWidth: 680)
-        .frame(maxWidth: .infinity)
+        // the form fills the page so its scroll bar sits at the window's edge,
+        // with the sections kept to a readable width in the middle
+        .contentMargins(.horizontal, max(0, (width - 680) / 2), for: .scrollContent)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .sheet(isPresented: $enteringKey) {
             KeySheet { key in await keyAction { try await API.put(["api", "settings", "key"], ["key": key]) } }
         }

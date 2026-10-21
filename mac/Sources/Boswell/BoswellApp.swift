@@ -5,6 +5,12 @@ struct BoswellApp: App {
     @NSApplicationDelegateAdaptor private var delegate: AppDelegate
     private var store: Store { delegate.store }
 
+    init() {
+        // scroll bars only while scrolling. with a mouse plugged in macos otherwise keeps
+        // them showing, and this app's own setting takes precedence over the system's
+        UserDefaults.standard.set("WhenScrolling", forKey: "AppleShowScrollBars")
+    }
+
     var body: some Scene {
         Window("Boswell", id: "main") {
             ContentView()

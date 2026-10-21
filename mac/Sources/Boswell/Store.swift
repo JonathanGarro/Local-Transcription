@@ -13,9 +13,9 @@ enum Place: String, Hashable, CaseIterable {
     case settings = "Settings"
 
     static let meetings: [Place] = [.inbox, .archive]
-    static let native: [Place] = [.inbox, .archive, .people, .vocabulary, .settings]
+    static let native: [Place] = [.inbox, .archive, .home, .people, .vocabulary, .settings]
     // pages with no list column
-    var fullWidth: Bool { self == .vocabulary || self == .settings }
+    var fullWidth: Bool { [.home, .vocabulary, .settings].contains(self) }
     static let library: [Place] = [.home, .ask, .people, .vocabulary, .settings]
 
     var icon: String {

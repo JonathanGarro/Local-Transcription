@@ -20,7 +20,11 @@ struct ContentView: View {
                 NavigationSplitView {
                     Sidebar()
                 } detail: {
-                    if store.section == .settings { SettingsView() } else { VocabularyView() }
+                    switch store.section {
+                    case .home: HomeView()
+                    case .settings: SettingsView()
+                    default: VocabularyView()
+                    }
                 }
             } else if store.connected {
                 NavigationSplitView {

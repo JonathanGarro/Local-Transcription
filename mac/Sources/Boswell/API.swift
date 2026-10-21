@@ -257,6 +257,26 @@ struct SettingsChange: Encodable {
     var claudeModel: String?
 }
 
+struct Count: Codable, Hashable {
+    let label: String
+    let value: Double
+    let minutes: Double?
+}
+
+struct HomeStats: Codable {
+    let meetings: Double
+    let people: Double
+    let hours: Double
+    let voices: Double
+    let review: Double?
+    let ownerShare: Double?
+    let byMonth: [Count]
+    let byWeekday: [Count]
+    let peopleTop: [Count]
+    let projectsTop: [Count]
+    let teamsTop: [Count]
+}
+
 // requests
 
 struct ApplyRequest: Encodable {

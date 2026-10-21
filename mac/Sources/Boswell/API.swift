@@ -139,10 +139,14 @@ struct Person: Codable, Hashable, Identifiable {
     let lastHeard: String?
 
     var id: String { personId }
-    // the server joins lists with ", "
-    var organizationList: [String] { organizations.map { $0.components(separatedBy: ", ") } ?? [] }
-    var teamList: [String] { teams.map { $0.components(separatedBy: ", ") } ?? [] }
+    // the server joins lists with ", ", and sends "" for none
+    var organizationList: [String] { Person.split(organizations) }
+    var teamList: [String] { Person.split(teams) }
     var subtitle: String { (organizationList + teamList).joined(separator: " · ") }
+
+    private static func split(_ joined: String?) -> [String] {
+        (joined ?? "").components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
 }
 
 struct PersonMeeting: Codable, Hashable, Identifiable {

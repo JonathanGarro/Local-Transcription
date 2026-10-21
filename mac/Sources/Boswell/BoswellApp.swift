@@ -3,7 +3,7 @@ import SwiftUI
 @main
 struct BoswellApp: App {
     @NSApplicationDelegateAdaptor private var delegate: AppDelegate
-    @State private var store = Store()
+    private var store: Store { delegate.store }
 
     var body: some Scene {
         Window("Boswell", id: "main") {
@@ -38,7 +38,11 @@ struct BoswellApp: App {
     }
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    // here rather than in the app, so quitting can check it for unfinished work
+    let store = Store()
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // swift run starts a bare binary, which would otherwise have no dock icon or menu bar
         NSApp.setActivationPolicy(.regular)
@@ -59,6 +63,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        Task {
+            await store.saveNote?.save()
+            NSApp.reply(toApplicationShouldTerminate: await confirmQuit())
+        }
+        return .terminateLater
+    }
+
+    private func confirmQuit() async -> Bool {
+        guard let work = await store.unfinishedWork() else { return true }
+        let alert = NSAlert()
+        alert.messageText = "Quit while work is running?"
+        alert.informativeText = "Still running: \(work). It stops when Boswell quits and won't pick up again."
+        alert.addButton(withTitle: "Quit Anyway").hasDestructiveAction = true
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
 
     func applicationWillTerminate(_ notification: Notification) {
         Server.shared.stop()

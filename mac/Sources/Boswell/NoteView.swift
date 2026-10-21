@@ -85,7 +85,11 @@ struct NoteView: View {
         .onChange(of: text) { scheduleSave() }
         .onChange(of: showChanges) { if showChanges { Task { await loadDiff() } } }
         .onChange(of: inspectorTab) { if inspectorTab == .changes { Task { await loadDiff() } } }
-        .onDisappear { Task { await flush() } }
+        .onAppear { store.saveNote = (meetingId, { await flush() }) }
+        .onDisappear {
+            if store.saveNote?.meetingId == meetingId { store.saveNote = nil }
+            Task { await flush() }
+        }
         .confirmationDialog("Replace the copy in Obsidian?", isPresented: Binding(get: { conflict != nil }, set: { if !$0 { conflict = nil } })) {
             Button("Replace It", role: .destructive) { Task { await send(replace: true) } }
         } message: {

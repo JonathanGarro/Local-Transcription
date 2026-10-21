@@ -83,6 +83,9 @@ final class Store {
     // bumped when something outside a view changes its meeting, so the view reloads
     var revision = 0
 
+    // the open note saves its typing through this before the app quits
+    var saveNote: (meetingId: String, save: () async -> Void)?
+
     private var polling: Task<Void, Never>?
 
     var inbox: [Meeting] { meetings.filter { $0.archived == nil } }
@@ -107,6 +110,8 @@ final class Store {
     }
 
     func start() async {
+        // the window can close without quitting, and starts this again when it reopens
+        guard !connected else { return }
         do {
             try await Server.shared.start()
             connected = true
@@ -127,6 +132,19 @@ final class Store {
                 await refresh()
             }
         }
+    }
+
+    // the server keeps its queue in memory, so quitting stops this work for good
+    func unfinishedWork() async -> String? {
+        await refresh()
+        let running = jobs.filter(\.running)
+        let notes = running.filter { $0.kind == "note" }.count
+        let transcriptions = running.count - notes
+        var parts: [String] = []
+        if transcriptions > 0 { parts.append(transcriptions == 1 ? "1 transcription" : "\(transcriptions) transcriptions") }
+        if notes > 0 { parts.append(notes == 1 ? "1 note" : "\(notes) notes") }
+        if chat.pending { parts.append("an answer in Ask") }
+        return parts.isEmpty ? nil : ListFormatter.localizedString(byJoining: parts)
     }
 
     func refresh() async {

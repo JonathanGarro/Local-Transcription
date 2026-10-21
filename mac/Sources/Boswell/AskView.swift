@@ -55,33 +55,41 @@ final class Chat {
         turns = []
     }
 
+    // by id rather than position, since switching conversations replaces the turns
+    func update(_ id: UUID, _ change: (inout Turn) -> Void) {
+        guard let index = turns.firstIndex(where: { $0.id == id }) else { return }
+        change(&turns[index])
+    }
+
     func ask(_ question: String, store: Store) async {
         guard !pending else { return }
-        turns.append(Turn(question: question))
-        let index = turns.count - 1
+        let turn = Turn(question: question)
+        turns.append(turn)
         do {
             let body: [String: String?] = ["question": question, "conversation_id": conversationId]
             let started: AskStarted = try await API.post(["api", "ask"], body)
             conversationId = started.conversationId
             pendingAsk = started.askId
-            await poll(started.askId, index)
+            await poll(started.askId, turn.id)
         } catch {
-            turns[index].error = error.localizedDescription
+            update(turn.id) { $0.error = error.localizedDescription }
             pendingAsk = nil
         }
     }
 
-    private func poll(_ askId: String, _ index: Int) async {
+    private func poll(_ askId: String, _ turnId: UUID) async {
         while pendingAsk == askId {
             do {
                 let state: AskStatus = try await API.get(["api", "ask", askId])
-                turns[index].steps = state.steps ?? []
+                update(turnId) { $0.steps = state.steps ?? [] }
                 if state.status == "done" {
-                    turns[index].answer = state.answer ?? ""
-                    turns[index].links = state.links ?? [:]
+                    update(turnId) {
+                        $0.answer = state.answer ?? ""
+                        $0.links = state.links ?? [:]
+                    }
                     title = state.title ?? title
                 } else if state.status == "failed" {
-                    turns[index].error = state.error ?? "Failed"
+                    update(turnId) { $0.error = state.error ?? "Failed" }
                 }
                 if state.status != "working" {
                     pendingAsk = nil
@@ -90,7 +98,7 @@ final class Chat {
                     return
                 }
             } catch {
-                turns[index].error = error.localizedDescription
+                update(turnId) { $0.error = error.localizedDescription }
                 pendingAsk = nil
                 return
             }
@@ -275,8 +283,8 @@ struct ChatView: View {
             } else if let answer = turn.answer {
                 AnswerText(text: answer, links: turn.links)
                 if thingsEnabled {
-                TodoPanel(state: Binding(get: { store.chat.turns[index].things },
-                                         set: { store.chat.turns[index].things = $0 }),
+                TodoPanel(state: Binding(get: { store.chat.turns.first { $0.id == turn.id }?.things ?? .idle },
+                                         set: { value in store.chat.update(turn.id) { $0.things = value } }),
                           find: {
                               guard let id = store.chat.conversationId else { throw ServerError("The conversation is not saved yet") }
                               return try await API.post(["api", "conversations", id, "todos"], ["turn": index])

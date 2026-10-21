@@ -778,7 +778,7 @@ async function renderNote(id, body) {
         <label>Model
           <select id="backend">
             <option value="local" ${backend === "local" ? "selected" : ""}>Local, on this Mac</option>
-            <option value="claude" ${backend === "claude" ? "selected" : ""} ${lookups.claude_ready ? "" : "disabled"}>Claude API, sends the transcript text${lookups.claude_ready ? "" : " (needs ANTHROPIC_API_KEY)"}</option>
+            <option value="claude" ${backend === "claude" ? "selected" : ""} ${lookups.claude_ready ? "" : "disabled"}>Claude API, sends the transcript text${lookups.claude_ready ? "" : " (needs an API key in Settings)"}</option>
           </select>
         </label>
         <label>Project
@@ -1130,7 +1130,7 @@ async function renderAsk() {
       <div class="page ask">
         <h1>Ask</h1>
         <div class="sub">Ask about your meetings, such as what you agreed with someone or where a project stands. Claude looks through your notes and transcripts to answer, so the parts it reads are sent to Anthropic.</div>
-        ${lookups.claude_ready ? "" : `<div class="card">Add ANTHROPIC_API_KEY to .env and restart the app to ask questions.</div>`}
+        ${lookups.claude_ready ? "" : `<div class="card">Add your Anthropic API key in Settings to ask questions.</div>`}
         ${box}
         ${table()}
       </div>`;
@@ -1288,7 +1288,7 @@ async function renderSettings() {
         </div>
         <h2>Claude</h2>
         <div class="card setting">
-          <div class="main"><b>Anthropic API key</b><div class="hint">${s.key ? "Read from ANTHROPIC_API_KEY in .env." : "Add ANTHROPIC_API_KEY to .env and restart the app."}</div></div>
+          <div class="main"><b>Anthropic API key</b><div class="hint">${s.key_source === "keychain" ? "Kept in the macOS Keychain. Change it in the native app's Settings." : s.key ? "Read from ANTHROPIC_API_KEY in .env. The native app's Settings can move it to the Keychain." : "Add it in the native app's Settings."}</div></div>
           <code class="key">${s.key ? esc(s.key) : "not set"}</code>
         </div>
         <div class="card setting">

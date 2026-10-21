@@ -23,7 +23,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from local_transcription import ask, audio, directory, library, notes, pipeline, plaud, projects, render, settings, things, vocab
+from local_transcription import ask, audio, directory, keychain, library, notes, pipeline, plaud, projects, render, settings, things, vocab
 
 # config
 BASE_DIR = Path(__file__).parent.parent
@@ -284,6 +284,10 @@ class SendRequest(BaseModel):
     replace: bool = False
 
 
+class KeyRequest(BaseModel):
+    key: str
+
+
 class NoteText(BaseModel):
     markdown: str
 
@@ -296,6 +300,7 @@ class DetailsRequest(BaseModel):
 # main
 def create_app():
     app = FastAPI(title="Boswell", docs_url=None, redoc_url=None)
+    keychain.load()
     jobs = Jobs()
     pipeline.register_existing()
     # wavs rebuilt to replay an archived meeting are not kept between launches. a meeting with
@@ -320,11 +325,43 @@ def create_app():
     def settings_state():
         return {**settings.load(), "claude_model": settings.claude_model(), "accents": settings.ACCENTS,
                 "models": [{"id": k, **v} for k, v in settings.MODELS.items()],
-                "key": settings.masked_key(), "usage": library.usage_totals()}
+                "key": settings.masked_key(), "key_source": keychain.source(), "usage": library.usage_totals()}
 
     @app.get("/api/settings")
     def get_settings():
         return settings_state()
+
+    # the anthropic key goes in the keychain. it is never logged or sent back, only its masked form
+    @app.put("/api/settings/key")
+    def save_key(request: KeyRequest):
+        try:
+            keychain.save(request.key)
+        except ValueError as err:
+            raise HTTPException(400, str(err))
+        return settings_state()
+
+    @app.delete("/api/settings/key")
+    def remove_key():
+        keychain.remove()
+        return settings_state()
+
+    @app.post("/api/settings/key/move")
+    def move_key():
+        try:
+            keychain.move_from_env()
+        except ValueError as err:
+            raise HTTPException(400, str(err))
+        return settings_state()
+
+    @app.post("/api/settings/key/check")
+    def check_key():
+        # listing models is free, and fails the same way a real request would on a bad key
+        try:
+            ask._client().models.list(limit=1)
+        except Exception as err:
+            message = getattr(err, "message", None) or type(err).__name__
+            return {"ok": False, "error": str(message)}
+        return {"ok": True}
 
     @app.put("/api/settings")
     def put_settings(request: SettingsRequest):
@@ -711,7 +748,7 @@ def create_app():
         if request.backend not in notes.BACKENDS:
             raise HTTPException(400, f"unknown backend {request.backend}")
         if request.backend == "claude" and not os.environ.get("ANTHROPIC_API_KEY"):
-            raise HTTPException(400, "add ANTHROPIC_API_KEY to .env and restart the app to use Claude")
+            raise HTTPException(400, "add your Anthropic API key in Settings to use Claude")
         project = request.project.strip() if request.project and request.project.strip() else None
         return jobs.add_note(meeting_id, request.backend, project)
 

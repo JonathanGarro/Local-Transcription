@@ -244,7 +244,7 @@ struct NoteView: View {
                             .foregroundStyle(.secondary)
                     }
                     if !claudeReady {
-                        Text("Add ANTHROPIC_API_KEY to .env and restart the app to find to-dos.")
+                        Text("Add your Anthropic API key in Settings to find to-dos.")
                             .foregroundStyle(.orange)
                     }
                 }
@@ -283,7 +283,7 @@ struct NoteView: View {
                 }
             } footer: {
                 Text(lookups?.claudeReady == true ? "Claude reads the transcript text only, never the audio."
-                     : "Add ANTHROPIC_API_KEY to .env to use Claude.")
+                     : "Add your Anthropic API key in Settings to use Claude.")
                     .foregroundStyle(.secondary)
             }
             Button("Write Note") { Task { await write() } }

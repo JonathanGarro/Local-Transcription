@@ -15,7 +15,7 @@ import os
 import re
 from datetime import datetime
 
-from local_transcription import library, settings
+from local_transcription import keychain, library, settings
 
 # config
 BACKENDS = ["local", "claude"]
@@ -153,8 +153,9 @@ def run_local(system, user, progress=None):
 def run_claude(system, user, progress=None):
     import anthropic
 
+    keychain.load()
     if not os.environ.get("ANTHROPIC_API_KEY"):
-        raise RuntimeError("ANTHROPIC_API_KEY is not set in .env, add it or use the local backend")
+        raise RuntimeError("no Anthropic API key, add one in Settings or use the local backend")
     model_name = _models()["claude_model"]
     if progress:
         progress(f"sending the transcript text to {model_name}")

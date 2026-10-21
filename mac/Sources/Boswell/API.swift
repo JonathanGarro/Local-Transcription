@@ -259,7 +259,14 @@ struct SettingsState: Codable {
     let accents: [String]
     let models: [ClaudeModel]
     let key: String?
+    // "keychain", "env", or nil when there is no key
+    let keySource: String?
     let usage: Usage
+}
+
+struct KeyCheck: Codable {
+    let ok: Bool
+    let error: String?
 }
 
 struct SettingsChange: Encodable {
@@ -447,6 +454,12 @@ enum API {
         request.httpMethod = "PUT"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try encoder.encode(body)
+        return try await send(request)
+    }
+
+    static func delete<T: Decodable>(_ parts: [String]) async throws -> T {
+        var request = URLRequest(url: url(parts))
+        request.httpMethod = "DELETE"
         return try await send(request)
     }
 

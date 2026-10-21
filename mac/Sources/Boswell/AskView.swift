@@ -229,7 +229,7 @@ struct ChatView: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: 460)
             if !store.chat.claudeReady {
-                Label("Add ANTHROPIC_API_KEY to .env and restart the app to ask questions.", systemImage: "key")
+                Label("Add your Anthropic API key in Settings to ask questions.", systemImage: "key")
                     .foregroundStyle(.orange)
             }
         }

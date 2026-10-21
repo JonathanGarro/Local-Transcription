@@ -13,7 +13,7 @@ import os
 import re
 from pathlib import Path
 
-from local_transcription import library, pipeline, plaud, settings
+from local_transcription import keychain, library, pipeline, plaud, settings
 
 # config
 MAX_OUTPUT_TOKENS = 16000
@@ -232,8 +232,9 @@ def saveable(messages):
 def _client():
     import anthropic
 
+    keychain.load()
     if not os.environ.get("ANTHROPIC_API_KEY"):
-        raise RuntimeError("ANTHROPIC_API_KEY is not set in .env")
+        raise RuntimeError("no Anthropic API key, add one in Settings")
     return anthropic.Anthropic()
 
 

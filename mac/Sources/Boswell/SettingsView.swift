@@ -3,6 +3,10 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(Store.self) private var store
     @State private var settings: SettingsState?
+    @State private var enteringKey = false
+    @State private var confirmRemove = false
+    @State private var check: KeyCheck?
+    @State private var checking = false
     @AppStorage(Prefs.askTodos) private var askTodos = true
     @AppStorage(Prefs.things) private var thingsEnabled = true
     @AppStorage(Prefs.openAfterSend) private var openAfterSend = false
@@ -64,13 +68,36 @@ struct SettingsView: View {
 
             Section("Claude") {
                 LabeledContent {
-                    Text(s.key ?? "not set")
+                    // only ever the masked key, a new one is pasted in rather than shown
+                    Text(s.key.map { "••••" + $0.suffix(3) } ?? "not set")
                         .font(.system(.body, design: .monospaced))
                         .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
                 } label: {
                     Text("Anthropic API key")
-                    Text(s.key != nil ? "Read from ANTHROPIC_API_KEY in .env." : "Add ANTHROPIC_API_KEY to .env and restart the app.")
+                    Text(keyHint(s))
+                }
+                HStack {
+                    if s.keySource == "env" {
+                        Button("Move to Keychain") { Task { await keyAction { try await API.post(["api", "settings", "key", "move"]) } } }
+                            .buttonStyle(.borderedProminent)
+                            .help("Copy the key into the Keychain and take it out of .env")
+                    }
+                    Button(s.key == nil ? "Add Key..." : "Replace Key...") { enteringKey = true }
+                    if s.key != nil {
+                        Button(checking ? "Checking" : "Check") { Task { await checkKey() } }
+                            .disabled(checking)
+                            .help("Make a free request to Anthropic to see that the key works")
+                    }
+                    if s.keySource == "keychain" {
+                        Button("Remove Key...", role: .destructive) { confirmRemove = true }
+                    }
+                    Spacer()
+                    if let check {
+                        Label(check.ok ? "The key works" : check.error ?? "The key didn't work",
+                              systemImage: check.ok ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                            .foregroundStyle(check.ok ? .green : .red)
+                            .lineLimit(2)
+                    }
                 }
                 Picker(selection: Binding(get: { s.claudeModel }, set: { id in
                     Task { await save(SettingsChange(claudeModel: id)) }
@@ -114,6 +141,44 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(maxWidth: 680)
         .frame(maxWidth: .infinity)
+        .sheet(isPresented: $enteringKey) {
+            KeySheet { key in await keyAction { try await API.put(["api", "settings", "key"], ["key": key]) } }
+        }
+        .confirmationDialog("Remove the API key?", isPresented: $confirmRemove) {
+            Button("Remove Key", role: .destructive) { Task { await keyAction { try await API.delete(["api", "settings", "key"]) } } }
+        } message: {
+            Text("It's deleted from the Keychain, and Ask and Claude notes stop working until you add one again.")
+        }
+    }
+
+    private func keyHint(_ s: SettingsState) -> String {
+        switch s.keySource {
+        case "keychain": return "Kept in the macOS Keychain. Used by this app, the web version and the scripts."
+        case "env": return "Read from ANTHROPIC_API_KEY in .env. Move it to the Keychain to keep it out of a plain text file."
+        default: return "Needed for Ask, finding to-dos and Claude notes. Create one in the Anthropic Console."
+        }
+    }
+
+    // a key change, then everything that depends on having a key looks again
+    @discardableResult
+    private func keyAction(_ request: () async throws -> SettingsState) async -> Bool {
+        do {
+            let updated = try await request()
+            settings = updated
+            check = nil
+            store.chat.claudeReady = updated.key != nil
+            store.revision += 1
+            return true
+        } catch {
+            store.show(error.localizedDescription)
+            return false
+        }
+    }
+
+    private func checkKey() async {
+        checking = true
+        defer { checking = false }
+        check = try? await API.post(["api", "settings", "key", "check"])
     }
 
     private func tile(_ value: String, _ label: String) -> some View {
@@ -145,6 +210,48 @@ struct SettingsView: View {
             let updated: SettingsState = try await API.put(["api", "settings"], change)
             settings = updated
             store.accent = updated.accent
+        }
+    }
+}
+
+// pastes a new key in a password field, so it is never shown
+struct KeySheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let save: (String) async -> Bool
+    @State private var key = ""
+    @State private var saving = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Anthropic API Key").font(.headline)
+            Text("Paste a key from the Anthropic Console. It's saved in the macOS Keychain and only shown masked after this.")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            SecureField("sk-ant-...", text: $key)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit { Task { await submit() } }
+            HStack {
+                Link("Open the Anthropic Console", destination: URL(string: "https://console.anthropic.com/settings/keys")!)
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button(saving ? "Saving" : "Save") { Task { await submit() } }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(saving || key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 460)
+    }
+
+    private func submit() async {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        saving = true
+        defer { saving = false }
+        if await save(trimmed) {
+            key = ""
+            dismiss()
         }
     }
 }

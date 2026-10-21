@@ -23,6 +23,7 @@ struct NoteView: View {
     @AppStorage(Prefs.askTodos) private var askTodos = true
     @AppStorage(Prefs.things) private var thingsEnabled = true
     @AppStorage(Prefs.openAfterSend) private var openAfterSend = false
+    @AppStorage(Prefs.noteMode) private var mode = NoteMode.preview
 
     private var job: Job? { store.noteJob(meetingId) ?? note?.job.flatMap { $0.running ? $0 : nil } }
     private var sent: Bool { note?.sentPath != nil }
@@ -122,6 +123,14 @@ struct NoteView: View {
                 Divider()
             }
             HStack(spacing: 10) {
+                Picker("Show", selection: $mode) {
+                    Image(systemName: "eye").help("Formatted").tag(NoteMode.preview)
+                    Image(systemName: "chevron.left.forwardslash.chevron.right").help("Markdown, to edit").tag(NoteMode.source)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .help(mode == .preview ? "Showing the note formatted, switch to markdown to edit it" : "Editing the markdown")
                 projectField
                 Spacer()
                 Text(status)
@@ -131,10 +140,15 @@ struct NoteView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
             Divider()
-            TextEditor(text: $text)
-                .font(.system(.body, design: .monospaced))
-                .scrollContentBackground(.hidden)
-                .contentMargins(16, for: .scrollContent)
+            switch mode {
+            case .preview:
+                NoteMarkdown(text: text)
+            case .source:
+                TextEditor(text: $text)
+                    .font(.system(.body, design: .monospaced))
+                    .scrollContentBackground(.hidden)
+                    .contentMargins(16, for: .scrollContent)
+            }
         }
     }
 
@@ -443,6 +457,12 @@ enum Prefs {
     // whether sending a note asks to find its to-dos first
     static let askTodos = "askTodosBeforeSend"
     static let openAfterSend = "openInObsidianAfterSend"
+    // whether a note shows formatted or as markdown to edit
+    static let noteMode = "noteMode"
+}
+
+enum NoteMode: String {
+    case preview, source
 }
 
 enum InspectorTab: String, CaseIterable {

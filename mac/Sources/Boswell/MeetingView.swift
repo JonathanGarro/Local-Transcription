@@ -167,7 +167,7 @@ struct SpeakersView: View {
                 }
                 if open { editor(spk) }
                 if let d = decisions[spk.speaker] {
-                    Label(describe(d), systemImage: "arrow.turn.down.right")
+                    Label(describe(d, for: spk.speaker), systemImage: "arrow.turn.down.right")
                         .font(.callout)
                         .foregroundStyle(store.accentColor)
                 }
@@ -285,6 +285,31 @@ struct SpeakersView: View {
         })
     }
 
+    // the name a speaker will have once saved
+    private func finalName(_ spk: Speaker) -> String? {
+        switch decisions[spk.speaker] {
+        case .name(let name, _): return name.trimmingCharacters(in: .whitespaces)
+        case .skip, .same: return nil
+        case nil: return spk.resolved ? spk.name : nil
+        }
+    }
+
+    // a speaker given the name of another speaker in this meeting is merged into it, since that
+    // means diarization split one person in two. the one already named keeps the voice, or
+    // else the one who spoke longest. returns {source: target}
+    private func splitMerges() -> [String: String] {
+        let named = detail.speakers.filter { !$0.isMic && finalName($0) != nil }
+        var targets: [String: String] = [:]
+        for group in Dictionary(grouping: named, by: { finalName($0)!.lowercased() }).values where group.count > 1 {
+            let chosen = group.filter { if case .name = decisions[$0.speaker] { true } else { false } }
+            guard !chosen.isEmpty else { continue }
+            let target = group.first { decisions[$0.speaker] == nil }
+                ?? group.max { ($0.minutes ?? 0) < ($1.minutes ?? 0) }!
+            for spk in chosen where spk.speaker != target.speaker { targets[spk.speaker] = target.speaker }
+        }
+        return targets
+    }
+
     private func status(_ spk: Speaker) -> String {
         switch spk.status {
         case "mic": return "your mic channel"
@@ -297,12 +322,16 @@ struct SpeakersView: View {
         }
     }
 
-    private func describe(_ d: Decision) -> String {
+    private func describe(_ d: Decision, for speaker: String) -> String {
         switch d {
         case .skip: return "Will be left unnamed"
         case .same(let target):
             return "Will be merged into \(detail.speakers.first { $0.speaker == target }?.label ?? target)"
         case .name(let name, let enroll):
+            if let target = splitMerges()[speaker] {
+                let label = detail.speakers.first { $0.speaker == target }?.label ?? target
+                return "Will be merged into \(label), the same person\(enroll ? ", with the voice added to their profile" : "")"
+            }
             let known = people.contains { $0.caseInsensitiveCompare(name) == .orderedSame }
             return "Will be named \(name)\(known ? "" : " (new person)")\(enroll ? "" : ", voice not added to profile")"
         }
@@ -310,7 +339,12 @@ struct SpeakersView: View {
 
     private func apply() async {
         var body = ApplyRequest()
+        let splits = splitMerges()
         for (speaker, d) in decisions {
+            if let target = splits[speaker] {
+                body.merges.append([speaker, target])
+                continue
+            }
             switch d {
             case .name(let name, let enroll):
                 body.names[speaker] = name.trimmingCharacters(in: .whitespaces)
@@ -322,6 +356,16 @@ struct SpeakersView: View {
                     return store.show("Two speakers are each marked as the same as the other, keep only one")
                 }
                 body.merges.append([speaker, target])
+            }
+        }
+        // the speaker a split joins takes the voice into the profile when any part of it asked
+        for target in Set(splits.values) {
+            let parts = splits.filter { $0.value == target }.map(\.key) + [target]
+            let wanted = parts.contains { if case .name(_, true) = decisions[$0] { true } else { false } }
+            guard let name = finalName(detail.speakers.first { $0.speaker == target }!) else { continue }
+            if wanted {
+                body.names[target] = name
+                body.noEnroll.removeAll { $0 == target }
             }
         }
         // merge chains resolve in order, so a speaker merged into one that is itself merged goes first

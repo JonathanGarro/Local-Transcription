@@ -284,6 +284,11 @@ struct SettingsState: Codable {
     let todoistToken: String?
     let todoistSource: String?
     let apple: AppleIntelligence
+    // obsidian folders, with "settings" or "env" for where each was set
+    let meetingNotesDir: String?
+    let meetingNotesDirSource: String?
+    let peopleDir: String?
+    let peopleDirSource: String?
 }
 
 struct AppleIntelligence: Codable {
@@ -301,6 +306,9 @@ struct SettingsChange: Encodable {
     var claudeModel: String?
     var todoApp: String?
     var todoModel: String?
+    // "" goes back to the folder in .env
+    var meetingNotesDir: String?
+    var peopleDir: String?
 }
 
 struct Count: Codable, Hashable {

@@ -1,6 +1,6 @@
 """import meeting notes already in obsidian, from before this app.
 
-each note in MEETING_NOTES_DIR becomes an archived meeting with no recording. the note stays
+each note in the meeting notes folder chosen in settings (or MEETING_NOTES_DIR in .env) becomes an archived meeting with no recording. the note stays
 in the vault and is read from there, so obsidian keeps the only copy. the people and project
 in its frontmatter are linked to the library, so the people page counts those meetings too.
 notes the app sent itself are skipped, and running it again only adds notes new since.
@@ -49,7 +49,7 @@ def import_notes(folder=None):
     names, {name: count} for people the library does not know)."""
     folder = Path(folder) if folder else pipeline.notes_dir()
     if not folder or not folder.is_dir():
-        raise ValueError("set MEETING_NOTES_DIR in .env to your obsidian meeting notes folder")
+        raise ValueError("choose your Obsidian meeting notes folder in Settings")
     meetings = library.meetings()
     known_ids = set(meetings.get("meeting_id", []))
     known_paths = set(meetings["sent_path"].dropna()) if "sent_path" in meetings else set()

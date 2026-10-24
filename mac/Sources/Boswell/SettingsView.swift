@@ -89,6 +89,14 @@ struct SettingsView: View {
             }
 
             Section("Obsidian") {
+                folderRow("Meeting notes folder", path: s.meetingNotesDir, source: s.meetingNotesDirSource,
+                          purpose: "Where Send to Obsidian puts notes, and where imported notes are read from.") {
+                    SettingsChange(meetingNotesDir: $0)
+                }
+                folderRow("People folder", path: s.peopleDir, source: s.peopleDirSource,
+                          purpose: "One note per person, where their teams and organizations are read and saved.") {
+                    SettingsChange(peopleDir: $0)
+                }
                 Toggle(isOn: $openAfterSend) {
                     Text("Open notes in Obsidian after sending")
                     Text("Shows the note in Obsidian as soon as it's sent.")
@@ -262,6 +270,41 @@ struct SettingsView: View {
         while plaud?.signingIn == true, !Task.isCancelled {
             try? await Task.sleep(for: .seconds(1.5))
             if let next: PlaudAccount = try? await API.get(["api", "plaud", "account"]) { plaud = next }
+        }
+    }
+
+    // a folder in the vault, picked in an open panel. one chosen here wins over .env
+    private func folderRow(_ title: String, path: String?, source: String?, purpose: String,
+                           change: @escaping (String) -> SettingsChange) -> some View {
+        LabeledContent {
+            HStack {
+                if source == "settings" {
+                    Button("Reset") { Task { await save(change("")) } }
+                        .help("Go back to the folder in .env, if it names one")
+                }
+                Button("Choose...") {
+                    let panel = NSOpenPanel()
+                    panel.canChooseFiles = false
+                    panel.canChooseDirectories = true
+                    panel.canCreateDirectories = true
+                    panel.prompt = "Choose"
+                    panel.message = purpose
+                    if let path { panel.directoryURL = URL(fileURLWithPath: path) }
+                    if panel.runModal() == .OK, let url = panel.url {
+                        Task { await save(change(url.path)) }
+                    }
+                }
+            }
+        } label: {
+            Text(title)
+            if let path {
+                Text(path)
+                    .truncationMode(.middle)
+                    .lineLimit(1)
+                    .help(path)
+            }
+            Text(path == nil ? "\(purpose) Not chosen yet."
+                 : source == "env" ? "\(purpose) Set in .env." : purpose)
         }
     }
 

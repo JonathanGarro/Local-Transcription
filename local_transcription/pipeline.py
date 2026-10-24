@@ -17,7 +17,7 @@ from urllib.parse import quote
 import numpy as np
 import pandas as pd
 
-from local_transcription import asr, audio, diarize, embed, match, library, merge, notes, render, vocab
+from local_transcription import asr, audio, diarize, embed, match, library, merge, notes, render, settings, vocab
 
 # config
 OUTPUT_DIR = Path(__file__).parent.parent / "outputs"
@@ -673,8 +673,7 @@ def note_diff(out_dir, context=3):
 
 
 def notes_dir():
-    folder = os.environ.get("MEETING_NOTES_DIR")
-    return Path(folder).expanduser() if folder else None
+    return settings.folder("meeting_notes_dir")[0]
 
 
 def note_filename(out_dir):
@@ -819,7 +818,7 @@ def send_note(out_dir, replace=False):
     out_dir = Path(out_dir)
     folder = notes_dir()
     if not folder:
-        raise ValueError("set MEETING_NOTES_DIR in .env to your obsidian meeting notes folder")
+        raise ValueError("choose your Obsidian meeting notes folder in Settings")
     if not folder.is_dir():
         raise ValueError(f"the meeting notes folder does not exist: {folder}")
     if not (out_dir / "note.md").exists():

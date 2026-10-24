@@ -1,6 +1,6 @@
 """people's teams and organizations from the obsidian people folder, one note per person.
 
-PEOPLE_DIR in .env points at the folder. obsidian is the source of truth: a person's teams
+the folder is chosen in settings, or PEOPLE_DIR in .env. obsidian is the source of truth: a person's teams
 and organizations are read from their note whenever a note or the people page needs them,
 and saving them in the app writes them back into that note's frontmatter, leaving every
 other line alone. the team and organization pickers list the notes in the Teams and
@@ -8,11 +8,12 @@ Organizations folders next to it.
 """
 
 import json
-import os
 import re
 from pathlib import Path
 
 import yaml
+
+from local_transcription import settings
 
 # config
 KEYS = ("teams", "organizations")
@@ -23,8 +24,7 @@ NEW_NOTE = "---\nnotes:\nteams:\norganizations:\n---\n# {name}\n## Context\n\n##
 
 # helpers
 def people_dir():
-    folder = os.environ.get("PEOPLE_DIR")
-    return Path(folder).expanduser() if folder else None
+    return settings.folder("people_dir")[0]
 
 
 def _frontmatter(text):
@@ -94,7 +94,7 @@ def save(name, teams=None, organizations=None):
     """write teams and organizations into a person's note. None leaves that one as it is."""
     folder = people_dir()
     if not folder or not folder.is_dir():
-        raise ValueError("set PEOPLE_DIR in .env to your obsidian people folder")
+        raise ValueError("choose your Obsidian people folder in Settings")
     if "/" in name:
         raise ValueError(f"{name} can't be a note name")
     path = next((p for p in folder.glob("*.md") if p.stem.lower() == name.lower()), folder / f"{name}.md")

@@ -239,6 +239,9 @@ class SettingsRequest(BaseModel):
     claude_model: str | None = None
     todo_app: str | None = None
     todo_model: str | None = None
+    # "" clears one, going back to .env
+    meeting_notes_dir: str | None = None
+    people_dir: str | None = None
 
 
 class TodosRequest(BaseModel):
@@ -350,7 +353,15 @@ def create_app():
                 "key": settings.masked_key(), "key_source": keychain.source(), "usage": library.usage_totals(),
                 "plaud_installed": plaud.installed(), "things_installed": settings.THINGS_APP.exists(),
                 "todoist_token": todoist.masked_token(), "todoist_source": todoist.token_source(),
-                "apple": apple.availability()}
+                "apple": apple.availability(), **folder_state()}
+
+    def folder_state():
+        """each obsidian folder in use, and whether it was chosen in settings or comes from .env."""
+        state = {}
+        for key in settings.FOLDERS:
+            path, source = settings.folder(key)
+            state.update({key: str(path) if path else None, f"{key}_source": source})
+        return state
 
     @app.get("/api/settings")
     def get_settings():
@@ -414,7 +425,8 @@ def create_app():
     def put_settings(request: SettingsRequest):
         try:
             settings.save(accent=request.accent, claude_model=request.claude_model, todo_app=request.todo_app,
-                          todo_model=request.todo_model)
+                          todo_model=request.todo_model, meeting_notes_dir=request.meeting_notes_dir,
+                          people_dir=request.people_dir)
         except ValueError as err:
             raise HTTPException(400, str(err))
         return settings_state()

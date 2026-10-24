@@ -65,7 +65,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func snapshotIfAsked() {
         guard let path = ProcessInfo.processInfo.environment["BOSWELL_SNAPSHOT"] else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-            guard let view = NSApp.windows.first(where: \.isVisible)?.contentView?.superview,
+            // a sheet, such as setup, is a window of its own over the main one
+            let window = NSApp.windows.first(where: \.isVisible)
+            guard let view = (window?.attachedSheet ?? window)?.contentView?.superview,
                   let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
             view.cacheDisplay(in: view.bounds, to: rep)
             try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))

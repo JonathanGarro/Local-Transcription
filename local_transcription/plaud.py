@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from local_transcription import library, merge, obsidian, pipeline
+from local_transcription import library, merge, obsidian, pipeline, settings
 
 # config
 PLAUD_TRANSCRIPT = "plaud_transcript.txt"
@@ -305,7 +305,7 @@ def reprocess(meeting_id, progress=print):
     # some plaud uploads are stereo zoom recordings, which split mode handles as the app does.
     # with no transcript to reuse, the recording is transcribed here
     pipeline.run(source, source_type="plaud", title=title, out_dir=out_dir, progress=progress,
-                 owner=os.environ.get("MIC_OWNER"), mic_channel=1 if os.environ.get("MIC_CHANNEL") == "right" else 0,
+                 owner=settings.owner(), mic_channel=1 if settings.mic_channel() == "right" else 0,
                  transcript=transcript if len(lines) else None)
     suggested = found.get("suggested", {})
     (out_dir / pipeline.NOTE_NAMES).write_text(json.dumps(suggested, indent=2))

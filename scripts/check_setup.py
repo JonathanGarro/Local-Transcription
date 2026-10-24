@@ -21,6 +21,10 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 # values already set in the shell take precedence over .env
 load_dotenv(BASE_DIR / ".env")
+sys.path.insert(0, str(BASE_DIR))
+
+from local_transcription import hf  # noqa: E402
+
 OUTPUT_DIR = BASE_DIR / "outputs" / "check"
 MLX_WHISPER_REPO = "mlx-community/whisper-large-v3-turbo"
 FASTER_WHISPER_MODEL = "large-v3-turbo"
@@ -78,16 +82,16 @@ def check_ffmpeg():
 
 
 def check_token(offline):
-    token = os.environ.get("HF_TOKEN")
+    token = hf.token()
     if token:
         if offline:
-            return "HF_TOKEN set (not needed in offline mode)"
+            return "token set (not needed in offline mode)"
         from huggingface_hub import whoami
         user = whoami(token=token)["name"]
-        return f"HF_TOKEN valid for user {user}"
+        return f"token valid for user {user}"
     if offline:
-        return "HF_TOKEN not set (fine in offline mode)"
-    raise RuntimeError("HF_TOKEN is not set, copy .env.example to .env and add your token")
+        return "token not set (fine in offline mode)"
+    raise RuntimeError("no Hugging Face token, add one in the app's setup or Settings, or HF_TOKEN in .env")
 
 
 def check_mlx_whisper(wav, offline):
@@ -124,7 +128,7 @@ def check_diarization(wav):
     import torch
     from pyannote.audio import Pipeline
 
-    pipeline = Pipeline.from_pretrained(DIARIZATION_REPO, token=os.environ.get("HF_TOKEN"))
+    pipeline = Pipeline.from_pretrained(DIARIZATION_REPO, token=hf.token())
     if pipeline is None:
         raise RuntimeError(f"could not load {DIARIZATION_REPO}, accept its terms at "
                            f"https://hf.co/{DIARIZATION_REPO} and check the token")

@@ -28,7 +28,7 @@ def main():
     parser.add_argument("--backend", choices=notes.BACKENDS, default=notes.default_backend(),
                         help="local runs on this mac, claude sends the transcript text to anthropic")
     parser.add_argument("--project", help="file the meeting under this project (created if new)")
-    parser.add_argument("--owner", help="whose action items to list (default MIC_OWNER in .env)")
+    parser.add_argument("--owner", help="whose action items to list (default your name from settings)")
     parser.add_argument("--template", choices=templates.names(),
                         help="the note template to write it in (default the one chosen in settings)")
     args = parser.parse_args()

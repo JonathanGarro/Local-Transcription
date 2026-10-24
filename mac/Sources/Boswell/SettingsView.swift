@@ -12,6 +12,9 @@ struct SettingsView: View {
     @State private var confirmRemoveToken = false
     @State private var tokenCheck: KeyCheck?
     @State private var templates: Templates?
+    @State private var owner = ""
+    @State private var enteringHFToken = false
+    @State private var hfCheck: KeyCheck?
     // the template open in the editor, a copy of a built-in one to start from when new
     @State private var editing: TemplateDraft?
     @AppStorage(Prefs.askTodos) private var askTodos = true
@@ -28,12 +31,37 @@ struct SettingsView: View {
         .task {
             settings = try? await API.get(["api", "settings"])
             templates = try? await API.get(["api", "templates"])
+            owner = settings?.owner ?? ""
             if settings?.plaudInstalled == true { await watchPlaud(try? await API.get(["api", "plaud", "account"])) }
         }
     }
 
     private func form(_ s: SettingsState) -> some View {
         Form {
+            Section("You") {
+                LabeledContent {
+                    TextField("Your name", text: $owner, prompt: Text("Your full name"))
+                        .labelsHidden()
+                        .multilineTextAlignment(.leading)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 240)
+                        .onSubmit { Task { await save(SettingsChange(owner: owner.trimmingCharacters(in: .whitespaces))) } }
+                } label: {
+                    Text("Your name")
+                    Text(s.ownerSource == "env" ? "Notes are written for you, and your to-dos are the ones found. Set by MIC_OWNER in .env until you change it here."
+                         : "Notes are written for you, and your to-dos are the ones found. Press Return to save.")
+                }
+                Picker(selection: Binding(get: { s.micChannel }, set: { channel in
+                    Task { await save(SettingsChange(micChannel: channel)) }
+                })) {
+                    Text("Left").tag("left")
+                    Text("Right").tag("right")
+                } label: {
+                    Text("Your mic channel")
+                    Text("For call recordings with your mic on one side and the call on the other, like Audio Hijack's.")
+                }
+            }
+
             Section("Appearance") {
                 LabeledContent {
                     HStack(spacing: 10) {
@@ -82,6 +110,16 @@ struct SettingsView: View {
             }
 
             Section("Notes") {
+                Picker(selection: Binding(get: { s.summaryBackend }, set: { backend in
+                    Task { await save(SettingsChange(summaryBackend: backend)) }
+                })) {
+                    Text("A model on this Mac").tag("local")
+                    Text("Claude").tag("claude")
+                } label: {
+                    Text("Write notes with")
+                    Text(s.summaryBackend == "local" ? "Nothing leaves this Mac. A 17 GB download the first time, best with 32 GB of memory or more."
+                         : "Claude reads the transcript text, never the audio, with your API key below.")
+                }
                 Picker(selection: Binding(get: { s.noteTemplate }, set: { name in
                     Task { await save(SettingsChange(noteTemplate: name)) }
                 })) {
@@ -198,7 +236,36 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section("Speaker Detection") {
+                LabeledContent {
+                    Text(s.hfToken.map { "••••" + $0.suffix(3) } ?? "not set")
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                } label: {
+                    Text("Hugging Face token")
+                    Text(s.modelReady ? "The model is downloaded, so the token isn't needed any more."
+                         : "Needed once, to download the speaker detection model, after accepting its terms on Hugging Face.")
+                }
+                HStack {
+                    Button(s.hfToken == nil ? "Add Token..." : "Replace Token...") { enteringHFToken = true }
+                    if s.hfToken != nil {
+                        Button("Check") { Task { hfCheck = try? await API.post(["api", "settings", "hf", "check"]) } }
+                    }
+                    if !s.modelReady, let url = URL(string: s.hfTermsUrl) {
+                        Link("Accept the Terms", destination: url)
+                    }
+                    Spacer()
+                    if let hfCheck {
+                        Label(hfCheck.ok ? "The token works" : hfCheck.error ?? "The token didn't work",
+                              systemImage: hfCheck.ok ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                            .foregroundStyle(hfCheck.ok ? .green : .red)
+                            .lineLimit(2)
+                    }
+                }
+            }
+
             Section("About") {
+                Button("Run Setup Again...") { store.showSetup = true }
                 LabeledContent("Project folder") {
                     Button(Server.shared.projectDir.path) { NSWorkspace.shared.open(Server.shared.projectDir) }
                         .buttonStyle(.link)
@@ -228,6 +295,14 @@ struct SettingsView: View {
                     settings = fresh
                     store.apply(fresh)
                 }
+            }
+        }
+        .sheet(isPresented: $enteringHFToken) {
+            KeySheet(title: "Hugging Face Token",
+                     message: "Create a read token on Hugging Face, with the account that accepted the speaker detection model's terms. It's saved in the macOS Keychain.",
+                     placeholder: "hf_...", linkTitle: "Open Hugging Face's Token Settings",
+                     link: URL(string: "https://huggingface.co/settings/tokens")!) { token in
+                await tokenAction { try await API.put(["api", "settings", "hf"], ["key": token]) }
             }
         }
         .sheet(isPresented: $enteringToken) {

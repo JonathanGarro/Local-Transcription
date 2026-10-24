@@ -22,7 +22,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
-from local_transcription import (ask, audio, directory, keychain, library, notes, pipeline, plaud, projects,
+from local_transcription import (ask, audio, directory, hf, keychain, library, notes, pipeline, plaud, projects,
                                  render, settings, templates, todoist, todos, vocab)
 
 # config
@@ -180,8 +180,8 @@ class Jobs:
             self._update(job, source_type=source_type)
         out_dir, speakers, review = pipeline.run(
             job["path"], source_type=source_type, progress=progress,
-            mic_channel=CHANNELS.get(os.environ.get("MIC_CHANNEL", "left"), 0),
-            owner=os.environ.get("MIC_OWNER"),
+            mic_channel=CHANNELS[settings.mic_channel()],
+            owner=settings.owner(),
             out_dir=pipeline.OUTPUT_DIR / job["meeting_id"] if job.get("meeting_id") else None)
         if job.get("plaud_id"):
             library.save_plaud_import(job["plaud_id"], out_dir.name)
@@ -242,6 +242,11 @@ class SettingsRequest(BaseModel):
     meeting_notes_dir: str | None = None
     people_dir: str | None = None
     note_template: str | None = None
+    # "" clears your name, going back to .env
+    owner: str | None = None
+    mic_channel: str | None = None
+    summary_backend: str | None = None
+    setup_done: bool | None = None
 
 
 class TodosRequest(BaseModel):
@@ -346,7 +351,7 @@ def create_app():
         for m in meetings:
             m["note"] = (pipeline.OUTPUT_DIR / m["meeting_id"] / "note.json").exists()
         return {"jobs": jobs.snapshot(), "meetings": meetings,
-                "owner": os.environ.get("MIC_OWNER")}
+                "owner": settings.owner()}
 
     def vocabulary_state():
         rows = vocab.entries()
@@ -359,7 +364,12 @@ def create_app():
                 "key": settings.masked_key(), "key_source": keychain.source(), "usage": library.usage_totals(),
                 "plaud_installed": plaud.installed(), "things_installed": settings.THINGS_APP.exists(),
                 "todoist_token": todoist.masked_token(), "todoist_source": todoist.token_source(),
-                **folder_state()}
+                **folder_state(), "owner": settings.owner(),
+                "owner_source": "settings" if settings.load()["owner"] else "env" if settings.owner() else None,
+                "mic_channel": settings.mic_channel(), "summary_backend": settings.summary_backend(),
+                "setup_needed": settings.setup_needed(), "people": sorted(set(library.person_names().values())),
+                "hf_token": hf.masked_token(), "hf_source": hf.token_source(), "model_ready": hf.model_ready(),
+                "hf_terms_url": hf.TERMS_URL}
 
     def folder_state():
         """each obsidian folder in use, and whether it was chosen in settings or comes from .env."""
@@ -431,6 +441,28 @@ def create_app():
             raise HTTPException(400, str(err))
         return templates_state()
 
+    # the hugging face token, kept in the keychain, is only needed to download the speaker model
+    @app.put("/api/settings/hf")
+    def save_hf_token(request: KeyRequest):
+        try:
+            hf.save_token(request.key)
+        except ValueError as err:
+            raise HTTPException(400, str(err))
+        return settings_state()
+
+    @app.delete("/api/settings/hf")
+    def remove_hf_token():
+        hf.remove_token()
+        return settings_state()
+
+    @app.post("/api/settings/hf/check")
+    def check_hf_token():
+        try:
+            hf.check()
+        except RuntimeError as err:
+            return {"ok": False, "error": str(err)}
+        return {"ok": True}
+
     # the todoist token goes in the keychain too, and only its masked form comes back
     @app.put("/api/settings/todoist")
     def save_todoist_token(request: KeyRequest):
@@ -458,7 +490,9 @@ def create_app():
         try:
             settings.save(accent=request.accent, claude_model=request.claude_model, todo_app=request.todo_app,
                           meeting_notes_dir=request.meeting_notes_dir,
-                          people_dir=request.people_dir, note_template=request.note_template)
+                          people_dir=request.people_dir, note_template=request.note_template, owner=request.owner,
+                          mic_channel=request.mic_channel, summary_backend=request.summary_backend,
+                          setup_done=request.setup_done)
         except ValueError as err:
             raise HTTPException(400, str(err))
         return settings_state()
@@ -479,7 +513,7 @@ def create_app():
         try:
             saved = library.conversation(conversation_id) or {"turns": [], "messages": [], "title": None}
             text, history, touched = ask.answer(
-                saved["messages"], question, os.environ.get("MIC_OWNER"),
+                saved["messages"], question, settings.owner(),
                 datetime.now().date().isoformat(), progress=lambda step: job["steps"].append(step))
             mentioned = re.findall(r"\(meeting:([^)@]+)", text)
             links = {m: meeting_link(m) for m in dict.fromkeys([*touched, *mentioned])}
@@ -568,7 +602,7 @@ def create_app():
                    "people": library.meeting_people().get(meeting_id, [])}
         try:
             app = todo_projects()
-            found = ask.meeting_todos(meeting_id, meeting, app["projects"], os.environ.get("MIC_OWNER"),
+            found = ask.meeting_todos(meeting_id, meeting, app["projects"], settings.owner(),
                                       datetime.now().date().isoformat(),
                                       [t["title"] for t in library.meeting_things_todos(meeting_id)])
         except RuntimeError as err:
@@ -590,7 +624,7 @@ def create_app():
         try:
             app = todo_projects()
             found = ask.extract_todos(turn["question"], turn["answer"], meetings, app["projects"],
-                                      os.environ.get("MIC_OWNER"), datetime.now().date().isoformat())
+                                      settings.owner(), datetime.now().date().isoformat())
         except RuntimeError as err:
             raise HTTPException(502, str(err))
         file_projects(found, app["projects"], meetings)
@@ -1025,7 +1059,7 @@ def create_app():
 
     @app.get("/api/home")
     def home():
-        return library.home_stats(owner=os.environ.get("MIC_OWNER"))
+        return library.home_stats(owner=settings.owner())
 
     @app.get("/api/people/{person_id}/meetings")
     def person_meetings(person_id: str):

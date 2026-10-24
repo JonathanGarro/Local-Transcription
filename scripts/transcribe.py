@@ -7,7 +7,6 @@ usage:
 """
 
 import argparse
-import os
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -19,7 +18,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 CHANNELS = {"left": 0, "right": 1}
 
-from local_transcription import diarize, match, pipeline  # noqa: E402
+from local_transcription import diarize, match, pipeline, settings  # noqa: E402
 
 
 # main
@@ -37,10 +36,10 @@ def main():
     parser.add_argument("--language", help="force a language code such as en")
     parser.add_argument("--split", default="auto", choices=["auto", "on", "off"],
                         help="split mode for stereo files with your mic on one channel (default auto)")
-    parser.add_argument("--mic-channel", default=os.environ.get("MIC_CHANNEL", "left"),
+    parser.add_argument("--mic-channel", default=settings.mic_channel(),
                         choices=sorted(CHANNELS), help="which channel is your mic in split mode")
-    parser.add_argument("--owner", default=os.environ.get("MIC_OWNER"),
-                        help="name for the mic channel in split mode (default MIC_OWNER in .env)")
+    parser.add_argument("--owner", default=settings.owner(),
+                        help="name for the mic channel in split mode (default your name from settings)")
     args = parser.parse_args()
 
     out_dir, speakers, review = pipeline.run(

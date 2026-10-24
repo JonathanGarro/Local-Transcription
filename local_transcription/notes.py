@@ -48,8 +48,7 @@ def _models():
 
 
 def default_backend():
-    backend = os.environ.get("SUMMARY_BACKEND", "local")
-    return backend if backend in BACKENDS else "local"
+    return settings.summary_backend()
 
 
 def wikilink(name):

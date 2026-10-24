@@ -904,7 +904,7 @@ def write_note(out_dir, backend=None, project=None, owner=None, progress=print, 
     meta, segments, speakers, _ = load_run(out_dir)
     speakers = link_people(speakers)
     backend = backend or notes.default_backend()
-    owner = owner or meta.get("owner") or os.environ.get("MIC_OWNER") or DEFAULT_OWNER
+    owner = owner or meta.get("owner") or settings.owner() or DEFAULT_OWNER
     owner_id = library.find_person(owner)
     date = meta.get("date") or render.title_and_date(meta["source"])[1]
     lines = notes.transcript_lines(segments, speakers)

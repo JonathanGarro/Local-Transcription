@@ -1,12 +1,12 @@
 """speaker diarization with pyannote."""
 
-import os
-
 import numpy as np
 import pandas as pd
 
+from local_transcription import hf
+
 # config
-DIARIZATION_REPO = "pyannote/speaker-diarization-community-1"
+DIARIZATION_REPO = hf.DIARIZATION_REPO
 MIN_SPEAKERS = 2
 MAX_SPEAKERS = 8
 # speech regions closer than this are joined, and each region is padded on both sides
@@ -19,9 +19,10 @@ def load_pipeline():
     import torch
     from pyannote.audio import Pipeline
 
-    pipeline = Pipeline.from_pretrained(DIARIZATION_REPO, token=os.environ.get("HF_TOKEN"))
+    pipeline = Pipeline.from_pretrained(DIARIZATION_REPO, token=hf.token())
     if pipeline is None:
-        raise RuntimeError(f"could not load {DIARIZATION_REPO}, run uv run scripts/check_setup.py")
+        raise RuntimeError("couldn't load the speaker detection model. Add a Hugging Face token in Settings, "
+                           "after accepting the model's terms")
     device = "mps" if torch.backends.mps.is_available() else "cpu"
     pipeline.to(torch.device(device))
     return pipeline

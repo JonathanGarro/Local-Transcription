@@ -291,6 +291,22 @@ struct SettingsState: Codable {
     let peopleDir: String?
     let peopleDirSource: String?
     let noteTemplate: String
+    // your name, and whether it was set here ("settings") or in .env
+    let owner: String?
+    let ownerSource: String?
+    // "left" or "right"
+    let micChannel: String
+    // "local" or "claude"
+    let summaryBackend: String
+    // no name anywhere and setup not finished, so it's shown when the app opens
+    let setupNeeded: Bool
+    let people: [String]
+    // only ever masked
+    let hfToken: String?
+    let hfSource: String?
+    // whether the speaker detection model is downloaded, so no token is needed
+    let modelReady: Bool
+    let hfTermsUrl: String
 }
 
 struct NoteTemplate: Codable, Hashable {
@@ -317,6 +333,11 @@ struct SettingsChange: Encodable {
     var meetingNotesDir: String?
     var peopleDir: String?
     var noteTemplate: String?
+    // "" goes back to MIC_OWNER in .env
+    var owner: String?
+    var micChannel: String?
+    var summaryBackend: String?
+    var setupDone: Bool?
 }
 
 struct Count: Codable, Hashable {

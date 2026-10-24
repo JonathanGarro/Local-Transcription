@@ -80,6 +80,8 @@ final class Store {
     var owner: String?
     // whether the plaud cli is installed, so the plaud page can be shown
     var plaudInstalled = false
+    // the setup shown when the app is first opened, or again from settings
+    var showSetup = ProcessInfo.processInfo.environment["BOSWELL_SETUP_STEP"] != nil
     // the to-do app chosen in settings, nil when the to-do features are off
     var todoApp: String?
     var todoAppName: String { Self.todoApps[todoApp ?? ""] ?? "your to-do app" }
@@ -110,6 +112,7 @@ final class Store {
         accent = settings.accent
         plaudInstalled = settings.plaudInstalled
         todoApp = settings.todoApp == "none" ? nil : settings.todoApp
+        if settings.setupNeeded { showSetup = true }
     }
 
     // the plaud page needs the cli and the switch in settings on

@@ -85,6 +85,7 @@ struct ContentView: View {
                     .allowsHitTesting(false)
             }
         }
+        .sheet(isPresented: $store.showSetup) { SetupView() }
         .fileImporter(isPresented: $store.importing, allowedContentTypes: [.mpeg4Audio, .mp3, .wav],
                       allowsMultipleSelection: true) { result in
             if case .success(let urls) = result { Task { await store.importFiles(urls) } }

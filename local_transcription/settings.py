@@ -16,6 +16,10 @@ ACCENTS = ["blue", "red", "green", "purple", "orange"]
 # where found to-dos go, one app at a time. "none" turns the to-do features off
 TODO_APPS = ["things", "todoist", "reminders", "none"]
 THINGS_APP = Path("/Applications/Things3.app")
+# which channel of a zoom recording split into two is your mic
+MIC_CHANNELS = ["left", "right"]
+# what writes notes: an mlx model on this mac, or claude
+SUMMARY_BACKENDS = ["local", "claude"]
 # obsidian folders chosen on the settings page, which win over the same names in .env
 FOLDERS = {"meeting_notes_dir": "MEETING_NOTES_DIR", "people_dir": "PEOPLE_DIR"}
 DEFAULT_CLAUDE_MODEL = "claude-opus-5-5"
@@ -50,7 +54,13 @@ def load():
             **{key: saved.get(key) or None for key in FOLDERS},
             # a template of your own that was deleted falls back to the standard one
             "note_template": saved.get("note_template") if saved.get("note_template") in templates.names()
-            else templates.DEFAULT}
+            else templates.DEFAULT,
+            # who the app is for, and the rest asked for when it's first opened. each falls back to .env
+            "owner": str(saved.get("owner") or "").strip() or None,
+            "mic_channel": saved.get("mic_channel") if saved.get("mic_channel") in MIC_CHANNELS else None,
+            "summary_backend": saved.get("summary_backend") if saved.get("summary_backend") in SUMMARY_BACKENDS
+            else None,
+            "setup_done": bool(saved.get("setup_done"))}
 
 
 def save(**changes):
@@ -61,6 +71,12 @@ def save(**changes):
         raise ValueError(f"model must be one of {', '.join(MODELS)}")
     if changes.get("todo_app") is not None and changes["todo_app"] not in TODO_APPS:
         raise ValueError(f"to-do app must be one of {', '.join(TODO_APPS)}")
+    if changes.get("mic_channel") and changes["mic_channel"] not in MIC_CHANNELS:
+        raise ValueError(f"the mic channel must be one of {', '.join(MIC_CHANNELS)}")
+    if changes.get("summary_backend") and changes["summary_backend"] not in SUMMARY_BACKENDS:
+        raise ValueError(f"notes are written by one of {', '.join(SUMMARY_BACKENDS)}")
+    if changes.get("owner") is not None:
+        changes["owner"] = changes["owner"].strip()
     if changes.get("note_template") is not None and changes["note_template"] not in templates.names():
         raise ValueError(f"there's no note template named {changes['note_template']}")
     for key in FOLDERS:
@@ -85,6 +101,29 @@ def folder(key):
     if not chosen:
         return None, None
     return Path(chosen).expanduser(), "settings" if load()[key] else "env"
+
+
+def owner():
+    """your name, from settings, else MIC_OWNER in .env, or None before it's set."""
+    return load()["owner"] or os.environ.get("MIC_OWNER", "").strip() or None
+
+
+def mic_channel():
+    """"left" or "right", from settings, else MIC_CHANNEL in .env, else left."""
+    found = load()["mic_channel"] or os.environ.get("MIC_CHANNEL", "").strip()
+    return found if found in MIC_CHANNELS else "left"
+
+
+def summary_backend():
+    """what writes notes, from settings, else SUMMARY_BACKEND in .env, else the local model."""
+    found = load()["summary_backend"] or os.environ.get("SUMMARY_BACKEND", "").strip()
+    return found if found in SUMMARY_BACKENDS else "local"
+
+
+def setup_needed():
+    """whether to show the setup that's shown when the app is first opened: not yet finished,
+    and no name in .env, so someone already set up through .env doesn't see it."""
+    return not load()["setup_done"] and not os.environ.get("MIC_OWNER", "").strip()
 
 
 def claude_model():

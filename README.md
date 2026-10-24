@@ -22,12 +22,19 @@ On a 30 minute meeting the whole run takes about 2 to 3 minutes on an M3 Max. ml
 
 ```
 uv sync
-cp .env.example .env    # add a Hugging Face read token
+uv run make_app.py
+```
+
+Then open Boswell. The first time, a short setup asks for your name, a Hugging Face token for the speaker detection model, what writes notes (a model on the Mac or Claude), your Obsidian meeting notes folder and your to-do app. Only your name is required, and all of it is in Settings afterwards (**Run Setup Again** is under About). For the token, accept the model terms at https://hf.co/pyannote/speaker-diarization-community-1 and create a read token with the same account. It's kept in the Keychain and only used to download the model once.
+
+`.env` is optional. Values there (see `.env.example`) still work as a fallback, and anyone with `MIC_OWNER` set there skips the setup. To download and test the models from the command line instead:
+
+```
 uv run scripts/check_setup.py   # downloads and tests the models
 uv run scripts/check_setup.py --offline
 ```
 
-Accept the model terms at https://hf.co/pyannote/speaker-diarization-community-1 with the account that owns the token. After the offline check passes, uncomment `HF_HUB_OFFLINE=1` in `.env`.
+After the offline check passes, you can add `HF_HUB_OFFLINE=1` to `.env` so nothing reaches Hugging Face again.
 
 ## App
 

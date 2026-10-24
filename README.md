@@ -27,7 +27,7 @@ uv run make_app.py
 
 Then open Boswell. The first time, a short setup asks for your name, a Hugging Face token for the speaker detection model, what writes notes (a model on the Mac or Claude), your Obsidian meeting notes folder and your to-do app. Only your name is required, and all of it is in Settings afterwards (**Run Setup Again** is under About). For the token, accept the model terms at https://hf.co/pyannote/speaker-diarization-community-1 and create a read token with the same account. It's kept in the Keychain and only used to download the model once.
 
-`.env` is optional. Values there (see `.env.example`) still work as a fallback, and anyone with `MIC_OWNER` set there skips the setup. To download and test the models from the command line instead:
+`.env` is optional. The app reads the one in the library folder (`~/Library/Application Support/Boswell/.env`), and scripts run from the project folder read the project's `.env` too. Values there (see `.env.example`) still work as a fallback, and anyone with `MIC_OWNER` set there skips the setup. To download and test the models from the command line instead:
 
 ```
 uv run scripts/check_setup.py   # downloads and tests the models
@@ -44,7 +44,7 @@ Boswell is a Mac app, in `mac/`, written in SwiftUI. All the transcription, nami
 uv run make_app.py --icon ~/Pictures/my-icon.png
 ```
 
-It goes in `/Applications/Boswell.app`, or is rebuilt wherever you moved it. Run it again after changing the code or the icon. Without `--icon` it uses `assets/icon.png`. It needs Xcode, since SwiftUI's macros don't ship with the Command Line Tools, and is signed with your Apple Development certificate when Xcode has made one, so macOS remembers that it may use the Documents folder across rebuilds. Without one it falls back to an ad hoc signature, and macOS asks again after every rebuild. The server's log is `~/Library/Logs/Boswell.log`.
+It goes in `/Applications/Boswell.app`, or is rebuilt wherever you moved it. The app doesn't need the project folder to run. The server's code is copied into the app, its Python packages are installed exactly as `uv.lock` has them into `~/Library/Application Support/Boswell/env` (seconds after the first time, since uv reuses its cache), and the first build copies the project's `.env` into the library folder. Run it again after changing the code or the icon, since the app runs its own copy of the code. Under `swift run`, the app uses the project folder and its `.venv` instead. Without `--icon` it uses `assets/icon.png`. It needs Xcode, since SwiftUI's macros don't ship with the Command Line Tools, and is signed with your Apple Development certificate when Xcode has made one, so macOS remembers that it may use the Documents folder across rebuilds. Without one it falls back to an ad hoc signature, and macOS asks again after every rebuild. The server's log is `~/Library/Logs/Boswell.log`.
 
 For development, `uv run app.py` runs the server on its own at http://127.0.0.1:8765 (the app uses it when it's already running), and `cd mac && DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift run` runs the app. Set `BOSWELL_URL` to point the app at a server on another port, `BOSWELL_PAGE` (such as `vocabulary`) to open on a page, `BOSWELL_MEETING` to select a meeting by its id, and `BOSWELL_SNAPSHOT=/path/to/file.png` to save a picture of the window a few seconds after launch, which checks a layout without needing screen recording access.
 

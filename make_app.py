@@ -5,9 +5,13 @@ usage:
     uv run make_app.py --icon ~/Pictures/my-icon.png
 
 it needs xcode, whose tools have swiftui's macros. the app goes in /Applications/Boswell.app,
-or is rebuilt where it is if you moved it to ~/Applications. it starts this project's app.py,
-so the code, data, and outputs stay where they are. run this again after changing the code or
-the icon. any square png works, 1024x1024 looks best.
+or is rebuilt where it is if you moved it to ~/Applications. any square png works, 1024x1024
+looks best.
+
+the app doesn't need this project folder to run. the server's code is copied into the app,
+its python packages are installed from uv.lock into ~/Library/Application Support/Boswell/env,
+and the library is in the library folder (see local_transcription/paths.py). run this again
+after changing the code or the icon, since the app runs its own copy of the code.
 """
 
 import argparse
@@ -16,6 +20,7 @@ import os
 import plistlib
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -28,6 +33,11 @@ BUNDLE_ID = "local.transcription.native"
 # boswell://meeting?id=... links, from answers and from to-dos in things, open the app
 URL_SCHEME = "boswell"
 MAC_DIR = BASE_DIR / "mac"
+# what the app needs of this folder to run the server, copied into Contents/Resources/server.
+# pyproject.toml and uv.lock are what the python environment is installed from
+SERVER_FILES = ["app.py", "local_transcription", "pyproject.toml", "uv.lock"]
+# the app's python environment, kept out of the library so BOSWELL_HOME doesn't move it
+PYTHON_ENV = Path.home() / "Library" / "Application Support" / "Boswell" / "env"
 XCODE_DIR = Path("/Applications/Xcode.app/Contents/Developer")
 INSTALL_DIRS = [Path("/Applications"), Path.home() / "Applications"]
 
@@ -95,6 +105,26 @@ def signing_identity():
     return "-"
 
 
+def install_python(env_dir):
+    """install the server's python packages, exactly as uv.lock has them, into env_dir. uv
+    reuses its download cache, so after the first time this takes seconds."""
+    env = {**os.environ, "UV_PROJECT_ENVIRONMENT": str(env_dir)}
+    subprocess.run(["uv", "sync", "--frozen", "--no-install-project"], cwd=BASE_DIR, env=env, check=True)
+
+
+def copy_env_file():
+    """the app reads .env from the library folder, so a first build copies this folder's there."""
+    sys.path.insert(0, str(BASE_DIR))
+    from local_transcription import paths
+
+    source, target = BASE_DIR / ".env", paths.HOME / ".env"
+    if source.exists() and not target.exists():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+        target.chmod(0o600)
+        print(f"copied .env to {target}, which is the one the app reads")
+
+
 def build_native():
     """compile the swiftui app in mac/ and return the binary."""
     env = xcode_env()
@@ -127,12 +157,22 @@ def main():
         print(f"made a plain icon at {ICON_PNG.relative_to(BASE_DIR)}, pass --icon to use your own")
 
     binary = build_native()
+    install_python(PYTHON_ENV)
+    copy_env_file()
     if app_dir.exists():
         shutil.rmtree(app_dir)
     contents = app_dir / "Contents"
     (contents / "MacOS").mkdir(parents=True)
     (contents / "Resources").mkdir()
     make_icon(ICON_PNG, contents / "Resources")
+    server = contents / "Resources" / "server"
+    server.mkdir()
+    for name in SERVER_FILES:
+        source = BASE_DIR / name
+        if source.is_dir():
+            shutil.copytree(source, server / name, ignore=shutil.ignore_patterns("__pycache__"))
+        else:
+            shutil.copy2(source, server / name)
     shutil.copy2(binary, contents / "MacOS" / APP_NAME)
     with (contents / "Info.plist").open("wb") as f:
         plistlib.dump({"CFBundleName": APP_NAME, "CFBundleDisplayName": APP_NAME,
@@ -141,9 +181,7 @@ def main():
                        "CFBundleShortVersionString": "1.0", "LSMinimumSystemVersion": "26.0",
                        "NSHighResolutionCapable": True,
                        "CFBundleURLTypes": [{"CFBundleURLName": f"{BUNDLE_ID}.links",
-                                             "CFBundleURLSchemes": [URL_SCHEME]}],
-                       # the swift app starts the python server from here
-                       "BoswellProjectDir": str(BASE_DIR)}, f)
+                                             "CFBundleURLSchemes": [URL_SCHEME]}]}, f)
     identity = signing_identity()
     if identity == "-":
         print("no apple development certificate, so macos will ask for folder access again after each rebuild")

@@ -7,15 +7,17 @@ both are set. the key is never logged or sent anywhere but to the anthropic api.
 
 import os
 import re
-from pathlib import Path
 
 import keyring
 from keyring.errors import KeyringError, PasswordDeleteError
 
+from local_transcription import paths
+
 # config
 SERVICE = "Boswell"
 ACCOUNT = "ANTHROPIC_API_KEY"
-ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
+# the library's .env, which the app reads, and the project folder's, which scripts read too
+ENV_FILES = (paths.ENV_FILE, paths.PROJECT_DIR / ".env")
 KEY_SHAPE = re.compile(r"^sk-ant-[A-Za-z0-9_-]{20,}$")
 
 
@@ -65,14 +67,15 @@ def remove():
 
 
 def move_from_env():
-    """copy the key from .env into the keychain, then take its line out of .env so there is
-    one place for it. the rest of .env is left as it was."""
+    """copy the key from .env into the keychain, then take its line out of each .env so there
+    is one place for it. the rest of each file is left as it was."""
     key = os.environ.get(ACCOUNT, "").strip()
     if not key:
         raise ValueError("there is no key in .env to move")
     save(key)
-    if ENV_FILE.exists():
-        lines = ENV_FILE.read_text().splitlines(keepends=True)
-        kept = [line for line in lines if not re.match(rf"^\s*(export\s+)?{ACCOUNT}\s*=", line)]
-        if kept != lines:
-            ENV_FILE.write_text("".join(kept))
+    for env_file in ENV_FILES:
+        if env_file.exists():
+            lines = env_file.read_text().splitlines(keepends=True)
+            kept = [line for line in lines if not re.match(rf"^\s*(export\s+)?{ACCOUNT}\s*=", line)]
+            if kept != lines:
+                env_file.write_text("".join(kept))

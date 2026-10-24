@@ -1,6 +1,6 @@
-"""where boswell keeps your library: recordings, meeting folders, the database, settings, and
-note templates, in ~/Library/Application Support/Boswell, or wherever BOSWELL_HOME in .env
-says. inside it, data/ holds the recordings and the rest, and outputs/ a folder per meeting.
+"""where boswell keeps your library: recordings, meeting folders, the database, settings, note
+templates and .env, in ~/Library/Application Support/Boswell, or wherever BOSWELL_HOME says
+(set in the environment, or in the project folder's .env for scripts). inside it, data/ holds the recordings and the rest, and outputs/ a folder per meeting.
 
 older versions kept data/ and outputs/ in the project folder. migrate() moves them over once,
 when the server starts, so the code can be updated or moved without touching the library.
@@ -10,6 +10,8 @@ import json
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 # config
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 HOME = Path(os.environ.get("BOSWELL_HOME") or "~/Library/Application Support/Boswell").expanduser()
@@ -17,6 +19,10 @@ DATA_DIR = HOME / "data"
 OUTPUT_DIR = HOME / "outputs"
 OLD_DATA_DIR = PROJECT_DIR / "data"
 OLD_OUTPUT_DIR = PROJECT_DIR / "outputs"
+# the app reads .env from the library folder, since it runs its own copy of the code rather
+# than this project folder. values already set, as by a script from the project's .env, stay
+ENV_FILE = HOME / ".env"
+load_dotenv(ENV_FILE)
 
 
 # helpers

@@ -276,9 +276,11 @@ struct SettingsView: View {
                     Text("Library folder")
                     Text("Recordings, meetings, settings and templates. BOSWELL_HOME in .env can move it.")
                 }
-                LabeledContent("Project folder") {
-                    Button(Server.shared.projectDir.path) { NSWorkspace.shared.open(Server.shared.projectDir) }
+                LabeledContent("Server code") {
+                    Button(Server.shared.serverDir.path) { NSWorkspace.shared.activateFileViewerSelecting([Server.shared.serverDir]) }
                         .buttonStyle(.link)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                 }
                 LabeledContent("Server", value: Server.shared.baseURL.absoluteString)
                 LabeledContent("Log") {

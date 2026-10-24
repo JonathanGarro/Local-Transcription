@@ -22,6 +22,7 @@ from pathlib import Path
 # config
 BASE_DIR = Path(__file__).parent.resolve()
 APP_NAME = "Boswell"
+AI_HELPER = "BoswellAI"
 ICON_PNG = BASE_DIR / "assets" / "icon.png"
 # kept from when the app was called boswell native, since macos remembers its folder access by it
 BUNDLE_ID = "local.transcription.native"
@@ -96,12 +97,13 @@ def signing_identity():
 
 
 def build_native():
-    """compile the swiftui app in mac/ and return the binary."""
+    """compile the swiftui app in mac/ and return the folder with its binaries: the app, and
+    BoswellAI, the helper that runs apple intelligence for the server."""
     env = xcode_env()
     subprocess.run(["swift", "build", "-c", "release"], cwd=MAC_DIR, env=env, check=True)
     path = subprocess.run(["swift", "build", "-c", "release", "--show-bin-path"], cwd=MAC_DIR, env=env,
                           check=True, capture_output=True, text=True).stdout.strip()
-    return Path(path) / APP_NAME
+    return Path(path)
 
 
 # main
@@ -126,14 +128,15 @@ def main():
         make_default_icon(ICON_PNG)
         print(f"made a plain icon at {ICON_PNG.relative_to(BASE_DIR)}, pass --icon to use your own")
 
-    binary = build_native()
+    binaries = build_native()
     if app_dir.exists():
         shutil.rmtree(app_dir)
     contents = app_dir / "Contents"
     (contents / "MacOS").mkdir(parents=True)
     (contents / "Resources").mkdir()
     make_icon(ICON_PNG, contents / "Resources")
-    shutil.copy2(binary, contents / "MacOS" / APP_NAME)
+    for name in (APP_NAME, AI_HELPER):
+        shutil.copy2(binaries / name, contents / "MacOS" / name)
     with (contents / "Info.plist").open("wb") as f:
         plistlib.dump({"CFBundleName": APP_NAME, "CFBundleDisplayName": APP_NAME,
                        "CFBundleIdentifier": BUNDLE_ID, "CFBundleExecutable": APP_NAME,
@@ -147,6 +150,9 @@ def main():
     identity = signing_identity()
     if identity == "-":
         print("no apple development certificate, so macos will ask for folder access again after each rebuild")
+    # the helper is signed first, since the app's signature covers the code inside it
+    subprocess.run(["codesign", "--force", "--sign", identity, str(contents / "MacOS" / AI_HELPER)],
+                   check=True, capture_output=True)
     subprocess.run(["codesign", "--force", "--sign", identity, str(app_dir)], check=True, capture_output=True)
     # tell finder and the dock to pick up the new icon, and launch services the link type
     subprocess.run(["touch", str(app_dir)], check=False)

@@ -56,6 +56,11 @@ final class Server {
         env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + (env["PATH"] ?? "/usr/bin:/bin")
         // the server stops itself when this process goes away
         env["BOSWELL_APP_PID"] = String(ProcessInfo.processInfo.processIdentifier)
+        // apple intelligence runs in a helper built beside the app, in the bundle or in .build
+        if let helper = Bundle.main.executableURL?.deletingLastPathComponent().appending(path: "BoswellAI"),
+           FileManager.default.isExecutableFile(atPath: helper.path) {
+            env["BOSWELL_AI"] = helper.path
+        }
         p.environment = env
         p.standardOutput = log
         p.standardError = log

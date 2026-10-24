@@ -1,5 +1,5 @@
 """meeting notes in the obsidian layout: frontmatter, agenda, discussion, transcript, and,
-once the owner's to-dos are sent to things 3 from the app, action items linking to them.
+once the owner's to-dos are sent to the to-do app from the app, action items linking to them.
 
 a language model writes the agenda and discussion as json. the heading is
 the meeting's own title, the project is the one picked in the app, and the frontmatter and
@@ -15,7 +15,7 @@ import os
 import re
 from datetime import datetime
 
-from local_transcription import keychain, library, settings
+from local_transcription import keychain, library, settings, todos
 
 # config
 BACKENDS = ["local", "claude"]
@@ -218,8 +218,8 @@ def render_note(summary, date, title, segments, speakers, owner_id, project, tra
 
 
 def action_item_lines(summary):
-    """the owner's to-dos sent to things 3 from the app, each a link to its to-do, which is
-    where it gets ticked off. none until some are sent."""
+    """the owner's to-dos sent to the to-do app from the app, each a link to its to-do, which
+    is where it gets ticked off. none until some are sent."""
     # square brackets would end the link text early
-    return ["- [{}](things:///show?id={})".format(re.sub(r"[\[\]]", "", item["title"]), item["id"])
+    return ["- [{}]({})".format(re.sub(r"[\[\]]", "", item["title"]), todos.link(item["id"], item.get("app")))
             for item in summary.get("things_items") or []]

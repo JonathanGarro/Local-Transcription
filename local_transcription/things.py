@@ -95,3 +95,7 @@ def projects():
 def add_todo(title, notes="", project_id="", when="", deadline=""):
     """make one to-do. returns its things id."""
     return _osascript(ADD_SCRIPT, title, notes or "", project_id or "", when or "", deadline or "").strip()
+
+
+def link(todo_id):
+    return f"things:///show?id={todo_id}"

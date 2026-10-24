@@ -22,7 +22,8 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
-from local_transcription import ask, audio, directory, keychain, library, notes, pipeline, plaud, projects, render, settings, things, vocab
+from local_transcription import (apple, ask, audio, directory, keychain, library, notes, pipeline, plaud, projects,
+                                 render, settings, todoist, todos, vocab)
 
 # config
 BASE_DIR = Path(__file__).parent.parent
@@ -236,6 +237,8 @@ class VocabRequest(BaseModel):
 class SettingsRequest(BaseModel):
     accent: str | None = None
     claude_model: str | None = None
+    todo_app: str | None = None
+    todo_model: str | None = None
 
 
 class TodosRequest(BaseModel):
@@ -345,7 +348,9 @@ def create_app():
         return {**settings.load(), "claude_model": settings.claude_model(), "accents": settings.ACCENTS,
                 "models": [{"id": k, **v} for k, v in settings.MODELS.items()],
                 "key": settings.masked_key(), "key_source": keychain.source(), "usage": library.usage_totals(),
-                "plaud_installed": plaud.installed()}
+                "plaud_installed": plaud.installed(), "things_installed": settings.THINGS_APP.exists(),
+                "todoist_token": todoist.masked_token(), "todoist_source": todoist.token_source(),
+                "apple": apple.availability()}
 
     @app.get("/api/settings")
     def get_settings():
@@ -383,10 +388,33 @@ def create_app():
             return {"ok": False, "error": str(message)}
         return {"ok": True}
 
+    # the todoist token goes in the keychain too, and only its masked form comes back
+    @app.put("/api/settings/todoist")
+    def save_todoist_token(request: KeyRequest):
+        try:
+            todoist.save_token(request.key)
+        except ValueError as err:
+            raise HTTPException(400, str(err))
+        return settings_state()
+
+    @app.delete("/api/settings/todoist")
+    def remove_todoist_token():
+        todoist.remove_token()
+        return settings_state()
+
+    @app.post("/api/settings/todoist/check")
+    def check_todoist_token():
+        try:
+            todoist.check()
+        except RuntimeError as err:
+            return {"ok": False, "error": str(err)}
+        return {"ok": True}
+
     @app.put("/api/settings")
     def put_settings(request: SettingsRequest):
         try:
-            settings.save(accent=request.accent, claude_model=request.claude_model)
+            settings.save(accent=request.accent, claude_model=request.claude_model, todo_app=request.todo_app,
+                          todo_model=request.todo_model)
         except ValueError as err:
             raise HTTPException(400, str(err))
         return settings_state()
@@ -460,23 +488,31 @@ def create_app():
         library.delete_conversation(conversation_id)
         return {"ok": True}
 
+    # the to-do app's projects. /api/things is what these were called when things was the only one
+    def todo_projects():
+        """the chosen app's projects and their areas, and what to call the app and its inbox."""
+        app = todos.app()
+        return {"projects": app.projects(), "areas": app.areas(), "app": todos.current(),
+                "app_name": todos.name(), "inbox": todos.inbox()}
+
+    @app.get("/api/todos/projects")
     @app.get("/api/things/projects")
-    def things_projects():
+    def get_todo_projects():
         try:
-            return {"areas": things.areas(), "projects": things.projects()}
+            return todo_projects()
         except RuntimeError as err:
             raise HTTPException(502, str(err))
 
-    def file_projects(todos, open_projects, meetings):
+    def file_projects(found, open_projects, meetings):
         """the meeting's project charter in obsidian names its things project, which beats
-        claude's guess. claude's guess beats the inbox."""
+        the model's guess when to-dos go to things. the guess beats the inbox."""
         open_ids = {p["id"] for p in open_projects}
-        for todo in todos:
+        for todo in found:
             charter = projects.things_project_id(meetings.get(todo["meeting_id"], {}).get("project"))
-            if charter in open_ids:
+            if todos.current() == "things" and charter in open_ids:
                 todo.update(project_id=charter, project_source="charter")
             else:
-                todo["project_source"] = "claude" if todo["project_id"] else "inbox"
+                todo["project_source"] = "model" if todo["project_id"] else "inbox"
 
     @app.post("/api/meetings/{meeting_id}/todos")
     def meeting_todos(meeting_id: str):
@@ -487,16 +523,15 @@ def create_app():
         meeting = {"title": info["title"] or meeting_id, "date": info["date"], "project": info.get("project"),
                    "people": library.meeting_people().get(meeting_id, [])}
         try:
-            open_projects = things.projects()
-            todos = ask.meeting_todos(meeting_id, meeting, open_projects, os.environ.get("MIC_OWNER"),
+            app = todo_projects()
+            found = ask.meeting_todos(meeting_id, meeting, app["projects"], os.environ.get("MIC_OWNER"),
                                       datetime.now().date().isoformat(),
                                       [t["title"] for t in library.meeting_things_todos(meeting_id)])
         except RuntimeError as err:
             raise HTTPException(502, str(err))
-        file_projects(todos, open_projects, {meeting_id: meeting})
+        file_projects(found, app["projects"], {meeting_id: meeting})
         library.mark_todos_checked(meeting_id)
-        return {"todos": todos, "projects": open_projects, "areas": things.areas(),
-                "meetings": {meeting_id: {"title": meeting["title"], "date": meeting["date"]}}}
+        return {**app, "todos": found, "meetings": {meeting_id: {"title": meeting["title"], "date": meeting["date"]}}}
 
     @app.post("/api/conversations/{conversation_id}/todos")
     def conversation_todos(conversation_id: str, request: TodosRequest):
@@ -509,17 +544,22 @@ def create_app():
                         "project": _clean(rows.at[m, "project"])}
                     for m in turn.get("links", {}) if m in rows.index}
         try:
-            open_projects = things.projects()
-            todos = ask.extract_todos(turn["question"], turn["answer"], meetings, open_projects,
+            app = todo_projects()
+            found = ask.extract_todos(turn["question"], turn["answer"], meetings, app["projects"],
                                       os.environ.get("MIC_OWNER"), datetime.now().date().isoformat())
         except RuntimeError as err:
             raise HTTPException(502, str(err))
-        file_projects(todos, open_projects, meetings)
-        return {"todos": todos, "projects": open_projects, "areas": things.areas(),
+        file_projects(found, app["projects"], meetings)
+        return {**app, "todos": found,
                 "meetings": {m: {"title": v["title"], "date": v["date"]} for m, v in meetings.items()}}
 
+    @app.post("/api/todos/add")
     @app.post("/api/things/add")
     def add_todos(request: AddTodosRequest):
+        try:
+            key, app = todos.current(), todos.app()
+        except RuntimeError as err:
+            raise HTTPException(400, str(err))
         dated = re.compile(r"^\d{4}-\d{2}-\d{2}$")
         rows = library.meetings().set_index("meeting_id")
         added = []
@@ -541,12 +581,12 @@ def create_app():
                 if link:
                     notes.append(link)
             try:
-                added.append({"title": todo.title.strip(), "id": things.add_todo(
+                added.append({"title": todo.title.strip(), "app": key, "id": app.add_todo(
                     todo.title.strip(), "\n\n".join(n for n in notes if n), todo.project_id, when, deadline)})
                 library.record_things_todo(added[-1]["id"], todo.meeting_id if todo.meeting_id in rows.index else None,
-                                           added[-1]["title"], "note" if request.note_meeting_id else "ask")
+                                           added[-1]["title"], "note" if request.note_meeting_id else "ask", key)
             except RuntimeError as err:
-                failed = f"added {len(added)}, then Things said: {err}"
+                failed = f"added {len(added)}, then {todos.name(key)} said: {err}"
                 break
         else:
             failed = None
@@ -812,7 +852,8 @@ def create_app():
                 "archived": _records(library.meetings().query("meeting_id == @meeting_id"))[0].get("archived"),
                 "notes_dir": str(pipeline.notes_dir() or ""), "vault": vault,
                 "job": running[0] if running else None,
-                "todos_sent": library.meeting_things_todos(meeting_id),
+                "todos_sent": [{**t, "link": todos.link(t["things_id"], t["app"])}
+                               for t in library.meeting_things_todos(meeting_id)],
                 "todos_checked": _records(library.meetings().query("meeting_id == @meeting_id"))[0].get("todos_checked")}
 
     @app.post("/api/meetings/{meeting_id}/note")
@@ -908,11 +949,18 @@ def create_app():
         pipeline.set_project(_meeting_dir(meeting_id), request.name)
         return {"project": library.meeting_project(meeting_id)}
 
+    def todo_state():
+        """which to-do app is chosen, and whether the model that finds to-dos is ready."""
+        model = settings.load()["todo_model"]
+        ready = apple.availability()["available"] if model == "apple" else bool(os.environ.get("ANTHROPIC_API_KEY"))
+        return {"todo_app": todos.current(), "todo_app_name": todos.name(), "todo_model": model,
+                "todo_model_name": "Apple Intelligence" if model == "apple" else "Claude", "todos_ready": ready}
+
     @app.get("/api/lookups")
     def lookups():
         return {"teams": directory.lookup_names("teams"), "organizations": directory.lookup_names("organizations"),
                 "projects": projects.all_projects(), "default_backend": notes.default_backend(),
-                "claude_ready": bool(os.environ.get("ANTHROPIC_API_KEY"))}
+                "claude_ready": bool(os.environ.get("ANTHROPIC_API_KEY")), **todo_state()}
 
     @app.post("/api/people/{person_id}/details")
     def details(person_id: str, request: DetailsRequest):

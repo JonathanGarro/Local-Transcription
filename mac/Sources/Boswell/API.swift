@@ -121,10 +121,14 @@ struct Note: Codable {
 }
 
 struct SentTodo: Codable, Hashable {
+    // its id in the app it went to
     let thingsId: String
     let title: String
     let added: String?
     let source: String?
+    let app: String?
+    // opens it in that app
+    let link: String?
 }
 
 struct Project: Codable, Hashable {
@@ -138,6 +142,11 @@ struct Lookups: Codable {
     let teams: [String]?
     let defaultBackend: String?
     let claudeReady: Bool?
+    // the to-do app chosen in settings, nil when the to-do features are off
+    let todoApp: String?
+    let todoModelName: String?
+    // whether the model that finds to-dos can be used
+    let todosReady: Bool?
 }
 
 struct Person: Codable, Hashable, Identifiable {
@@ -266,6 +275,20 @@ struct SettingsState: Codable {
     let usage: Usage
     // whether the plaud cli is on the path, without which the plaud page is hidden
     let plaudInstalled: Bool
+    // "things", "todoist", "reminders", or "none"
+    let todoApp: String
+    // "claude" or "apple"
+    let todoModel: String
+    let thingsInstalled: Bool
+    // only ever masked
+    let todoistToken: String?
+    let todoistSource: String?
+    let apple: AppleIntelligence
+}
+
+struct AppleIntelligence: Codable {
+    let available: Bool
+    let reason: String?
 }
 
 struct KeyCheck: Codable {
@@ -276,6 +299,8 @@ struct KeyCheck: Codable {
 struct SettingsChange: Encodable {
     var accent: String?
     var claudeModel: String?
+    var todoApp: String?
+    var todoModel: String?
 }
 
 struct Count: Codable, Hashable {
@@ -339,13 +364,14 @@ struct AskStatus: Codable {
     let error: String?
 }
 
+// a project in the to-do app, or a list in reminders
 struct ThingsProject: Codable, Hashable {
     let id: String
     let name: String
     let area: String?
 }
 
-// a to-do claude found, checked and adjusted before it goes to things
+// a to-do the model found, checked and adjusted before it goes to the to-do app
 struct Todo: Codable, Hashable, Identifiable {
     var id = UUID()
     var keep = true
@@ -387,6 +413,9 @@ struct FoundTodos: Codable {
     let projects: [ThingsProject]
     let areas: [String]
     let meetings: [String: MeetingRef]
+    let appName: String?
+    // where a to-do with no project goes, such as the inbox
+    let inbox: String?
 }
 
 struct AddTodosRequest: Encodable {

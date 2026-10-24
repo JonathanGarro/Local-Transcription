@@ -14,7 +14,7 @@ struct NoteView: View {
     @State private var showChanges = false
     @State private var inspectorTab = InspectorTab.changes
     @State private var todoState = TodoState.idle
-    @State private var claudeReady = false
+    @State private var todosReady = false
     @State private var diff: NoteDiff?
     @State private var conflict: String?
     @State private var confirmDiscard = false
@@ -22,7 +22,6 @@ struct NoteView: View {
     @State private var confirmPull = false
     @State private var confirmTodos = false
     @AppStorage(Prefs.askTodos) private var askTodos = true
-    @AppStorage(Prefs.things) private var thingsEnabled = true
     @AppStorage(Prefs.openAfterSend) private var openAfterSend = false
     @AppStorage(Prefs.noteMode) private var mode = NoteMode.preview
     @AppStorage(Prefs.noteTextSize) private var textSize = 13.0
@@ -62,8 +61,8 @@ struct NoteView: View {
         }
         .inspector(isPresented: $showChanges) {
             VStack(spacing: 0) {
-                // with things off, the inspector is only the changes
-                if thingsEnabled {
+                // with no to-do app, the inspector is only the changes
+                if store.todoApp != nil {
                     Picker("Show", selection: $inspectorTab) {
                         ForEach(InspectorTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                     }
@@ -72,7 +71,7 @@ struct NoteView: View {
                     .padding(10)
                     Divider()
                 }
-                switch thingsEnabled ? inspectorTab : .changes {
+                switch store.todoApp != nil ? inspectorTab : .changes {
                 case .changes: DiffView(diff: diff)
                 case .todos: todos
                 }
@@ -111,7 +110,7 @@ struct NoteView: View {
             Button("Cancel", role: .cancel) {}
                 .dialogSuppressionToggle("Don't ask again", isSuppressed: Binding(get: { !askTodos }, set: { askTodos = !$0 }))
         } message: {
-            Text("This meeting hasn't been checked for to-dos. Sending them to Things first puts their links in the note's action items, so Obsidian gets everything at once.")
+            Text("This meeting hasn't been checked for to-dos. Sending them to \(store.todoAppName) first puts their links in the note's action items, so Obsidian gets everything at once.")
         }
         .confirmationDialog("Use the Obsidian version?", isPresented: $confirmPull) {
             Button("Use Obsidian Version", role: .destructive) { Task { await pull() } }
@@ -236,11 +235,11 @@ struct NoteView: View {
             }
             .help("Show what changed")
 
-            if thingsEnabled {
+            if store.todoApp != nil {
                 Button { toggleInspector(.todos) } label: {
                     Label("To-dos", systemImage: "checklist")
                 }
-                .help("Find your to-dos in the transcript and send them to Things")
+                .help("Find your to-dos in the transcript and send them to \(store.todoAppName)")
             }
 
             Menu {
@@ -273,8 +272,8 @@ struct NoteView: View {
         }
     }
 
-    // to-dos. claude reads the transcript for the owner's to-dos, and once they are added to
-    // things the note's action items become links to them
+    // to-dos. the model reads the transcript for the owner's to-dos, and once they are added
+    // to the to-do app the note's action items become links to them
 
     private var todos: some View {
         let sentTodos = note?.todosSent ?? []
@@ -283,13 +282,16 @@ struct NoteView: View {
             VStack(alignment: .leading, spacing: 14) {
                 if !looking {
                     if !sentTodos.isEmpty {
-                        Text("Sent to Things").font(.headline)
+                        Text("Sent to \(store.todoAppName)").font(.headline)
                         VStack(alignment: .leading, spacing: 8) {
                             ForEach(sentTodos, id: \.thingsId) { t in
+                                let app = Store.todoApps[t.app ?? "things"] ?? "the to-do app"
                                 VStack(alignment: .leading, spacing: 1) {
-                                    if let url = URL(string: "things:///show?id=\(t.thingsId.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? t.thingsId)") {
+                                    if let url = t.link.flatMap(URL.init(string:)) {
                                         Link(t.title, destination: url)
-                                            .help("Open in Things")
+                                            .help("Open in \(app)")
+                                    } else {
+                                        Text(t.title)
                                     }
                                     Text("\(t.added?.prefix(10) ?? "")\(t.source == "ask" ? ", from Ask" : "")")
                                         .font(.caption)
@@ -298,14 +300,16 @@ struct NoteView: View {
                             }
                         }
                     } else if let checked = note?.todosChecked {
-                        Text("Checked on \(checked.prefix(10)), and nothing was sent to Things.")
+                        Text("Checked on \(checked.prefix(10)), and nothing was sent to \(store.todoAppName).")
                             .foregroundStyle(.secondary)
                     } else {
-                        Text("Claude reads the transcript for tasks you were asked to do or offered to do, to add to Things. The note's action items then become links to them.")
+                        Text("\(lookups?.todoModelName ?? "Claude") reads the transcript for tasks you were asked to do or offered to do, to add to \(store.todoAppName). The note's action items then become links to them.")
                             .foregroundStyle(.secondary)
                     }
-                    if !claudeReady {
-                        Text("Add your Anthropic API key in Settings to find to-dos.")
+                    if !todosReady {
+                        Text(lookups?.todoModelName == "Apple Intelligence"
+                             ? "Apple Intelligence isn't available on this Mac. See Settings."
+                             : "Add your Anthropic API key in Settings to find to-dos.")
                             .foregroundStyle(.orange)
                     }
                 }
@@ -315,16 +319,16 @@ struct NoteView: View {
                           add: { todos in
                               // the note on disk is rewritten, so unsaved edits go first
                               await flush()
-                              return try await API.post(["api", "things", "add"],
+                              return try await API.post(["api", "todos", "add"],
                                                         AddTodosRequest(todos: todos, noteMeetingId: meetingId))
                           },
                           added: { result in
                               todoState = .idle
                               await load(replaceText: true)
                               let vault = result.vault == "same" || result.vault == "pulled"
-                              store.show("Added \(result.added) to Things\(vault ? ", and updated the note in Obsidian" : "")")
+                              store.show("Added \(result.added) to \(store.todoAppName)\(vault ? ", and updated the note in Obsidian" : "")")
                           },
-                          enabled: claudeReady)
+                          enabled: todosReady)
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -389,7 +393,7 @@ struct NoteView: View {
         project = fetched.project ?? ""
         if lookups == nil, let l = try? await fetchedLookups {
             lookups = l
-            claudeReady = l.claudeReady == true
+            todosReady = l.todosReady == true
             backend = l.defaultBackend ?? "local"
         }
         if showChanges { await loadDiff() }
@@ -441,11 +445,11 @@ struct NoteView: View {
         }
     }
 
-    // a first send asks about to-dos when the meeting was never checked and claude can look
+    // a first send asks about to-dos when the meeting was never checked and the model can look
     private func requestSend() {
         let looking: Bool = { if case .idle = todoState { return false }; return true }()
         let unchecked = (note?.todosSent ?? []).isEmpty && note?.todosChecked == nil
-        if thingsEnabled && askTodos && claudeReady && !sent && unchecked && !looking {
+        if store.todoApp != nil && askTodos && todosReady && !sent && unchecked && !looking {
             confirmTodos = true
         } else {
             Task { await send(replace: false) }
@@ -498,7 +502,8 @@ struct NoteView: View {
 
 // preferences shared with settings
 enum Prefs {
-    // the things 3 features: finding to-dos, send to things, and the to-do badges
+    // things 3 on or off, from before there was a choice of to-do app. read once to carry
+    // a switched off things over to the server's setting
     static let things = "thingsEnabled"
     // whether sending a note asks to find its to-dos first
     static let askTodos = "askTodosBeforeSend"

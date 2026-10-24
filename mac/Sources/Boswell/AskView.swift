@@ -201,7 +201,6 @@ struct ChatView: View {
     @Environment(Store.self) private var store
     @State private var question = ""
     @FocusState private var focused: Bool
-    @AppStorage(Prefs.things) private var thingsEnabled = true
 
     var body: some View {
         let chat = store.chat
@@ -282,9 +281,10 @@ struct ChatView: View {
                     .foregroundStyle(.red)
             } else if let answer = turn.answer {
                 AnswerText(text: answer, links: turn.links)
-                if thingsEnabled {
+                if store.todoApp != nil {
                 TodoPanel(state: Binding(get: { store.chat.turns.first { $0.id == turn.id }?.things ?? .idle },
                                          set: { value in store.chat.update(turn.id) { $0.things = value } }),
+                          label: "Send to \(store.todoAppName)",
                           find: {
                               guard let id = store.chat.conversationId else { throw ServerError("The conversation is not saved yet") }
                               return try await API.post(["api", "conversations", id, "todos"], ["turn": index])
@@ -409,16 +409,16 @@ enum TodoState {
     case idle, loading, error(String), ready(FoundTodos), added(Int)
 }
 
-// claude picks out the owner's to-dos, which are checked and adjusted here before they
-// are added to things
+// the model picks out the owner's to-dos, which are checked and adjusted here before they
+// are added to the to-do app
 struct TodoPanel: View {
     @Environment(Store.self) private var store
     @Binding var state: TodoState
-    var label = "Send to Things"
+    var label = "Send To-dos"
     let find: () async throws -> FoundTodos
-    // sends the kept to-dos, by default straight to things
+    // sends the kept to-dos, by default straight to the to-do app
     var add: ([Todo]) async throws -> Added = { todos in
-        try await API.post(["api", "things", "add"], AddTodosRequest(todos: todos))
+        try await API.post(["api", "todos", "add"], AddTodosRequest(todos: todos))
     }
     // runs after adding, in place of the added message
     var added: ((Added) async -> Void)?
@@ -442,7 +442,7 @@ struct TodoPanel: View {
                 Button("Try Again") { Task { await start() } }.buttonStyle(.link)
             }
         case .added(let n):
-            Label("Added \(n) to-do\(n == 1 ? "" : "s") to Things.", systemImage: "checkmark.circle")
+            Label("Added \(n) to-do\(n == 1 ? "" : "s") to \(store.todoAppName).", systemImage: "checkmark.circle")
                 .foregroundStyle(.secondary)
         case .ready(let found):
             if found.todos.isEmpty {
@@ -464,14 +464,14 @@ struct TodoPanel: View {
                 HStack {
                     Spacer()
                     Button("Cancel") { state = .idle }
-                    Button(adding ? "Adding" : "Add \(chosen) to Things") { Task { await add(found) } }
+                    Button(adding ? "Adding" : "Add \(chosen) to \(found.appName ?? store.todoAppName)") { Task { await add(found) } }
                         .buttonStyle(.borderedProminent)
                         .disabled(chosen == 0 || adding)
                 }
             }
             .padding(6)
         } label: {
-            Label("To-dos for Things", systemImage: "checklist")
+            Label("To-dos for \(found.appName ?? store.todoAppName)", systemImage: "checklist")
         }
     }
 
@@ -508,7 +508,7 @@ struct TodoPanel: View {
                         fieldLabel("Project")
                         VStack(alignment: .leading, spacing: 2) {
                             projectPicker(found, item, t)
-                            if let source = ["charter": "from the project charter", "claude": "Claude's pick"][t.projectSource ?? ""] {
+                            if let source = ["charter": "from the project charter", "model": "suggested", "claude": "Claude's pick"][t.projectSource ?? ""] {
                                 Text(source).font(.caption).foregroundStyle(.tertiary)
                             }
                         }
@@ -549,7 +549,7 @@ struct TodoPanel: View {
             item.wrappedValue.projectId = id
             item.wrappedValue.projectSource = "you"
         })) {
-            Text("Inbox").tag("")
+            Text(found.inbox ?? "Inbox").tag("")
             ForEach(found.areas, id: \.self) { area in
                 SwiftUI.Section(area) {
                     ForEach(found.projects.filter { $0.area == area }, id: \.id) { Text($0.name).tag($0.id) }

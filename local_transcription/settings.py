@@ -11,6 +11,11 @@ from pathlib import Path
 # config
 SETTINGS_PATH = Path(__file__).parent.parent / "data" / "settings.json"
 ACCENTS = ["blue", "red", "green", "purple", "orange"]
+# where found to-dos go, one app at a time. "none" turns the to-do features off
+TODO_APPS = ["things", "todoist", "reminders", "none"]
+THINGS_APP = Path("/Applications/Things3.app")
+# what reads meetings for to-dos: claude, or apple intelligence on this mac
+TODO_MODELS = ["claude", "apple"]
 DEFAULT_CLAUDE_MODEL = "claude-opus-5-5"
 # dollars per million tokens. writing to the cache costs a quarter more than plain input
 MODELS = {
@@ -35,8 +40,12 @@ def load():
         saved = json.loads(SETTINGS_PATH.read_text())
     except (OSError, ValueError):
         saved = {}
+    # before there was a choice, to-dos went to things, so that stays the default where it's installed
+    default_app = "things" if THINGS_APP.exists() else "none"
     return {"accent": saved.get("accent") if saved.get("accent") in ACCENTS else "blue",
-            "claude_model": saved.get("claude_model") if saved.get("claude_model") in MODELS else None}
+            "claude_model": saved.get("claude_model") if saved.get("claude_model") in MODELS else None,
+            "todo_app": saved.get("todo_app") if saved.get("todo_app") in TODO_APPS else default_app,
+            "todo_model": saved.get("todo_model") if saved.get("todo_model") in TODO_MODELS else "claude"}
 
 
 def save(**changes):
@@ -45,6 +54,10 @@ def save(**changes):
         raise ValueError(f"accent must be one of {', '.join(ACCENTS)}")
     if changes.get("claude_model") is not None and changes["claude_model"] not in MODELS:
         raise ValueError(f"model must be one of {', '.join(MODELS)}")
+    if changes.get("todo_app") is not None and changes["todo_app"] not in TODO_APPS:
+        raise ValueError(f"to-do app must be one of {', '.join(TODO_APPS)}")
+    if changes.get("todo_model") is not None and changes["todo_model"] not in TODO_MODELS:
+        raise ValueError(f"to-do model must be one of {', '.join(TODO_MODELS)}")
     current.update({k: v for k, v in changes.items() if v is not None})
     SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
     SETTINGS_PATH.write_text(json.dumps(current, indent=2))

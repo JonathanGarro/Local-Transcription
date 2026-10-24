@@ -135,6 +135,8 @@ ADDED_COLUMNS = {
                  "archived": "text", "sent_path": "text", "original_file": "text",
                  # when the owner's to-dos were last looked for, found or not
                  "todos_checked": "text"},
+    # the to-do app it went to, none for things, the only one before there was a choice
+    "things_todos": {"app": "text"},
 }
 _ready = False
 
@@ -537,18 +539,20 @@ def delete_conversation(conversation_id):
         con.execute("delete from conversations where conversation_id = ?", (conversation_id,))
 
 
-# to-dos sent to things 3, by the meeting they came from
-def record_things_todo(things_id, meeting_id, title, source):
+# to-dos sent to the to-do app, things 3 at first, by the meeting they came from
+def record_things_todo(things_id, meeting_id, title, source, app="things"):
     with connect() as con:
-        con.execute("""insert or replace into things_todos (things_id, meeting_id, title, added, source)
-                       values (?, ?, ?, ?, ?)""",
-                    (things_id, meeting_id or None, title, datetime.now().isoformat(timespec="seconds"), source))
+        con.execute("""insert or replace into things_todos (things_id, meeting_id, title, added, source, app)
+                       values (?, ?, ?, ?, ?, ?)""",
+                    (things_id, meeting_id or None, title, datetime.now().isoformat(timespec="seconds"), source,
+                     None if app == "things" else app))
 
 
 def meeting_things_todos(meeting_id):
-    """[{things_id, title, added, source}] sent from a meeting, oldest first."""
-    rows = _query("select things_id, title, added, source from things_todos where meeting_id = ? order by added",
-                  (meeting_id,))
+    """[{things_id, title, added, source, app}] sent from a meeting, oldest first. things_id
+    is the id in whichever app it went to."""
+    rows = _query("""select things_id, title, added, source, coalesce(app, 'things') as app from things_todos
+                     where meeting_id = ? order by added""", (meeting_id,))
     return rows.to_dict("records") if len(rows) else []
 
 

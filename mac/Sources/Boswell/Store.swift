@@ -80,6 +80,10 @@ final class Store {
     var owner: String?
     // whether the plaud cli is installed, so the plaud page can be shown
     var plaudInstalled = false
+    // the to-do app chosen in settings, nil when the to-do features are off
+    var todoApp: String?
+    var todoAppName: String { Self.todoApps[todoApp ?? ""] ?? "your to-do app" }
+    static let todoApps = ["things": "Things", "todoist": "Todoist", "reminders": "Reminders"]
     var connected = false
     var startError: String?
     var message: String?
@@ -100,6 +104,13 @@ final class Store {
     }
 
     var reviewCount: Int { inbox.filter(\.needsReview).count }
+
+    // what the rest of the app follows from settings
+    func apply(_ settings: SettingsState) {
+        accent = settings.accent
+        plaudInstalled = settings.plaudInstalled
+        todoApp = settings.todoApp == "none" ? nil : settings.todoApp
+    }
 
     // the plaud page needs the cli and the switch in settings on
     func shows(_ place: Place, plaudEnabled: Bool) -> Bool {
@@ -134,10 +145,12 @@ final class Store {
             pendingLink = nil
             open(link: link)
         }
-        if let settings: SettingsState = try? await API.get(["api", "settings"]) {
-            accent = settings.accent
-            plaudInstalled = settings.plaudInstalled
+        // things used to be a switch here. switched off, it becomes no to-do app on the server
+        if UserDefaults.standard.object(forKey: Prefs.things) as? Bool == false {
+            let _: SettingsState? = try? await API.put(["api", "settings"], SettingsChange(todoApp: "none"))
+            UserDefaults.standard.removeObject(forKey: Prefs.things)
         }
+        if let settings: SettingsState = try? await API.get(["api", "settings"]) { apply(settings) }
         polling = Task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(2))

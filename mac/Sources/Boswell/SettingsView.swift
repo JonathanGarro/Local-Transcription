@@ -8,8 +8,10 @@ struct SettingsView: View {
     @State private var check: KeyCheck?
     @State private var checking = false
     @State private var width: CGFloat = 0
+    @State private var enteringToken = false
+    @State private var confirmRemoveToken = false
+    @State private var tokenCheck: KeyCheck?
     @AppStorage(Prefs.askTodos) private var askTodos = true
-    @AppStorage(Prefs.things) private var thingsEnabled = true
     @AppStorage(Prefs.openAfterSend) private var openAfterSend = false
     @AppStorage(Prefs.plaud) private var plaudEnabled = true
     @State private var plaud: PlaudAccount?
@@ -53,16 +55,37 @@ struct SettingsView: View {
                 }
             }
 
-            Section("Things 3") {
-                Toggle(isOn: $thingsEnabled) {
-                    Text("Use Things 3")
-                    Text("Find your to-dos in a meeting or an answer and add them to Things. Off hides the To-dos tab, Send to Things and the to-do badges.")
+            Section("To-dos") {
+                Picker(selection: Binding(get: { s.todoApp }, set: { app in
+                    Task { await save(SettingsChange(todoApp: app)) }
+                })) {
+                    Text("None").tag("none")
+                    Text("Things 3").tag("things")
+                    Text("Todoist").tag("todoist")
+                    Text("Reminders").tag("reminders")
+                } label: {
+                    Text("To-do app")
+                    Text(todoAppHint(s))
                 }
+                if s.todoApp == "todoist" {
+                    todoistToken(s)
+                }
+                Picker(selection: Binding(get: { s.todoModel }, set: { model in
+                    Task { await save(SettingsChange(todoModel: model)) }
+                })) {
+                    Text("Claude").tag("claude")
+                    Text("Apple Intelligence").tag("apple")
+                        .disabled(!s.apple.available)
+                } label: {
+                    Text("Find to-dos with")
+                    Text(todoModelHint(s))
+                }
+                .disabled(s.todoApp == "none")
                 Toggle(isOn: $askTodos) {
                     Text("Ask to find to-dos before sending")
                     Text("When a note goes to Obsidian before its meeting was checked for to-dos.")
                 }
-                .disabled(!thingsEnabled)
+                .disabled(s.todoApp == "none")
             }
 
             Section("Obsidian") {
@@ -173,6 +196,19 @@ struct SettingsView: View {
         .sheet(isPresented: $enteringKey) {
             KeySheet { key in await keyAction { try await API.put(["api", "settings", "key"], ["key": key]) } }
         }
+        .sheet(isPresented: $enteringToken) {
+            KeySheet(title: "Todoist API Token",
+                     message: "Copy your token from Todoist's Settings, Integrations, Developer. It's saved in the macOS Keychain and only shown masked after this.",
+                     placeholder: "Token", linkTitle: "Open Todoist's Developer Settings",
+                     link: URL(string: "https://app.todoist.com/app/settings/integrations/developer")!) { token in
+                await tokenAction { try await API.put(["api", "settings", "todoist"], ["key": token]) }
+            }
+        }
+        .confirmationDialog("Remove the Todoist token?", isPresented: $confirmRemoveToken) {
+            Button("Remove Token", role: .destructive) { Task { await tokenAction { try await API.delete(["api", "settings", "todoist"]) } } }
+        } message: {
+            Text("It's deleted from the Keychain, and to-dos can't be sent to Todoist until you add one again.")
+        }
         .confirmationDialog("Remove the API key?", isPresented: $confirmRemove) {
             Button("Remove Key", role: .destructive) { Task { await keyAction { try await API.delete(["api", "settings", "key"]) } } }
         } message: {
@@ -226,6 +262,73 @@ struct SettingsView: View {
         while plaud?.signingIn == true, !Task.isCancelled {
             try? await Task.sleep(for: .seconds(1.5))
             if let next: PlaudAccount = try? await API.get(["api", "plaud", "account"]) { plaud = next }
+        }
+    }
+
+    @ViewBuilder
+    private func todoistToken(_ s: SettingsState) -> some View {
+        LabeledContent {
+            Text(s.todoistToken.map { "••••" + $0.suffix(3) } ?? "not set")
+                .font(.system(.body, design: .monospaced))
+                .foregroundStyle(.secondary)
+        } label: {
+            Text("Todoist API token")
+            Text(s.todoistSource == "env" ? "Read from TODOIST_API_TOKEN in .env."
+                 : s.todoistToken == nil ? "Needed to add to-dos and read your projects. Find it in Todoist's Settings, Integrations, Developer."
+                 : "Kept in the macOS Keychain.")
+        }
+        HStack {
+            Button(s.todoistToken == nil ? "Add Token..." : "Replace Token...") { enteringToken = true }
+            if s.todoistToken != nil {
+                Button("Check") { Task { tokenCheck = try? await API.post(["api", "settings", "todoist", "check"]) } }
+                    .help("Ask Todoist for your projects to see that the token works")
+            }
+            if s.todoistSource == "keychain" {
+                Button("Remove Token...", role: .destructive) { confirmRemoveToken = true }
+            }
+            Spacer()
+            if let tokenCheck {
+                Label(tokenCheck.ok ? "The token works" : tokenCheck.error ?? "The token didn't work",
+                      systemImage: tokenCheck.ok ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                    .foregroundStyle(tokenCheck.ok ? .green : .red)
+                    .lineLimit(2)
+            }
+        }
+    }
+
+    private func todoAppHint(_ s: SettingsState) -> String {
+        switch s.todoApp {
+        case "things":
+            return s.thingsInstalled ? "Find your to-dos in a meeting or an answer and add them to Things, with a start date and a deadline."
+                : "Things 3 isn't in your Applications folder."
+        case "todoist":
+            return "Add your to-dos to Todoist. A to-do's date becomes its due date, and its deadline Todoist's deadline."
+        case "reminders":
+            return "Add your to-dos to Reminders, in a list you pick. The deadline becomes the due date, or the date when there's no deadline. The first one asks for permission to control Reminders."
+        default:
+            return "Off hides the To-dos tab, sending to-dos and the to-do badges."
+        }
+    }
+
+    private func todoModelHint(_ s: SettingsState) -> String {
+        if s.todoModel == "apple" {
+            return s.apple.available ? "Runs on this Mac, so transcripts never leave it. It reads a meeting in parts and is less careful than Claude about whose to-do something is."
+                : s.apple.reason ?? "Apple Intelligence isn't available."
+        }
+        let apple = s.apple.available ? " Apple Intelligence runs on this Mac instead, and is less careful." : ""
+        return "Claude reads the transcript text and uses your API key.\(apple)"
+    }
+
+    // a token change, then the page shows the new state
+    @discardableResult
+    private func tokenAction(_ request: () async throws -> SettingsState) async -> Bool {
+        do {
+            settings = try await request()
+            tokenCheck = nil
+            return true
+        } catch {
+            store.show(error.localizedDescription)
+            return false
         }
     }
 
@@ -287,7 +390,7 @@ struct SettingsView: View {
         await store.run {
             let updated: SettingsState = try await API.put(["api", "settings"], change)
             settings = updated
-            store.accent = updated.accent
+            store.apply(updated)
         }
     }
 }
@@ -295,21 +398,26 @@ struct SettingsView: View {
 // pastes a new key in a password field, so it is never shown
 struct KeySheet: View {
     @Environment(\.dismiss) private var dismiss
+    var title = "Anthropic API Key"
+    var message = "Paste a key from the Anthropic Console. It's saved in the macOS Keychain and only shown masked after this."
+    var placeholder = "sk-ant-..."
+    var linkTitle = "Open the Anthropic Console"
+    var link = URL(string: "https://console.anthropic.com/settings/keys")!
     let save: (String) async -> Bool
     @State private var key = ""
     @State private var saving = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Anthropic API Key").font(.headline)
-            Text("Paste a key from the Anthropic Console. It's saved in the macOS Keychain and only shown masked after this.")
+            Text(title).font(.headline)
+            Text(message)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            SecureField("sk-ant-...", text: $key)
+            SecureField(placeholder, text: $key)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit { Task { await submit() } }
             HStack {
-                Link("Open the Anthropic Console", destination: URL(string: "https://console.anthropic.com/settings/keys")!)
+                Link(linkTitle, destination: link)
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)

@@ -17,7 +17,7 @@ from urllib.parse import quote
 import numpy as np
 import pandas as pd
 
-from local_transcription import asr, audio, diarize, embed, match, library, merge, notes, render, settings, vocab
+from local_transcription import asr, audio, diarize, embed, match, library, merge, notes, render, settings, templates, vocab
 
 # config
 OUTPUT_DIR = Path(__file__).parent.parent / "outputs"
@@ -448,7 +448,9 @@ def rename_meeting(out_dir, title):
     if note_path.exists() and json.loads((out_dir / "note.json").read_text()).get("edited"):
         # an edited note is otherwise left alone, but its heading follows the meeting's name
         date = meeting_title(meta)[1]
-        text = re.sub(r"^# .*$", lambda _: f"# {date} - {title}", note_path.read_text(), count=1, flags=re.M)
+        summary = json.loads((out_dir / "note.json").read_text())
+        heading = notes.heading(templates.for_note(summary), date, title) or f"# {date} - {title}"
+        text = re.sub(r"^# .*$", lambda _: heading, note_path.read_text(), count=1, flags=re.M)
         note_path.write_text(text)
     return title
 
@@ -894,9 +896,10 @@ def set_action_items(out_dir, items):
     return before
 
 
-def write_note(out_dir, backend=None, project=None, owner=None, progress=print):
+def write_note(out_dir, backend=None, project=None, owner=None, progress=print, template=None):
     """summarize a meeting into note.md. project is a project name to file it under, or None
-    to keep the current one. the owner is whose meeting it is."""
+    to keep the current one. the owner is whose meeting it is. template is the name of the
+    note template to write it in, or None for the one chosen in settings."""
     out_dir = Path(out_dir)
     meta, segments, speakers, _ = load_run(out_dir)
     speakers = link_people(speakers)
@@ -910,7 +913,8 @@ def write_note(out_dir, backend=None, project=None, owner=None, progress=print):
 
     _log(progress, f"summarizing with the {backend} model")
     summary = notes.summarize(lines, owner, date, list(dict.fromkeys(attendees)), terms,
-                              backend=backend, progress=progress)
+                              backend=backend, progress=progress,
+                              template_name=template or settings.load()["note_template"])
     summary["owner_id"] = owner_id
     (out_dir / "note.json").write_text(json.dumps(summary, indent=2))
     (out_dir / ORIGINAL_NOTE).unlink(missing_ok=True)

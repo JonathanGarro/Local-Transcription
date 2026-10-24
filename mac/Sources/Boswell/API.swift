@@ -110,6 +110,8 @@ struct Note: Codable {
     let backend: String?
     let model: String?
     let created: String?
+    // the note template it was written in
+    let template: String?
     let edited: String?
     let sentPath: String?
     let archived: String?
@@ -146,6 +148,9 @@ struct Lookups: Codable {
     let todoApp: String?
     // whether claude can find to-dos
     let todosReady: Bool?
+    let templates: [String]?
+    // the note template chosen in settings
+    let noteTemplate: String?
 }
 
 struct Person: Codable, Hashable, Identifiable {
@@ -285,6 +290,18 @@ struct SettingsState: Codable {
     let meetingNotesDirSource: String?
     let peopleDir: String?
     let peopleDirSource: String?
+    let noteTemplate: String
+}
+
+struct NoteTemplate: Codable, Hashable {
+    let name: String
+    let builtIn: Bool
+    let text: String
+}
+
+struct Templates: Codable {
+    let templates: [NoteTemplate]
+    let chosen: String
 }
 
 struct KeyCheck: Codable {
@@ -299,6 +316,7 @@ struct SettingsChange: Encodable {
     // "" goes back to the folder in .env
     var meetingNotesDir: String?
     var peopleDir: String?
+    var noteTemplate: String?
 }
 
 struct Count: Codable, Hashable {

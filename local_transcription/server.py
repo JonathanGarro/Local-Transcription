@@ -23,7 +23,7 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
 from local_transcription import (ask, audio, directory, keychain, library, notes, pipeline, plaud, projects,
-                                 render, settings, todoist, todos, vocab)
+                                 render, settings, templates, todoist, todos, vocab)
 
 # config
 BASE_DIR = Path(__file__).parent.parent
@@ -117,9 +117,9 @@ class Jobs:
         return self._queue({"kind": "transcribe", "file": name, "path": None, "source_type": "auto",
                             "meeting_id": None, "plaud_id": plaud_id})
 
-    def add_note(self, meeting_id, backend, project):
+    def add_note(self, meeting_id, backend, project, template=None):
         return self._queue({"kind": "note", "file": f"Note for {meeting_id}", "meeting_id": meeting_id,
-                            "backend": backend, "project": project})
+                            "backend": backend, "project": project, "template": template})
 
     def _queue(self, fields):
         job = {"job_id": uuid.uuid4().hex[:8], "status": "queued", "step": "waiting",
@@ -214,7 +214,7 @@ class Jobs:
             self._update(job, step=text, **({"progress": share} if share is not None else {}))
 
         pipeline.write_note(pipeline.meeting_dir(job["meeting_id"]), backend=job["backend"],
-                            project=job["project"], progress=progress)
+                            project=job["project"], progress=progress, template=job.get("template"))
         self._update(job, status="done", step="done", progress=1.0)
 
 
@@ -241,6 +241,7 @@ class SettingsRequest(BaseModel):
     # "" clears one, going back to .env
     meeting_notes_dir: str | None = None
     people_dir: str | None = None
+    note_template: str | None = None
 
 
 class TodosRequest(BaseModel):
@@ -285,6 +286,12 @@ class NoteRequest(BaseModel):
     backend: str = "local"
     # None lets the model suggest one of the library's projects
     project: str | None = None
+    # None writes it in the template chosen in settings
+    template: str | None = None
+
+
+class TemplateRequest(BaseModel):
+    text: str
 
 
 class SendRequest(BaseModel):
@@ -398,6 +405,32 @@ def create_app():
             return {"ok": False, "error": str(message)}
         return {"ok": True}
 
+    # note templates: the built-in ones and your own, which are saved as files in data/templates
+    def templates_state():
+        return {"templates": [{"name": n, "built_in": n in templates.BUILT_IN, "text": templates.text(n)}
+                              for n in templates.names()],
+                "chosen": settings.load()["note_template"]}
+
+    @app.get("/api/templates")
+    def get_templates():
+        return templates_state()
+
+    @app.put("/api/templates/{name}")
+    def save_template(name: str, request: TemplateRequest):
+        try:
+            templates.save(name, request.text)
+        except ValueError as err:
+            raise HTTPException(400, str(err))
+        return templates_state()
+
+    @app.delete("/api/templates/{name}")
+    def delete_template(name: str):
+        try:
+            templates.delete(name)
+        except ValueError as err:
+            raise HTTPException(400, str(err))
+        return templates_state()
+
     # the todoist token goes in the keychain too, and only its masked form comes back
     @app.put("/api/settings/todoist")
     def save_todoist_token(request: KeyRequest):
@@ -425,7 +458,7 @@ def create_app():
         try:
             settings.save(accent=request.accent, claude_model=request.claude_model, todo_app=request.todo_app,
                           meeting_notes_dir=request.meeting_notes_dir,
-                          people_dir=request.people_dir)
+                          people_dir=request.people_dir, note_template=request.note_template)
         except ValueError as err:
             raise HTTPException(400, str(err))
         return settings_state()
@@ -859,6 +892,7 @@ def create_app():
         return {"exists": path.exists(), "markdown": path.read_text() if path.exists() else "",
                 "path": str(path.relative_to(BASE_DIR)), "project": library.meeting_project(meeting_id),
                 "backend": info.get("backend"), "model": info.get("model"), "created": info.get("created"),
+                "template": (info.get("template") or templates.DEFAULT) if info else None,
                 "edited": info.get("edited"), "sent_path": library.meeting_sent_path(meeting_id),
                 "archived": _records(library.meetings().query("meeting_id == @meeting_id"))[0].get("archived"),
                 "notes_dir": str(pipeline.notes_dir() or ""), "vault": vault,
@@ -875,7 +909,9 @@ def create_app():
         if request.backend == "claude" and not os.environ.get("ANTHROPIC_API_KEY"):
             raise HTTPException(400, "add your Anthropic API key in Settings to use Claude")
         project = request.project.strip() if request.project and request.project.strip() else None
-        return jobs.add_note(meeting_id, request.backend, project)
+        if request.template is not None and request.template not in templates.names():
+            raise HTTPException(400, f"there's no note template named {request.template}")
+        return jobs.add_note(meeting_id, request.backend, project, request.template)
 
     @app.post("/api/meetings/{meeting_id}/note/text")
     def save_note(meeting_id: str, request: NoteText):
@@ -969,7 +1005,8 @@ def create_app():
     def lookups():
         return {"teams": directory.lookup_names("teams"), "organizations": directory.lookup_names("organizations"),
                 "projects": projects.all_projects(), "default_backend": notes.default_backend(),
-                "claude_ready": bool(os.environ.get("ANTHROPIC_API_KEY")), **todo_state()}
+                "claude_ready": bool(os.environ.get("ANTHROPIC_API_KEY")), **todo_state(),
+                "templates": templates.names(), "note_template": settings.load()["note_template"]}
 
     @app.post("/api/people/{person_id}/details")
     def details(person_id: str, request: DetailsRequest):

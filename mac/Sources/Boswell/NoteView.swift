@@ -11,6 +11,7 @@ struct NoteView: View {
     @State private var saveTask: Task<Void, Never>?
     @State private var project = ""
     @State private var backend = "local"
+    @State private var template = ""
     @State private var showChanges = false
     @State private var inspectorTab = InspectorTab.changes
     @State private var todoState = TodoState.idle
@@ -102,7 +103,8 @@ struct NoteView: View {
         .confirmationDialog("Rewrite the note?", isPresented: $confirmRewrite) {
             Button("Rewrite", role: .destructive) { Task { await write() } }
         } message: {
-            Text(note?.edited != nil ? "This replaces your edits with a new note." : "This replaces the note with a new one.")
+            Text((note?.edited != nil ? "This replaces your edits with a new note" : "This replaces the note with a new one")
+                 + (template == note?.template ? "." : ", in the \(template) template."))
         }
         .confirmationDialog("Find your to-dos before sending?", isPresented: $confirmTodos) {
             Button("Find To-dos First") { Task { await findTodosFirst() } }
@@ -243,7 +245,15 @@ struct NoteView: View {
             }
 
             Menu {
-                Button("Rewrite Note...") { confirmRewrite = true }
+                // rewriting can switch the note to another template
+                Menu("Rewrite Note") {
+                    ForEach(lookups?.templates ?? [], id: \.self) { name in
+                        Button(name == note?.template ? "\(name) (current)" : name) {
+                            template = name
+                            confirmRewrite = true
+                        }
+                    }
+                }
                 if note?.edited != nil && !sent {
                     Button("Discard My Edits...") { confirmDiscard = true }
                 }
@@ -344,6 +354,9 @@ struct NoteView: View {
                     Text("Claude").tag("claude")
                         .disabled(lookups?.claudeReady != true)
                 }
+                Picker("Template", selection: $template) {
+                    ForEach(lookups?.templates ?? [], id: \.self) { Text($0).tag($0) }
+                }
             } footer: {
                 Text(lookups?.claudeReady == true ? "Claude reads the transcript text only, never the audio."
                      : "Add your Anthropic API key in Settings to use Claude.")
@@ -393,6 +406,8 @@ struct NoteView: View {
             lookups = l
             todosReady = l.todosReady == true
             backend = l.defaultBackend ?? "local"
+            // a rewrite keeps the note's template, a first note uses the one from settings
+            template = fetched.template ?? l.noteTemplate ?? "Standard"
         }
         if showChanges { await loadDiff() }
     }
@@ -438,7 +453,8 @@ struct NoteView: View {
         let name = project.trimmingCharacters(in: .whitespaces)
         await store.run {
             let _: Job = try await API.post(API.meeting(meetingId, "note"),
-                                            ["backend": backend, "project": name.isEmpty ? nil : name])
+                                            ["backend": backend, "project": name.isEmpty ? nil : name,
+                                             "template": template.isEmpty ? nil : template])
             await store.refresh()
         }
     }

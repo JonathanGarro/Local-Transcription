@@ -154,15 +154,25 @@ Every term, plus every profile name, is passed to Whisper as a spelling hint on 
 ```
 uv run scripts/summarize.py "outputs/2026-10-13 - Dashboard Review"
 uv run scripts/summarize.py "outputs/2026-10-13 - Dashboard Review" --backend claude --project "Customer Dashboard"
+uv run scripts/summarize.py "outputs/2026-10-13 - Dashboard Review" --template "Decisions and Next Steps"
 ```
 
-Writes `note.md` in the Obsidian layout: frontmatter, Agenda, Discussion and Transcript. The model writes the agenda and discussion. An Action Items section is added only once you run Find my to-dos and send them to your to-do app, holding just those to-dos as links. Code fills in the rest:
+Writes `note.md` in a note template (see below). The Standard template is the Obsidian layout: frontmatter, Agenda, Discussion and Transcript. The model writes the agenda and discussion. An Action Items section is added only once you run Find my to-dos and send them to your to-do app, holding just those to-dos as links. Code fills in the rest:
 
 - the heading is `# <date> - <meeting name>`, using the name you gave the meeting (or its file name), never one the model makes up
 
 - `people` are the confirmed speakers other than you, as `[[Full Name]]` links, stored one per line the way Obsidian writes list properties
 - `teams` and `organizations` are looked up from those people's notes in Obsidian
 - `project` is the one you pick, the model never chooses one
+
+**Note templates.** Settings picks the template new notes are written in, and the write form and Rewrite Note in the More menu can pick another for one note. A note keeps the template it was written in, so changing the choice never rewrites notes you already have. The built-in templates are:
+
+- **Standard**: the layout above, with every property, an agenda paragraph and two-level discussion bullets
+- **Summary**: a summary paragraph and key points
+- **Decisions and Next Steps**: a summary, then decisions, open questions and next steps
+- **One-on-One**: updates, discussion topics, feedback and follow-ups
+
+The built-in ones are read only. **Duplicate** one in Settings to make your own, saved as a Markdown file in `data/templates/`. A template is the note as Markdown with placeholders. Code fills in `{{date}}`, `{{title}}`, `{{people}}`, `{{teams}}`, `{{organizations}}`, `{{project}}`, `{{transcript_link}}`, `{{transcript}}` and `{{action_items}}`. The model writes `{{paragraph: …}}`, `{{bullets: …}}` and `{{topics: …}}` (topics with points under each), following what you write after the colon, such as `{{bullets: decisions the group made}}`. A list placeholder after a property, as in `people: {{people}}`, becomes an Obsidian list property, and anywhere else a list of links. A section whose placeholders all come out empty, such as Action Items before any to-dos are sent, is left out with its heading. The first `#` heading names the note's file in Obsidian. Saving checks the template and says what's wrong, such as a placeholder that doesn't exist.
 
 Projects come from your Obsidian project index. Set `PROJECT_INDEX_DIR` in `.env` to the folder with one note per project. The app reads only the `project status` line of each note. The picker lists In-Progress projects first, then everything else from A to Z, and you can search by typing. A name that isn't in the index is still accepted.
 - the transcript block is the confirmed transcript as `[Full Name] text` lines, never retyped by the model

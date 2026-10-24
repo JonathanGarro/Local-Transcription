@@ -8,6 +8,8 @@ import json
 import os
 from pathlib import Path
 
+from local_transcription import templates
+
 # config
 SETTINGS_PATH = Path(__file__).parent.parent / "data" / "settings.json"
 ACCENTS = ["blue", "red", "green", "purple", "orange"]
@@ -45,7 +47,10 @@ def load():
     return {"accent": saved.get("accent") if saved.get("accent") in ACCENTS else "blue",
             "claude_model": saved.get("claude_model") if saved.get("claude_model") in MODELS else None,
             "todo_app": saved.get("todo_app") if saved.get("todo_app") in TODO_APPS else default_app,
-            **{key: saved.get(key) or None for key in FOLDERS}}
+            **{key: saved.get(key) or None for key in FOLDERS},
+            # a template of your own that was deleted falls back to the standard one
+            "note_template": saved.get("note_template") if saved.get("note_template") in templates.names()
+            else templates.DEFAULT}
 
 
 def save(**changes):
@@ -56,6 +61,8 @@ def save(**changes):
         raise ValueError(f"model must be one of {', '.join(MODELS)}")
     if changes.get("todo_app") is not None and changes["todo_app"] not in TODO_APPS:
         raise ValueError(f"to-do app must be one of {', '.join(TODO_APPS)}")
+    if changes.get("note_template") is not None and changes["note_template"] not in templates.names():
+        raise ValueError(f"there's no note template named {changes['note_template']}")
     for key in FOLDERS:
         # "" clears a folder, which falls back to .env
         if changes.get(key):

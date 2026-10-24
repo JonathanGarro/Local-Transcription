@@ -1,10 +1,11 @@
-"""meeting notes in the obsidian layout: frontmatter, agenda, discussion, transcript, and,
-once the owner's to-dos are sent to the to-do app from the app, action items linking to them.
+"""meeting notes, laid out by a note template (see templates.py). the standard one is the
+obsidian layout: frontmatter, agenda, discussion, transcript, and, once the owner's to-dos
+are sent to the to-do app from the app, action items linking to them.
 
-a language model writes the agenda and discussion as json. the heading is
-the meeting's own title, the project is the one picked in the app, and the frontmatter and
-transcript block are filled in by code, so the transcript is never retyped by the model and
-the people come from the library and their teams and organizations from obsidian.
+a language model writes the template's written parts as json. the heading is the meeting's
+own title, the project is the one picked in the app, and the frontmatter and transcript
+block are filled in by code, so the transcript is never retyped by the model and the people
+come from the library and their teams and organizations from obsidian.
 
 two backends: "local" runs an mlx model on this mac and nothing leaves the machine.
 "claude" sends the transcript text (never audio or voice profiles) to the anthropic api.
@@ -15,7 +16,7 @@ import os
 import re
 from datetime import datetime
 
-from local_transcription import keychain, library, settings, todos
+from local_transcription import keychain, library, settings, templates, todos
 
 # config
 BACKENDS = ["local", "claude"]
@@ -24,8 +25,7 @@ MAX_OUTPUT_TOKENS = 4000
 LOCAL_TEMPERATURE = 0.2
 INSTRUCTIONS = """You write meeting notes from a speaker-labeled transcript. Reply with a single JSON object and nothing else. It has these keys:
 
-"agenda": a few sentences describing what the meeting was about.
-"discussion": a list of topics in the order they came up. Each topic is an object {{"topic": "...", "points": ["...", "..."]}}. The points summarize the key things said, decided, or raised under that topic, one sentence each.
+{keys}
 
 Rules:
 - Plain text only. No bold, italics, headings, or bullet characters inside the strings.
@@ -33,6 +33,12 @@ Rules:
 - Do not invent facts that are not in the transcript.
 - The transcript comes from speech recognition. Fix obvious mis-hearings of names and terms, using the spelling list when one is given.
 - "Unknown" speakers were not identified. Refer to them by what they said rather than guessing a name."""
+# how each kind of written part is described to the model
+SHAPES = {
+    "paragraph": "a string. {}",
+    "bullets": "a list of strings, one sentence each, or an empty list when there are none. {}",
+    "topics": 'a list of topics, each an object {{"topic": "...", "points": ["...", "..."]}}, with the points one sentence each. {}',
+}
 
 
 # helpers
@@ -72,15 +78,30 @@ def parse_json(text):
     return json.loads(text[start:end + 1])
 
 
-def clean_summary(raw):
-    discussion = []
-    for topic in raw.get("discussion") or []:
+def _topics(value):
+    topics = []
+    for topic in value if isinstance(value, list) else []:
         if isinstance(topic, dict):
             points = [_plain(p) for p in topic.get("points") or [] if _plain(p)]
-            discussion.append({"topic": _plain(topic.get("topic")), "points": points})
+            topics.append({"topic": _plain(topic.get("topic")), "points": points})
         elif _plain(topic):
-            discussion.append({"topic": _plain(topic), "points": []})
-    return {"agenda": _plain(raw.get("agenda")), "discussion": discussion}
+            topics.append({"topic": _plain(topic), "points": []})
+    return topics
+
+
+def clean_summary(raw, template=templates.STANDARD):
+    """the model's reply as {key: value} for each written part of the template."""
+    cleaned = {}
+    for part in templates.sections(template):
+        value = raw.get(part["key"])
+        if part["kind"] == "paragraph":
+            cleaned[part["key"]] = _plain(" ".join(map(str, value)) if isinstance(value, list) else value)
+        elif part["kind"] == "bullets":
+            items = value if isinstance(value, list) else [value] if value else []
+            cleaned[part["key"]] = [_plain(v) for v in items if _plain(v)]
+        else:
+            cleaned[part["key"]] = _topics(value)
+    return cleaned
 
 
 # people
@@ -118,8 +139,10 @@ def transcript_lines(segments, speakers):
 
 
 # models
-def build_messages(lines, owner, meeting_date, attendees, terms):
-    system = INSTRUCTIONS.format(owner=owner)
+def build_messages(lines, owner, meeting_date, attendees, terms, template=templates.STANDARD):
+    keys = "\n".join(f'"{part["key"]}": ' + SHAPES[part["kind"]].format(part["instructions"]).strip()
+                     for part in templates.sections(template))
+    system = INSTRUCTIONS.format(keys=keys)
     header = [f"Meeting date: {meeting_date}", f"Attendees: {', '.join(attendees)}",
               f"These notes are written for {owner}."]
     if terms:
@@ -169,11 +192,14 @@ def run_claude(system, user, progress=None):
     return "".join(block.text for block in message.content if block.type == "text"), model_name
 
 
-def summarize(lines, owner, meeting_date, attendees, terms, backend="local", progress=None):
-    """ask the chosen model for the note sections. returns the cleaned summary dict."""
+def summarize(lines, owner, meeting_date, attendees, terms, backend="local", progress=None,
+              template_name=templates.DEFAULT):
+    """ask the chosen model for the note sections, in the named template. returns the summary
+    dict, with the written parts under sections and the template it was written with."""
     if backend not in BACKENDS:
         raise ValueError(f"backend must be one of {BACKENDS}")
-    system, user = build_messages(lines, owner, meeting_date, attendees, terms)
+    template = templates.text(template_name)
+    system, user = build_messages(lines, owner, meeting_date, attendees, terms, template)
     runner = run_local if backend == "local" else run_claude
     text, model_name = runner(system, user, progress)
     try:
@@ -186,35 +212,118 @@ def summarize(lines, owner, meeting_date, attendees, terms, backend="local", pro
             progress("  the reply was not valid json, trying once more")
         text, model_name = runner(system, user + "\n\nReply with valid JSON only.", progress)
         raw = parse_json(text)
-    summary = clean_summary(raw)
+    summary = {"sections": clean_summary(raw, template), "template": template_name}
+    if template_name not in templates.BUILT_IN:
+        # a copy of your own template, so editing or deleting it later leaves this note as it is
+        summary["template_text"] = template
     summary.update(backend=backend, model=model_name, created=datetime.now().isoformat(timespec="seconds"))
     return summary
 
 
 # main
+def _written(kind, value):
+    """a written part as note lines."""
+    if kind == "paragraph":
+        return [value] if value else []
+    if kind == "bullets":
+        return [f"- {item}" for item in value or []]
+    lines = []
+    for topic in value or []:
+        lines.append(f"- {topic['topic']}")
+        lines += [f"\t- {point}" for point in topic["points"]]
+    return lines
+
+
+def _fill_line(line, values, front, parts):
+    """one template line as note lines, and whether it had a placeholder. values holds what
+    code fills in, parts the written parts still to place, in order."""
+    matches = list(templates.PLACEHOLDER.finditer(line))
+    if not matches:
+        return [line], False
+    if front:
+        key = re.match(r"^([^:]+):\s*\{\{\s*(\w+)\s*\}\}\s*$", line)
+        if key:
+            name, value = key.group(2), values[key.group(2)]
+            if name in templates.LISTS:
+                return _yaml_list(key.group(1), value), True
+            if name == "project":
+                return [f"{key.group(1)}: {wikilink(value)}" if value else f"{key.group(1)}:"], True
+            if name in ("transcript_link", "title"):
+                return [f"{key.group(1)}: {json.dumps(value, ensure_ascii=False)}"], True
+            return [f"{key.group(1)}: {value}".rstrip()], True
+    if len(matches) == 1 and line.strip() == matches[0].group(0):
+        name = matches[0].group(1)
+        if name in templates.WRITTEN:
+            part = parts.pop(0)
+            return _written(part["kind"], part["value"]), True
+        if name == "transcript":
+            return ["```"] + values["transcript"] + ["```"], True
+        if name == "action_items":
+            return values["action_items"], True
+
+    def inline(match):
+        name = match.group(1)
+        if name in templates.WRITTEN:
+            return " ".join(_written("paragraph", parts.pop(0)["value"]))
+        if name in templates.LISTS:
+            return ", ".join(f"[[{v}]]" for v in values[name])
+        if name == "project":
+            return f"[[{values['project']}]]" if values["project"] else ""
+        return str(values[name] or "")
+
+    return [templates.PLACEHOLDER.sub(inline, line)], True
+
+
+def fill(template, values, written):
+    """the template with its placeholders filled in. values is {placeholder: value} for the
+    parts code fills, written {key: value} for the parts the model wrote. a section whose
+    placeholders all came out empty is left out, heading and all."""
+    rows = template.rstrip("\n").split("\n")
+    end = templates.frontmatter_end(rows)
+    parts = [{**part, "value": written.get(part["key"])} for part in templates.sections(template)]
+    out = []
+    for line in rows[:end + 1] if end else []:
+        out += _fill_line(line, values, True, parts)[0]
+    # the rest in sections, each a heading and the lines up to the next one
+    chunks = [[]]
+    for line in rows[end + 1 if end else 0:]:
+        if templates.HEADING.match(line):
+            chunks.append([])
+        chunks[-1].append(line)
+    for chunk in chunks:
+        heading = chunk[:1] if chunk and templates.HEADING.match(chunk[0]) else []
+        body, placed = [], False
+        for line in chunk[len(heading):]:
+            lines, had = _fill_line(line, values, False, parts)
+            body += lines
+            placed = placed or had
+        if heading and placed and not any(line.strip() for line in body):
+            continue
+        out += [line for h in heading for line in _fill_line(h, values, False, parts)[0]] + body
+    return "\n".join(out).rstrip("\n") + "\n"
+
+
+def heading(template, date, title):
+    """the template's first "# " heading for a meeting, or None when it has none."""
+    for line in template.split("\n"):
+        if line.startswith("# "):
+            return templates.PLACEHOLDER.sub(lambda m: {"date": date, "title": title}.get(m.group(1), ""), line)
+    return None
+
+
 def render_note(summary, date, title, segments, speakers, owner_id, project, transcript_ref):
-    """the note markdown. people, teams, and organizations exclude the owner, who is on
-    every note."""
+    """the note markdown, in the template it was written with. people, teams, and
+    organizations exclude the owner, who is on every note."""
     people = speaker_people(speakers)
     order = [s for s in dict.fromkeys(segments["speaker"]) if s in people]
     others = [people[s] for s in order if people[s]["person_id"] != owner_id]
-    names = list(dict.fromkeys(p["name"] for p in others))
-    teams = list(dict.fromkeys(t for p in others for t in p["teams"]))
-    orgs = list(dict.fromkeys(o for p in others for o in p["organizations"]))
-
-    lines = ["---", f"date: {date}"]
-    lines += _yaml_list("people", names) + _yaml_list("teams", teams) + _yaml_list("organizations", orgs)
-    lines += ["tags:", f"transcript: {json.dumps(transcript_ref, ensure_ascii=False)}",
-              f"project: {wikilink(project)}" if project else "project:", "prep:", "---",
-              f"# {date} - {title}", "", "## Agenda", "", summary["agenda"], "",
-              "## Discussion", ""]
-    for topic in summary["discussion"]:
-        lines.append(f"- {topic['topic']}")
-        lines += [f"\t- {point}" for point in topic["points"]]
-    lines += ["", "## Transcript", "", "```"] + transcript_lines(segments, speakers) + ["```"]
-    if action_item_lines(summary):
-        lines += ["## Action Items", ""] + action_item_lines(summary)
-    return "\n".join(lines) + "\n"
+    values = {"date": date, "title": title, "project": project, "transcript_link": transcript_ref,
+              "people": list(dict.fromkeys(p["name"] for p in others)),
+              "teams": list(dict.fromkeys(t for p in others for t in p["teams"])),
+              "organizations": list(dict.fromkeys(o for p in others for o in p["organizations"])),
+              "transcript": transcript_lines(segments, speakers), "action_items": action_item_lines(summary)}
+    # notes from before templates kept the agenda and discussion at the top level
+    return fill(templates.for_note(summary), values, summary.get("sections") or summary)
 
 
 def action_item_lines(summary):

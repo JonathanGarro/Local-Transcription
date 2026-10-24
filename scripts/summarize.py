@@ -18,7 +18,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # values already set in the shell take precedence over .env
 load_dotenv(BASE_DIR / ".env")
 
-from local_transcription import notes, pipeline  # noqa: E402
+from local_transcription import notes, pipeline, templates  # noqa: E402
 
 
 # main
@@ -29,9 +29,12 @@ def main():
                         help="local runs on this mac, claude sends the transcript text to anthropic")
     parser.add_argument("--project", help="file the meeting under this project (created if new)")
     parser.add_argument("--owner", help="whose action items to list (default MIC_OWNER in .env)")
+    parser.add_argument("--template", choices=templates.names(),
+                        help="the note template to write it in (default the one chosen in settings)")
     args = parser.parse_args()
 
-    path = pipeline.write_note(args.output_dir, backend=args.backend, project=args.project, owner=args.owner)
+    path = pipeline.write_note(args.output_dir, backend=args.backend, project=args.project, owner=args.owner,
+                               template=args.template)
     print(f"note: {path.relative_to(BASE_DIR)}")
 
 

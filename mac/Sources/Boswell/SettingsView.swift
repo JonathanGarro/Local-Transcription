@@ -11,6 +11,9 @@ struct SettingsView: View {
     @State private var enteringToken = false
     @State private var confirmRemoveToken = false
     @State private var tokenCheck: KeyCheck?
+    @State private var templates: Templates?
+    // the template open in the editor, a copy of a built-in one to start from when new
+    @State private var editing: TemplateDraft?
     @AppStorage(Prefs.askTodos) private var askTodos = true
     @AppStorage(Prefs.openAfterSend) private var openAfterSend = false
     @AppStorage(Prefs.plaud) private var plaudEnabled = true
@@ -24,6 +27,7 @@ struct SettingsView: View {
         .navigationTitle("Settings")
         .task {
             settings = try? await API.get(["api", "settings"])
+            templates = try? await API.get(["api", "templates"])
             if settings?.plaudInstalled == true { await watchPlaud(try? await API.get(["api", "plaud", "account"])) }
         }
     }
@@ -75,6 +79,30 @@ struct SettingsView: View {
                     Text("When a note goes to Obsidian before its meeting was checked for to-dos.")
                 }
                 .disabled(s.todoApp == "none")
+            }
+
+            Section("Notes") {
+                Picker(selection: Binding(get: { s.noteTemplate }, set: { name in
+                    Task { await save(SettingsChange(noteTemplate: name)) }
+                })) {
+                    ForEach(templates?.templates ?? [], id: \.name) { t in
+                        Text(t.builtIn ? t.name : "\(t.name) (yours)").tag(t.name)
+                    }
+                } label: {
+                    Text("Template")
+                    Text("The layout new notes are written in. Notes already written keep theirs, and Rewrite Note can switch one.")
+                }
+                HStack {
+                    if let chosen = templates?.templates.first(where: { $0.name == s.noteTemplate }) {
+                        Button(chosen.builtIn ? "View..." : "Edit...") {
+                            editing = TemplateDraft(name: chosen.name, text: chosen.text, builtIn: chosen.builtIn, original: chosen.name)
+                        }
+                        Button("Duplicate...") {
+                            editing = TemplateDraft(name: "\(chosen.name) Copy", text: chosen.text, builtIn: false, original: nil)
+                        }
+                    }
+                    Spacer()
+                }
             }
 
             Section("Obsidian") {
@@ -192,6 +220,15 @@ struct SettingsView: View {
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .sheet(isPresented: $enteringKey) {
             KeySheet { key in await keyAction { try await API.put(["api", "settings", "key"], ["key": key]) } }
+        }
+        .sheet(item: $editing) { draft in
+            TemplateEditor(draft: draft) { updated in
+                templates = updated
+                if let fresh: SettingsState = try? await API.get(["api", "settings"]) {
+                    settings = fresh
+                    store.apply(fresh)
+                }
+            }
         }
         .sheet(isPresented: $enteringToken) {
             KeySheet(title: "Todoist API Token",
@@ -461,6 +498,135 @@ struct KeySheet: View {
         if await save(trimmed) {
             key = ""
             dismiss()
+        }
+    }
+}
+
+struct TemplateDraft: Identifiable {
+    var name: String
+    var text: String
+    let builtIn: Bool
+    // the saved name it was opened as, nil for a new one
+    let original: String?
+    var id: String { original ?? "new" }
+}
+
+// a note template as markdown with placeholders, with a list of them beside it. built-in
+// templates are read only, and duplicating one is how yours start
+struct TemplateEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    @State var draft: TemplateDraft
+    let saved: (Templates) async -> Void
+    @State private var error: String?
+    @State private var saving = false
+    @State private var confirmDelete = false
+
+    private static let placeholders: [(String, String)] = [
+        ("{{date}}", "the meeting's date"),
+        ("{{title}}", "the meeting's name"),
+        ("{{people}}", "who was there, other than you, as links"),
+        ("{{teams}}", "their teams"),
+        ("{{organizations}}", "their organizations"),
+        ("{{project}}", "the meeting's project, as a link"),
+        ("{{transcript_link}}", "a link that opens the transcript in Boswell"),
+        ("{{transcript}}", "the transcript, on a line of its own"),
+        ("{{action_items}}", "links to to-dos sent, on a line of its own"),
+        ("{{paragraph: ...}}", "a paragraph the model writes, as you describe it"),
+        ("{{bullets: ...}}", "a list the model writes, on a line of its own"),
+        ("{{topics: ...}}", "topics with points under each, on a line of its own"),
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                if draft.builtIn {
+                    Text(draft.name).font(.headline)
+                    Text("Built in, so duplicate it to make changes").foregroundStyle(.secondary)
+                } else {
+                    TextField("Template name", text: $draft.name)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 280)
+                }
+                Spacer()
+            }
+            HStack(alignment: .top, spacing: 14) {
+                TextEditor(text: $draft.text)
+                    .font(.system(.body, design: .monospaced))
+                    .disabled(draft.builtIn)
+                    .scrollContentBackground(.hidden)
+                    .padding(6)
+                    .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Placeholders").font(.headline)
+                        ForEach(Self.placeholders, id: \.0) { code, meaning in
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(code).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                                Text(meaning).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        Text("A list after a property, as in people: {{people}}, becomes an Obsidian list. A section whose placeholders all come out empty is left out. The first # heading names the note's file.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 4)
+                    }
+                }
+                .frame(width: 230)
+            }
+            if let error {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+            }
+            HStack {
+                if !draft.builtIn, draft.original != nil {
+                    Button("Delete...", role: .destructive) { confirmDelete = true }
+                }
+                Spacer()
+                Button(draft.builtIn ? "Done" : "Cancel", role: .cancel) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                if !draft.builtIn {
+                    Button(saving ? "Saving" : "Save") { Task { await save() } }
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(saving || draft.name.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+        .padding(20)
+        .frame(width: 820, height: 560)
+        .confirmationDialog("Delete \(draft.original ?? "")?", isPresented: $confirmDelete) {
+            Button("Delete Template", role: .destructive) { Task { await delete() } }
+        } message: {
+            Text("Notes already written in it keep their layout.")
+        }
+    }
+
+    private func save() async {
+        saving = true
+        defer { saving = false }
+        let name = draft.name.trimmingCharacters(in: .whitespaces)
+        do {
+            var updated: Templates = try await API.put(["api", "templates", name], ["text": draft.text])
+            // a renamed template replaces the old one
+            if let original = draft.original, original != name {
+                updated = try await API.delete(["api", "templates", original])
+            }
+            // the editor opens on the chosen template or a copy of it, so what's saved is the choice
+            let _: SettingsState = try await API.put(["api", "settings"], SettingsChange(noteTemplate: name))
+            await saved(updated)
+            dismiss()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func delete() async {
+        guard let original = draft.original else { return }
+        do {
+            let updated: Templates = try await API.delete(["api", "templates", original])
+            await saved(updated)
+            dismiss()
+        } catch {
+            self.error = error.localizedDescription
         }
     }
 }

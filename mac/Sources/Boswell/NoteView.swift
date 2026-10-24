@@ -29,6 +29,8 @@ struct NoteView: View {
 
     private var job: Job? { store.noteJob(meetingId) ?? note?.job.flatMap { $0.running ? $0 : nil } }
     private var sent: Bool { note?.sentPath != nil }
+    // with no meeting notes folder, a meeting is marked done rather than sent to obsidian
+    private var obsidian: Bool { !(note?.notesDir ?? "").isEmpty }
 
     var body: some View {
         Group {
@@ -106,13 +108,13 @@ struct NoteView: View {
             Text((note?.edited != nil ? "This replaces your edits with a new note" : "This replaces the note with a new one")
                  + (template == note?.template ? "." : ", in the \(template) template."))
         }
-        .confirmationDialog("Find your to-dos before sending?", isPresented: $confirmTodos) {
+        .confirmationDialog(obsidian ? "Find your to-dos before sending?" : "Find your to-dos first?", isPresented: $confirmTodos) {
             Button("Find To-dos First") { Task { await findTodosFirst() } }
-            Button("Send Anyway") { Task { await send(replace: false) } }
+            Button(obsidian ? "Send Anyway" : "Mark Done Anyway") { Task { await send(replace: false) } }
             Button("Cancel", role: .cancel) {}
                 .dialogSuppressionToggle("Don't ask again", isSuppressed: Binding(get: { !askTodos }, set: { askTodos = !$0 }))
         } message: {
-            Text("This meeting hasn't been checked for to-dos. Sending them to \(store.todoAppName) first puts their links in the note's action items, so Obsidian gets everything at once.")
+            Text("This meeting hasn't been checked for to-dos. Sending them to \(store.todoAppName) first puts their links in the note's action items\(obsidian ? ", so Obsidian gets everything at once" : "").")
         }
         .confirmationDialog("Use the Obsidian version?", isPresented: $confirmPull) {
             Button("Use Obsidian Version", role: .destructive) { Task { await pull() } }
@@ -226,11 +228,13 @@ struct NoteView: View {
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         ToolbarItemGroup {
-            Button { Task { await store.openInObsidian(meetingId) } } label: {
-                Label("Open in Obsidian", systemImage: "arrow.up.forward.app")
+            if obsidian || sent {
+                Button { Task { await store.openInObsidian(meetingId) } } label: {
+                    Label("Open in Obsidian", systemImage: "arrow.up.forward.app")
+                }
+                .disabled(!sent)
+                .help(sent ? "Open the note in Obsidian" : "Send the note first")
             }
-            .disabled(!sent)
-            .help(sent ? "Open the note in Obsidian" : "Send the note first")
 
             Button { toggleInspector(.changes) } label: {
                 Label("Changes", systemImage: "plus.forwardslash.minus")
@@ -259,17 +263,27 @@ struct NoteView: View {
                 }
                 Divider()
                 Button("Copy Note") { store.copy(text, "note") }
+                Button("Export Note...") { export() }
                 Button("Show in Finder") { Task { await store.reveal(meetingId) } }
             } label: {
                 Label("More", systemImage: "ellipsis.circle")
             }
 
-            Button { requestSend() } label: {
-                Label(sent ? "Send Again" : "Send to Obsidian", systemImage: "paperplane")
+            if obsidian {
+                Button { requestSend() } label: {
+                    Label(sent ? "Send Again" : "Send to Obsidian", systemImage: "paperplane")
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.return, modifiers: [.command, .shift])
+                .help("Save the note into the meeting notes folder")
+            } else if note?.archived == nil {
+                Button { requestSend() } label: {
+                    Label("Mark Done", systemImage: "checkmark.circle")
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.return, modifiers: [.command, .shift])
+                .help("Move the meeting to the Archive. Export Note in the More menu saves the note as a file")
             }
-            .buttonStyle(.borderedProminent)
-            .keyboardShortcut(.return, modifiers: [.command, .shift])
-            .help("Save the note into the meeting notes folder")
         }
     }
 
@@ -463,7 +477,7 @@ struct NoteView: View {
     private func requestSend() {
         let looking: Bool = { if case .idle = todoState { return false }; return true }()
         let unchecked = (note?.todosSent ?? []).isEmpty && note?.todosChecked == nil
-        if store.todoApp != nil && askTodos && todosReady && !sent && unchecked && !looking {
+        if store.todoApp != nil && askTodos && todosReady && !(obsidian && sent) && unchecked && !looking {
             confirmTodos = true
         } else {
             Task { await send(replace: false) }
@@ -481,19 +495,43 @@ struct NoteView: View {
         }
     }
 
+    // sends the note to obsidian, or with no meeting notes folder marks the meeting done
     private func send(replace: Bool) async {
         await flush()
         do {
-            let result: SendResult = try await API.post(API.meeting(meetingId, "note", "send"), ["replace": replace])
+            let result: SendResult = obsidian
+                ? try await API.post(API.meeting(meetingId, "note", "send"), ["replace": replace])
+                : try await API.post(API.meeting(meetingId, "note", "finish"))
             // like archiving in mail, move on to the next meeting in the inbox
             let inbox = store.inbox.map(\.meetingId)
             let next = inbox.firstIndex(of: meetingId).flatMap { i in inbox.indices.contains(i + 1) ? inbox[i + 1] : i > 0 ? inbox[i - 1] : nil }
             await store.refresh()
             store.selection = store.section == .inbox ? next : result.meetingId
-            store.show("Sent to Obsidian as \(URL(fileURLWithPath: result.path).lastPathComponent)")
-            if openAfterSend { await store.openInObsidian(result.meetingId) }
+            if obsidian {
+                store.show("Sent to Obsidian as \(URL(fileURLWithPath: result.path).lastPathComponent)")
+                if openAfterSend { await store.openInObsidian(result.meetingId) }
+            } else {
+                store.show("Moved to the Archive")
+            }
         } catch let error as APIError where error.status == 409 {
             conflict = error.message
+        } catch {
+            store.show(error.localizedDescription)
+        }
+    }
+
+    // saves the note as a markdown file, named the way sending names it
+    private func export() {
+        let heading = text.split(separator: "\n").first { $0.hasPrefix("# ") }.map { String($0.dropFirst(2)) } ?? meetingId
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = heading.replacingOccurrences(of: #"[\\/:*?"<>|#^\[\]]"#, with: "-", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: " .")) + ".md"
+        panel.allowedContentTypes = [.init(filenameExtension: "md") ?? .plainText]
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try text.write(to: url, atomically: true, encoding: .utf8)
+            store.show("Exported \(url.lastPathComponent)")
         } catch {
             store.show(error.localizedDescription)
         }

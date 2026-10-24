@@ -861,6 +861,20 @@ def send_note(out_dir, replace=False):
     return target, out_dir
 
 
+def finish_meeting(out_dir):
+    """move a meeting to the archive without sending its note anywhere, for anyone who doesn't
+    use obsidian. like sending, the folder and recording take the note's name and the playback
+    wavs are dropped. a meeting sent before keeps its vault copy. returns the meeting's folder."""
+    out_dir = Path(out_dir)
+    if not (out_dir / "note.md").exists():
+        raise ValueError("this meeting has no note yet")
+    out_dir = move_meeting(out_dir, Path(note_filename(out_dir)).stem)
+    rename_source(out_dir)
+    drop_audio(out_dir)
+    library.archive_meeting(out_dir.name, library.meeting_sent_path(out_dir.name))
+    return out_dir
+
+
 def _replace_section(text, heading, lines):
     """swap the body of one "## " section of a note, adding the section when it is missing."""
     rows = text.rstrip("\n").split("\n")

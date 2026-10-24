@@ -478,10 +478,11 @@ def meetings():
 
 
 def archive_meeting(meeting_id, sent_path):
-    """mark a meeting as sent to obsidian, which moves it from the inbox to the archive."""
+    """move a meeting from the inbox to the archive, with where its note was sent in obsidian,
+    or None for one marked done without sending."""
     with connect() as con:
         con.execute("update meetings set archived = ?, sent_path = ? where meeting_id = ?",
-                    (_now(), str(sent_path), meeting_id))
+                    (_now(), str(sent_path) if sent_path else None, meeting_id))
 
 
 def rename_meeting_id(old_id, new_id):

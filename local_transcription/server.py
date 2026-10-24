@@ -985,6 +985,19 @@ def create_app():
             raise HTTPException(400, str(err))
         return {"path": str(path), "meeting_id": out_dir.name}
 
+    # done with a meeting without sending its note anywhere, when no meeting notes folder is set
+    @app.post("/api/meetings/{meeting_id}/note/finish")
+    def finish_note(meeting_id: str):
+        out_dir = _meeting_dir(meeting_id)
+        if any(j.get("kind") == "note" and j["meeting_id"] == meeting_id and j["status"] in ("queued", "processing")
+               for j in jobs.snapshot()):
+            raise HTTPException(400, "the note is still being written")
+        try:
+            out_dir = pipeline.finish_meeting(out_dir)
+        except ValueError as err:
+            raise HTTPException(400, str(err))
+        return {"path": str(out_dir / "note.md"), "meeting_id": out_dir.name}
+
     @app.post("/api/meetings/{meeting_id}/note/pull")
     def pull_note(meeting_id: str):
         pipeline.sync_from_vault(_meeting_dir(meeting_id), force=True)

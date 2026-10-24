@@ -232,7 +232,7 @@ struct MeetingList: View {
                     ContentUnavailableView.search(text: search)
                 } else if store.section == .inbox {
                     ContentUnavailableView("Inbox Zero", systemImage: "tray",
-                                           description: Text("Every note is in Obsidian. Drop a recording to start another."))
+                                           description: Text("Every meeting is done. Drop a recording to start another."))
                 } else {
                     ContentUnavailableView("Nothing Archived", systemImage: "archivebox")
                 }

@@ -136,7 +136,7 @@ struct SetupView: View {
             }
         case .folder:
             header("Where notes go", "folder")
-            Text("If you use Obsidian, Send to Obsidian copies each finished note into your meeting notes folder. Skip this if you don't.")
+            Text("If you use Obsidian, Send to Obsidian copies each finished note into your meeting notes folder. Skip this if you don't: you'll mark meetings done instead, and can export any note as a Markdown file.")
                 .foregroundStyle(.secondary)
             HStack {
                 Text(s.meetingNotesDir ?? "No folder chosen")

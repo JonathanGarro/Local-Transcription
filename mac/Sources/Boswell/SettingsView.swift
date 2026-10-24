@@ -104,7 +104,7 @@ struct SettingsView: View {
                 }
                 Toggle(isOn: $askTodos) {
                     Text("Ask to find to-dos before sending")
-                    Text("When a note goes to Obsidian before its meeting was checked for to-dos.")
+                    Text("When a note is sent to Obsidian or marked done before its meeting was checked for to-dos.")
                 }
                 .disabled(s.todoApp == "none")
             }
@@ -145,7 +145,7 @@ struct SettingsView: View {
 
             Section("Obsidian") {
                 folderRow("Meeting notes folder", path: s.meetingNotesDir, source: s.meetingNotesDirSource,
-                          purpose: "Where Send to Obsidian puts notes, and where imported notes are read from.") {
+                          purpose: "Where Send to Obsidian puts notes, and where imported notes are read from. Without one, meetings are marked done instead.") {
                     SettingsChange(meetingNotesDir: $0)
                 }
                 folderRow("People folder", path: s.peopleDir, source: s.peopleDirSource,
@@ -156,6 +156,7 @@ struct SettingsView: View {
                     Text("Open notes in Obsidian after sending")
                     Text("Shows the note in Obsidian as soon as it's sent.")
                 }
+                .disabled(s.meetingNotesDir == nil)
             }
 
             Section("Plaud") {

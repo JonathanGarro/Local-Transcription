@@ -272,7 +272,7 @@ struct NoteView: View {
         }
     }
 
-    // to-dos. the model reads the transcript for the owner's to-dos, and once they are added
+    // to-dos. claude reads the transcript for the owner's to-dos, and once they are added
     // to the to-do app the note's action items become links to them
 
     private var todos: some View {
@@ -303,13 +303,11 @@ struct NoteView: View {
                         Text("Checked on \(checked.prefix(10)), and nothing was sent to \(store.todoAppName).")
                             .foregroundStyle(.secondary)
                     } else {
-                        Text("\(lookups?.todoModelName ?? "Claude") reads the transcript for tasks you were asked to do or offered to do, to add to \(store.todoAppName). The note's action items then become links to them.")
+                        Text("Claude reads the transcript for tasks you were asked to do or offered to do, to add to \(store.todoAppName). The note's action items then become links to them.")
                             .foregroundStyle(.secondary)
                     }
                     if !todosReady {
-                        Text(lookups?.todoModelName == "Apple Intelligence"
-                             ? "Apple Intelligence isn't available on this Mac. See Settings."
-                             : "Add your Anthropic API key in Settings to find to-dos.")
+                        Text("Add your Anthropic API key in Settings to find to-dos.")
                             .foregroundStyle(.orange)
                     }
                 }
@@ -445,7 +443,7 @@ struct NoteView: View {
         }
     }
 
-    // a first send asks about to-dos when the meeting was never checked and the model can look
+    // a first send asks about to-dos when the meeting was never checked and claude can look
     private func requestSend() {
         let looking: Bool = { if case .idle = todoState { return false }; return true }()
         let unchecked = (note?.todosSent ?? []).isEmpty && note?.todosChecked == nil

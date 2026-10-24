@@ -70,17 +70,6 @@ struct SettingsView: View {
                 if s.todoApp == "todoist" {
                     todoistToken(s)
                 }
-                Picker(selection: Binding(get: { s.todoModel }, set: { model in
-                    Task { await save(SettingsChange(todoModel: model)) }
-                })) {
-                    Text("Claude").tag("claude")
-                    Text("Apple Intelligence").tag("apple")
-                        .disabled(!s.apple.available)
-                } label: {
-                    Text("Find to-dos with")
-                    Text(todoModelHint(s))
-                }
-                .disabled(s.todoApp == "none")
                 Toggle(isOn: $askTodos) {
                     Text("Ask to find to-dos before sending")
                     Text("When a note goes to Obsidian before its meeting was checked for to-dos.")
@@ -351,15 +340,6 @@ struct SettingsView: View {
         default:
             return "Off hides the To-dos tab, sending to-dos and the to-do badges."
         }
-    }
-
-    private func todoModelHint(_ s: SettingsState) -> String {
-        if s.todoModel == "apple" {
-            return s.apple.available ? "Runs on this Mac, so transcripts never leave it. It reads a meeting in parts and is less careful than Claude about whose to-do something is."
-                : s.apple.reason ?? "Apple Intelligence isn't available."
-        }
-        let apple = s.apple.available ? " Apple Intelligence runs on this Mac instead, and is less careful." : ""
-        return "Claude reads the transcript text and uses your API key.\(apple)"
     }
 
     // a token change, then the page shows the new state

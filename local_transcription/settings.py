@@ -14,8 +14,6 @@ ACCENTS = ["blue", "red", "green", "purple", "orange"]
 # where found to-dos go, one app at a time. "none" turns the to-do features off
 TODO_APPS = ["things", "todoist", "reminders", "none"]
 THINGS_APP = Path("/Applications/Things3.app")
-# what reads meetings for to-dos: claude, or apple intelligence on this mac
-TODO_MODELS = ["claude", "apple"]
 # obsidian folders chosen on the settings page, which win over the same names in .env
 FOLDERS = {"meeting_notes_dir": "MEETING_NOTES_DIR", "people_dir": "PEOPLE_DIR"}
 DEFAULT_CLAUDE_MODEL = "claude-opus-5-5"
@@ -47,7 +45,6 @@ def load():
     return {"accent": saved.get("accent") if saved.get("accent") in ACCENTS else "blue",
             "claude_model": saved.get("claude_model") if saved.get("claude_model") in MODELS else None,
             "todo_app": saved.get("todo_app") if saved.get("todo_app") in TODO_APPS else default_app,
-            "todo_model": saved.get("todo_model") if saved.get("todo_model") in TODO_MODELS else "claude",
             **{key: saved.get(key) or None for key in FOLDERS}}
 
 
@@ -59,8 +56,6 @@ def save(**changes):
         raise ValueError(f"model must be one of {', '.join(MODELS)}")
     if changes.get("todo_app") is not None and changes["todo_app"] not in TODO_APPS:
         raise ValueError(f"to-do app must be one of {', '.join(TODO_APPS)}")
-    if changes.get("todo_model") is not None and changes["todo_model"] not in TODO_MODELS:
-        raise ValueError(f"to-do model must be one of {', '.join(TODO_MODELS)}")
     for key in FOLDERS:
         # "" clears a folder, which falls back to .env
         if changes.get(key):

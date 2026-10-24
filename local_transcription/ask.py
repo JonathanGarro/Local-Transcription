@@ -7,7 +7,6 @@ notes and transcript excerpts it reads are sent to the anthropic api, audio and 
 profiles never are.
 """
 
-import difflib
 import functools
 import json
 import os
@@ -23,11 +22,6 @@ MAX_TURNS = 20
 # a transcript read in one go stops here, the rest is fetched by time
 TRANSCRIPT_MAX_CHARS = 80000
 SEARCH_MAX_HITS = 40
-# apple intelligence reads this much text at a time, about half of what it takes, leaving
-# room for the instructions, the projects, and its answer
-APPLE_PART_CHARS = 6000
-# to-dos found in two parts with titles this alike are the same to-do
-SAME_TODO = 0.8
 SYSTEM = """You answer questions about {owner}'s past meetings, using tools that read their meeting library: notes (summary, decisions, action items), full transcripts, and who attended. Today is {today}.
 
 Look things up rather than guessing. Notes are the quickest source; read the transcript when the question needs exact wording, commitments, or detail a note leaves out. A meeting's people list comes from the people tagged in it, so someone may have spoken without being listed. Names in questions are often first names only; find_meetings matches any part of a name, and when that matches more than one person, say who you took it to be.
@@ -95,14 +89,6 @@ def _clock(seconds):
     seconds = int(seconds or 0)
     return f"{seconds // 3600}:{seconds % 3600 // 60:02d}:{seconds % 60:02d}" if seconds >= 3600 \
         else f"{seconds // 60}:{seconds % 60:02d}"
-
-
-def _seconds(clock):
-    """the seconds in an m:ss or h:mm:ss stamp, as _clock writes them."""
-    seconds = 0
-    for part in clock.split(":"):
-        seconds = seconds * 60 + int(part)
-    return seconds
 
 
 def _meetings():
@@ -286,13 +272,9 @@ Projects:
 {projects}"""
 
 
-APPLE_PART_NOTE = """
-
-You see one part of the text at a time. List only the to-dos in this part, and an empty list when it has none."""
-
-
-def _claude_todos(system, content, purpose):
-    """ask claude for to-dos in a fixed shape, as dicts."""
+def _todos(system, content, projects, purpose):
+    """ask claude for to-dos in a fixed shape. returns them as dicts with unknown projects
+    dropped."""
     from pydantic import BaseModel
 
     class Todo(BaseModel):
@@ -318,62 +300,9 @@ def _claude_todos(system, content, purpose):
         response.usage.cache_creation_input_tokens, response.usage.cache_read_input_tokens))
     if response.stop_reason == "refusal" or response.parsed_output is None:
         raise RuntimeError("Claude couldn't pull to-dos from this")
-    return [t.model_dump() for t in response.parsed_output.todos]
-
-
-def _parts(lines, limit):
-    """lines joined into parts of at most limit characters. a longer line is a part of its own."""
-    parts, current = [], []
-    for line in lines:
-        if current and sum(len(c) + 1 for c in current) + len(line) > limit:
-            parts.append("\n".join(current))
-            current = []
-        current.append(line)
-    return parts + (["\n".join(current)] if current else [])
-
-
-def _apple_todos(system, header, body):
-    """apple intelligence reads the body in parts that fit it, each after the same header. a
-    part it says is still too long is halved and read again. a to-do found in two parts is
-    kept once, and they come back in the order they were said."""
-    from local_transcription import apple
-
-    # a small model copies examples into its answers, so it gets none
-    instructions = re.sub(r',? like "[^"]*"| \("[^)]*"\)', "", system) + APPLE_PART_NOTE
-    pending, found = _parts(body.splitlines(), APPLE_PART_CHARS), []
-    while pending:
-        retry = []
-        for part, todos in zip(pending, apple.todos(instructions, [header + part for part in pending])):
-            if todos is not None:
-                found += todos
-            elif "\n" in part:
-                lines = part.splitlines()
-                retry += ["\n".join(lines[:len(lines) // 2]), "\n".join(lines[len(lines) // 2:])]
-        pending = retry
-    for t in found:
-        stamp = re.fullmatch(r"\[?((?:\d+:)?\d+:\d\d)\]?", str(t.pop("stamp", "")).strip())
-        t["seconds"] = _seconds(stamp.group(1)) if stamp else -1
-    found.sort(key=lambda t: t["seconds"] if t["seconds"] >= 0 else float("inf"))
-    kept = []
-    for t in found:
-        title = str(t.get("title", "")).strip()
-        if title and not any(difflib.SequenceMatcher(None, title.lower(), k["title"].lower()).ratio() >= SAME_TODO
-                             for k in kept):
-            kept.append({"title": title, "notes": str(t.get("notes", "")), "meeting_id": str(t.get("meeting_id", "")),
-                         "seconds": t["seconds"], "project_id": str(t.get("project_id", "")),
-                         "when": str(t.get("when", "")), "deadline": str(t.get("deadline", ""))})
-    return kept
-
-
-def _todos(system, header, body, projects, purpose):
-    """the to-dos in the body, read after the header, by the model chosen in settings: claude,
-    or apple intelligence on this mac. returns them as dicts with unknown projects dropped."""
-    if settings.load()["todo_model"] == "apple":
-        found = _apple_todos(system, header, body)
-    else:
-        found = _claude_todos(system, header + body, purpose)
     known = {p["id"] for p in projects}
-    return [{**t, "project_id": t["project_id"] if t["project_id"] in known else ""} for t in found]
+    return [{**t.model_dump(), "project_id": t.project_id if t.project_id in known else ""}
+            for t in response.parsed_output.todos]
 
 
 def _project_list(projects):
@@ -386,8 +315,8 @@ def extract_todos(question, answer_text, meetings, projects, owner, today):
     task manager's projects as dicts of id, name, and area."""
     used = "\n".join(f"- {m}: {v['title']}, {v['date']}, project {v.get('project') or 'none'}" for m, v in meetings.items())
     todos = _todos(TODO_SYSTEM.format(owner=owner or "the user", today=today, projects=_project_list(projects)),
-                   f"Question: {question}\n\nMeetings in the answer:\n{used or '(none)'}\n\nAnswer:\n",
-                   answer_text, projects, "todos")
+                   f"Question: {question}\n\nAnswer:\n{answer_text}\n\nMeetings in the answer:\n{used or '(none)'}",
+                   projects, "todos")
     return [{**t, "meeting_id": t["meeting_id"] if t["meeting_id"] in meetings else ""} for t in todos]
 
 
@@ -397,12 +326,12 @@ def meeting_todos(meeting_id, meeting, projects, owner, today, already=()):
     lines = transcript_lines(meeting_id)
     if not lines:
         raise RuntimeError("this meeting has no transcript to read")
-    header = (f"Meeting: {meeting['title']}, {meeting['date']}\nProject: {meeting.get('project') or 'none'}\n"
-              f"People: {', '.join(meeting.get('people') or []) or 'unknown'}\n\n")
+    content = (f"Meeting: {meeting['title']}, {meeting['date']}\nProject: {meeting.get('project') or 'none'}\n"
+               f"People: {', '.join(meeting.get('people') or []) or 'unknown'}\n\nTranscript:\n{_format(lines)}")
     if already:
-        header += "Already in the task manager, so leave these out:\n" + "\n".join(f"- {t}" for t in already) + "\n\n"
+        content += "\n\nAlready in the task manager, so leave these out:\n" + "\n".join(f"- {t}" for t in already)
     todos = _todos(MEETING_TODO_SYSTEM.format(owner=owner or "the user", today=today, projects=_project_list(projects)),
-                   header + "Transcript:\n", _format(lines), projects, "meeting todos")
+                   content, projects, "meeting todos")
     return [{**t, "meeting_id": meeting_id} for t in todos]
 
 

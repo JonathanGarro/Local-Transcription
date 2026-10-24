@@ -22,7 +22,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
-from local_transcription import (apple, ask, audio, directory, keychain, library, notes, pipeline, plaud, projects,
+from local_transcription import (ask, audio, directory, keychain, library, notes, pipeline, plaud, projects,
                                  render, settings, todoist, todos, vocab)
 
 # config
@@ -238,7 +238,6 @@ class SettingsRequest(BaseModel):
     accent: str | None = None
     claude_model: str | None = None
     todo_app: str | None = None
-    todo_model: str | None = None
     # "" clears one, going back to .env
     meeting_notes_dir: str | None = None
     people_dir: str | None = None
@@ -353,7 +352,7 @@ def create_app():
                 "key": settings.masked_key(), "key_source": keychain.source(), "usage": library.usage_totals(),
                 "plaud_installed": plaud.installed(), "things_installed": settings.THINGS_APP.exists(),
                 "todoist_token": todoist.masked_token(), "todoist_source": todoist.token_source(),
-                "apple": apple.availability(), **folder_state()}
+                **folder_state()}
 
     def folder_state():
         """each obsidian folder in use, and whether it was chosen in settings or comes from .env."""
@@ -425,7 +424,7 @@ def create_app():
     def put_settings(request: SettingsRequest):
         try:
             settings.save(accent=request.accent, claude_model=request.claude_model, todo_app=request.todo_app,
-                          todo_model=request.todo_model, meeting_notes_dir=request.meeting_notes_dir,
+                          meeting_notes_dir=request.meeting_notes_dir,
                           people_dir=request.people_dir)
         except ValueError as err:
             raise HTTPException(400, str(err))
@@ -517,14 +516,14 @@ def create_app():
 
     def file_projects(found, open_projects, meetings):
         """the meeting's project charter in obsidian names its things project, which beats
-        the model's guess when to-dos go to things. the guess beats the inbox."""
+        claude's guess when to-dos go to things. claude's guess beats the inbox."""
         open_ids = {p["id"] for p in open_projects}
         for todo in found:
             charter = projects.things_project_id(meetings.get(todo["meeting_id"], {}).get("project"))
             if todos.current() == "things" and charter in open_ids:
                 todo.update(project_id=charter, project_source="charter")
             else:
-                todo["project_source"] = "model" if todo["project_id"] else "inbox"
+                todo["project_source"] = "claude" if todo["project_id"] else "inbox"
 
     @app.post("/api/meetings/{meeting_id}/todos")
     def meeting_todos(meeting_id: str):
@@ -962,11 +961,9 @@ def create_app():
         return {"project": library.meeting_project(meeting_id)}
 
     def todo_state():
-        """which to-do app is chosen, and whether the model that finds to-dos is ready."""
-        model = settings.load()["todo_model"]
-        ready = apple.availability()["available"] if model == "apple" else bool(os.environ.get("ANTHROPIC_API_KEY"))
-        return {"todo_app": todos.current(), "todo_app_name": todos.name(), "todo_model": model,
-                "todo_model_name": "Apple Intelligence" if model == "apple" else "Claude", "todos_ready": ready}
+        """which to-do app is chosen, and whether claude can find to-dos."""
+        return {"todo_app": todos.current(), "todo_app_name": todos.name(),
+                "todos_ready": bool(os.environ.get("ANTHROPIC_API_KEY"))}
 
     @app.get("/api/lookups")
     def lookups():

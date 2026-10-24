@@ -409,7 +409,7 @@ enum TodoState {
     case idle, loading, error(String), ready(FoundTodos), added(Int)
 }
 
-// the model picks out the owner's to-dos, which are checked and adjusted here before they
+// claude picks out the owner's to-dos, which are checked and adjusted here before they
 // are added to the to-do app
 struct TodoPanel: View {
     @Environment(Store.self) private var store
@@ -508,7 +508,7 @@ struct TodoPanel: View {
                         fieldLabel("Project")
                         VStack(alignment: .leading, spacing: 2) {
                             projectPicker(found, item, t)
-                            if let source = ["charter": "from the project charter", "model": "suggested", "claude": "Claude's pick"][t.projectSource ?? ""] {
+                            if let source = ["charter": "from the project charter", "claude": "Claude's pick"][t.projectSource ?? ""] {
                                 Text(source).font(.caption).foregroundStyle(.tertiary)
                             }
                         }

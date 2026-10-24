@@ -144,8 +144,7 @@ struct Lookups: Codable {
     let claudeReady: Bool?
     // the to-do app chosen in settings, nil when the to-do features are off
     let todoApp: String?
-    let todoModelName: String?
-    // whether the model that finds to-dos can be used
+    // whether claude can find to-dos
     let todosReady: Bool?
 }
 
@@ -277,23 +276,15 @@ struct SettingsState: Codable {
     let plaudInstalled: Bool
     // "things", "todoist", "reminders", or "none"
     let todoApp: String
-    // "claude" or "apple"
-    let todoModel: String
     let thingsInstalled: Bool
     // only ever masked
     let todoistToken: String?
     let todoistSource: String?
-    let apple: AppleIntelligence
     // obsidian folders, with "settings" or "env" for where each was set
     let meetingNotesDir: String?
     let meetingNotesDirSource: String?
     let peopleDir: String?
     let peopleDirSource: String?
-}
-
-struct AppleIntelligence: Codable {
-    let available: Bool
-    let reason: String?
 }
 
 struct KeyCheck: Codable {
@@ -305,7 +296,6 @@ struct SettingsChange: Encodable {
     var accent: String?
     var claudeModel: String?
     var todoApp: String?
-    var todoModel: String?
     // "" goes back to the folder in .env
     var meetingNotesDir: String?
     var peopleDir: String?
@@ -379,7 +369,7 @@ struct ThingsProject: Codable, Hashable {
     let area: String?
 }
 
-// a to-do the model found, checked and adjusted before it goes to the to-do app
+// a to-do claude found, checked and adjusted before it goes to the to-do app
 struct Todo: Codable, Hashable, Identifiable {
     var id = UUID()
     var keep = true

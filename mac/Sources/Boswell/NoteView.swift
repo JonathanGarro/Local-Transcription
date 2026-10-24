@@ -508,6 +508,8 @@ enum Prefs {
     static let noteTextSize = "noteTextSize"
     // whether the plaud list leaves out recordings already imported
     static let hideImported = "plaudHideImported"
+    // the plaud page, shown only when the plaud cli is installed too
+    static let plaud = "plaudEnabled"
 }
 
 enum NoteMode: String {

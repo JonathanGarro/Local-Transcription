@@ -78,6 +78,8 @@ final class Store {
     var meetings: [Meeting] = []
     var jobs: [Job] = []
     var owner: String?
+    // whether the plaud cli is installed, so the plaud page can be shown
+    var plaudInstalled = false
     var connected = false
     var startError: String?
     var message: String?
@@ -98,6 +100,11 @@ final class Store {
     }
 
     var reviewCount: Int { inbox.filter(\.needsReview).count }
+
+    // the plaud page needs the cli and the switch in settings on
+    func shows(_ place: Place, plaudEnabled: Bool) -> Bool {
+        place != .plaud || (plaudInstalled && plaudEnabled)
+    }
 
     func meeting(_ id: String?) -> Meeting? { meetings.first { $0.meetingId == id } }
 
@@ -127,7 +134,10 @@ final class Store {
             pendingLink = nil
             open(link: link)
         }
-        if let settings: SettingsState = try? await API.get(["api", "settings"]) { accent = settings.accent }
+        if let settings: SettingsState = try? await API.get(["api", "settings"]) {
+            accent = settings.accent
+            plaudInstalled = settings.plaudInstalled
+        }
         polling = Task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(2))

@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct BoswellApp: App {
     @NSApplicationDelegateAdaptor private var delegate: AppDelegate
+    @AppStorage(Prefs.plaud) private var plaudEnabled = true
     private var store: Store { delegate.store }
 
     init() {
@@ -34,9 +35,12 @@ struct BoswellApp: App {
                     .keyboardShortcut("r")
             }
             CommandMenu("Go") {
+                // numbered from every page, so a hidden plaud page leaves the others' keys as they were
                 ForEach(Array(Place.allCases.enumerated()), id: \.offset) { i, place in
-                    Button(place.rawValue) { store.section = place }
-                        .keyboardShortcut(KeyEquivalent(Character("\(i + 1)")))
+                    if store.shows(place, plaudEnabled: plaudEnabled) {
+                        Button(place.rawValue) { store.section = place }
+                            .keyboardShortcut(KeyEquivalent(Character("\(i + 1)")))
+                    }
                 }
             }
         }

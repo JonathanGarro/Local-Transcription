@@ -14,6 +14,7 @@ import functools
 import json
 import os
 import re
+import shutil
 import subprocess
 import urllib.request
 from collections import Counter
@@ -35,6 +36,10 @@ GENERIC_LABEL = re.compile(r"^(speaker[ _]?\d+|unknown( \d+)?)$", re.IGNORECASE)
 SPEAKER_MIN_SHARE = 0.5
 # '  of_13eb...  2026-10-15 - GM Huddle  2026-10-15  26m33s' from plaud recent
 RECENT_LINE = re.compile(r"^\s*(of_\w+)\s{2,}(.+?)\s{2,}(\d{4}-\d{2}-\d{2})\s{2,}(\S+)\s*$")
+# '  email: maya@example.com' from plaud me
+ME_LINE = re.compile(r"^\s+(\w+): (.*)$", re.MULTILINE)
+# the cli's exit code for a missing, invalid or expired token
+AUTH_FAILED = 2
 
 
 # helpers
@@ -54,6 +59,31 @@ def _cli(*args):
     if result.returncode != 0:
         raise RuntimeError((result.stderr or result.stdout).strip().splitlines()[-1])
     return result.stdout
+
+
+def installed():
+    return shutil.which("plaud") is not None
+
+
+def account():
+    """who is signed in to plaud, as a dict of email and name, or None when nobody is."""
+    result = subprocess.run(["plaud", "me"], capture_output=True, text=True)
+    if result.returncode == AUTH_FAILED:
+        return None
+    if result.returncode != 0:
+        raise RuntimeError((result.stderr or result.stdout).strip().splitlines()[-1])
+    fields = dict(ME_LINE.findall(result.stdout))
+    return {"email": fields.get("email"), "name": fields.get("nickname")}
+
+
+def login():
+    """sign in to plaud in the browser. the cli opens the sign in page and waits, up to two
+    minutes, for plaud to send the browser back to it. a signed in account is left as it is."""
+    _cli("login")
+
+
+def logout():
+    _cli("logout")
 
 
 def _glob_escape(name):

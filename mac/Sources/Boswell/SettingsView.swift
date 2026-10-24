@@ -11,6 +11,8 @@ struct SettingsView: View {
     @AppStorage(Prefs.askTodos) private var askTodos = true
     @AppStorage(Prefs.things) private var thingsEnabled = true
     @AppStorage(Prefs.openAfterSend) private var openAfterSend = false
+    @AppStorage(Prefs.plaud) private var plaudEnabled = true
+    @State private var plaud: PlaudAccount?
 
     var body: some View {
         Group {
@@ -18,7 +20,10 @@ struct SettingsView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationTitle("Settings")
-        .task { settings = try? await API.get(["api", "settings"]) }
+        .task {
+            settings = try? await API.get(["api", "settings"])
+            if settings?.plaudInstalled == true { await watchPlaud(try? await API.get(["api", "plaud", "account"])) }
+        }
     }
 
     private func form(_ s: SettingsState) -> some View {
@@ -64,6 +69,27 @@ struct SettingsView: View {
                 Toggle(isOn: $openAfterSend) {
                     Text("Open notes in Obsidian after sending")
                     Text("Shows the note in Obsidian as soon as it's sent.")
+                }
+            }
+
+            Section("Plaud") {
+                if s.plaudInstalled {
+                    Toggle(isOn: $plaudEnabled) {
+                        Text("Use Plaud")
+                        Text("Import recordings uploaded to Plaud and transcribe them here. Off hides the Plaud page.")
+                    }
+                    plaudAccount
+                        .disabled(!plaudEnabled)
+                } else {
+                    LabeledContent {
+                        Button("Copy Command") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString("npm install -g @plaud-ai/cli", forType: .string)
+                        }
+                    } label: {
+                        Text("Plaud CLI not installed")
+                        Text("Importing from Plaud needs its command line tool. Install it with npm install -g @plaud-ai/cli in Terminal, then restart Boswell.")
+                    }
                 }
             }
 
@@ -151,6 +177,55 @@ struct SettingsView: View {
             Button("Remove Key", role: .destructive) { Task { await keyAction { try await API.delete(["api", "settings", "key"]) } } }
         } message: {
             Text("It's deleted from the Keychain, and Ask and Claude notes stop working until you add one again.")
+        }
+    }
+
+    @ViewBuilder
+    private var plaudAccount: some View {
+        LabeledContent {
+            if let plaud, plaud.signingIn {
+                ProgressView().controlSize(.small)
+            } else if plaud?.signedIn == true {
+                Button("Sign Out") { Task { await plaudAction(["api", "plaud", "logout"]) } }
+            } else if plaud != nil {
+                Button("Sign In...") { Task { await plaudAction(["api", "plaud", "login"]) } }
+                    .buttonStyle(.borderedProminent)
+                    .help("Open Plaud's sign in page in your browser")
+            } else {
+                ProgressView().controlSize(.small)
+            }
+        } label: {
+            Text("Account")
+            Text(plaudHint)
+        }
+        if let error = plaud?.error {
+            Label(error, systemImage: "xmark.octagon.fill")
+                .foregroundStyle(.red)
+                .lineLimit(2)
+        }
+    }
+
+    private var plaudHint: String {
+        guard let plaud else { return "Checking..." }
+        if plaud.signingIn { return "Finish signing in in your browser. This page updates when you're done." }
+        if plaud.signedIn { return "Signed in as \(plaud.email ?? plaud.name ?? "your Plaud account")." }
+        return "Sign in to see your recordings on the Plaud page. It opens in your browser."
+    }
+
+    private func plaudAction(_ parts: [String]) async {
+        do {
+            await watchPlaud(try await API.post(parts))
+        } catch {
+            store.show(error.localizedDescription)
+        }
+    }
+
+    // follows a sign in until the browser is done with it
+    private func watchPlaud(_ account: PlaudAccount?) async {
+        plaud = account
+        while plaud?.signingIn == true, !Task.isCancelled {
+            try? await Task.sleep(for: .seconds(1.5))
+            if let next: PlaudAccount = try? await API.get(["api", "plaud", "account"]) { plaud = next }
         }
     }
 

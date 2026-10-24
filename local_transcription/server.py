@@ -344,7 +344,8 @@ def create_app():
     def settings_state():
         return {**settings.load(), "claude_model": settings.claude_model(), "accents": settings.ACCENTS,
                 "models": [{"id": k, **v} for k, v in settings.MODELS.items()],
-                "key": settings.masked_key(), "key_source": keychain.source(), "usage": library.usage_totals()}
+                "key": settings.masked_key(), "key_source": keychain.source(), "usage": library.usage_totals(),
+                "plaud_installed": plaud.installed()}
 
     @app.get("/api/settings")
     def get_settings():
@@ -576,6 +577,53 @@ def create_app():
         except ValueError as err:
             raise HTTPException(400, str(err))
         return vocabulary_state()
+
+    # signing in waits on the browser for longer than a request lasts, so it runs in its own
+    # thread and the settings page polls the account until it's done
+    plaud_login = {"running": False, "error": None}
+
+    def plaud_account():
+        state = {"installed": plaud.installed(), "signed_in": False, "email": None, "name": None,
+                 "signing_in": plaud_login["running"], "error": plaud_login["error"]}
+        if not state["installed"] or state["signing_in"]:
+            return state
+        try:
+            user = plaud.account()
+        except RuntimeError as err:
+            return {**state, "error": f"plaud: {err}"}
+        return {**state, **(user or {}), "signed_in": user is not None}
+
+    def run_plaud_login():
+        try:
+            plaud.login()
+        except RuntimeError as err:
+            plaud_login["error"] = str(err)
+        finally:
+            plaud_login["running"] = False
+
+    @app.get("/api/plaud/account")
+    def get_plaud_account():
+        return plaud_account()
+
+    @app.post("/api/plaud/login")
+    def start_plaud_login():
+        if not plaud.installed():
+            raise HTTPException(503, "the plaud cli is not installed, see the readme")
+        if not plaud_login["running"]:
+            plaud_login.update(running=True, error=None)
+            threading.Thread(target=run_plaud_login, daemon=True).start()
+        return plaud_account()
+
+    @app.post("/api/plaud/logout")
+    def plaud_logout():
+        try:
+            plaud.logout()
+        except FileNotFoundError:
+            raise HTTPException(503, "the plaud cli is not installed, see the readme")
+        except RuntimeError as err:
+            raise HTTPException(502, f"plaud: {err}")
+        plaud_login["error"] = None
+        return plaud_account()
 
     @app.get("/api/plaud/recent")
     def plaud_recent():

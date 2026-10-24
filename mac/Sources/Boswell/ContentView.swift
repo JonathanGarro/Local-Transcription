@@ -96,11 +96,12 @@ struct ContentView: View {
 
 struct Sidebar: View {
     @Environment(Store.self) private var store
+    @AppStorage(Prefs.plaud) private var plaudEnabled = true
 
     var body: some View {
         List(selection: Binding(get: { store.section }, set: { if let s = $0 { store.section = s } })) {
             SwiftUI.Section("Meetings") {
-                ForEach(Place.meetings, id: \.self) { place in
+                ForEach(Place.meetings.filter { store.shows($0, plaudEnabled: plaudEnabled) }, id: \.self) { place in
                     Label(place.rawValue, systemImage: place.icon)
                         .labelStyle(SidebarLabel())
                         .badge(place == .inbox ? store.inbox.count : 0)

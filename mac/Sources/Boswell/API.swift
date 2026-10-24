@@ -264,6 +264,8 @@ struct SettingsState: Codable {
     // "keychain", "env", or nil when there is no key
     let keySource: String?
     let usage: Usage
+    // whether the plaud cli is on the path, without which the plaud page is hidden
+    let plaudInstalled: Bool
 }
 
 struct KeyCheck: Codable {
@@ -414,6 +416,16 @@ struct PlaudRecording: Codable, Identifiable, Hashable {
 struct PlaudRecent: Codable {
     let days: Int
     let recordings: [PlaudRecording]
+}
+
+struct PlaudAccount: Codable {
+    let installed: Bool
+    let signedIn: Bool
+    let email: String?
+    let name: String?
+    // the browser is open on plaud's sign in page
+    let signingIn: Bool
+    let error: String?
 }
 
 // requests

@@ -21,16 +21,15 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from local_transcription import directory
+from local_transcription import directory, paths
 from local_transcription.embed import normalize
 
 # config
-BASE_DIR = Path(__file__).parent.parent
-DB_PATH = BASE_DIR / "data" / "library.db"
-OUTPUT_DIR = BASE_DIR / "outputs"
+DB_PATH = paths.DATA_DIR / "library.db"
+OUTPUT_DIR = paths.OUTPUT_DIR
 # folder layout used before the library existed, imported once on first use
-LEGACY_PROFILE_DIR = BASE_DIR / "data" / "profiles"
-LEGACY_BACKUP_DIR = BASE_DIR / "data" / "profiles_imported"
+LEGACY_PROFILE_DIR = paths.DATA_DIR / "profiles"
+LEGACY_BACKUP_DIR = paths.DATA_DIR / "profiles_imported"
 ENTRY_COLUMNS = ["entry_id", "person_id", "name", "added", "method", "source_type", "source_file",
                  "meeting_id", "speaker", "start", "end", "seconds"]
 SCHEMA = """
@@ -757,8 +756,7 @@ def _import_legacy(con):
                              _none(row.start), _none(row.end), _none(row.seconds)))
                 count += 1
     shutil.move(str(LEGACY_PROFILE_DIR), str(LEGACY_BACKUP_DIR))
-    print(f"imported {count} profile entries into {DB_PATH.relative_to(BASE_DIR)}, "
-          f"old folder moved to {LEGACY_BACKUP_DIR.relative_to(BASE_DIR)}")
+    print(f"imported {count} profile entries into {DB_PATH}, old folder moved to {LEGACY_BACKUP_DIR}")
 
 
 def legacy_meeting_dirs():

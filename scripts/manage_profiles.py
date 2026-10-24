@@ -24,7 +24,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # values already set in the shell take precedence over .env
 load_dotenv(BASE_DIR / ".env")
 
-from local_transcription import library, pipeline  # noqa: E402
+from local_transcription import library, paths, pipeline  # noqa: E402
 
 
 # helpers
@@ -61,6 +61,7 @@ def main():
     delete = sub.add_parser("delete", help="delete a person and all their voice entries")
     delete.add_argument("name")
     args = parser.parse_args()
+    paths.migrate()
 
     with pd.option_context("display.width", 200, "display.max_columns", 20):
         if args.command == "list":

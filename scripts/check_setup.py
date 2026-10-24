@@ -23,9 +23,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 sys.path.insert(0, str(BASE_DIR))
 
-from local_transcription import hf  # noqa: E402
+from local_transcription import hf, paths  # noqa: E402
 
-OUTPUT_DIR = BASE_DIR / "outputs" / "check"
+OUTPUT_DIR = paths.OUTPUT_DIR / "check"
 MLX_WHISPER_REPO = "mlx-community/whisper-large-v3-turbo"
 FASTER_WHISPER_MODEL = "large-v3-turbo"
 DIARIZATION_REPO = "pyannote/speaker-diarization-community-1"
@@ -78,7 +78,7 @@ def check_ffmpeg():
         raise RuntimeError("ffmpeg not found on PATH, install with: brew install ffmpeg")
     version = run(["ffmpeg", "-version"]).stdout.splitlines()[0]
     wav = make_test_audio()
-    return f"{version.split(' Copyright')[0]}, wrote {wav.relative_to(BASE_DIR)}"
+    return f"{version.split(' Copyright')[0]}, wrote {wav}"
 
 
 def check_token(offline):
@@ -155,6 +155,7 @@ def main():
     parser.add_argument("--bench", action="store_true", help="also check faster-whisper")
     parser.add_argument("--offline", action="store_true", help="load models from cache only")
     args = parser.parse_args()
+    paths.migrate()
 
     if args.offline:
         os.environ["HF_HUB_OFFLINE"] = "1"

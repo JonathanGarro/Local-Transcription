@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from local_transcription import library, merge, obsidian, pipeline, settings
+from local_transcription import library, merge, obsidian, paths, pipeline, settings
 
 # config
 PLAUD_TRANSCRIPT = "plaud_transcript.txt"
@@ -287,7 +287,7 @@ def reprocess(meeting_id, progress=print):
     plaud_id = file_id(link)
     out_dir = pipeline.OUTPUT_DIR / meeting_id
     out_dir.mkdir(parents=True, exist_ok=True)
-    data_dir = pipeline.OUTPUT_DIR.parent / "data"
+    data_dir = paths.DATA_DIR
     # a download from an earlier try is reused
     source = next((p for p in data_dir.glob(f"{_glob_escape(meeting_id)}.*") if not p.name.endswith(".partial")), None)
     if not source:

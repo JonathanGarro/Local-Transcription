@@ -10,10 +10,11 @@ lines starting with # are ignored. the file lives under data/ so it is never com
 """
 
 import re
-from pathlib import Path
+
+from local_transcription import paths
 
 # config
-VOCAB_PATH = Path(__file__).parent.parent / "data" / "vocabulary.txt"
+VOCAB_PATH = paths.DATA_DIR / "vocabulary.txt"
 # whisper reads at most about 220 prompt tokens, so keep the hint well under that
 PROMPT_MAX_CHARS = 600
 TEMPLATE = """# custom terms and names, one per line. this file is gitignored.

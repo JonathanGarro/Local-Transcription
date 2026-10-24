@@ -15,10 +15,11 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 # values already set in the shell take precedence over .env
 load_dotenv(BASE_DIR / ".env")
-OUTPUT_DIR = BASE_DIR / "outputs" / "enroll"
 RECOMMENDED_S = 20
 
-from local_transcription import audio, embed, library  # noqa: E402
+from local_transcription import audio, embed, library, paths  # noqa: E402
+
+OUTPUT_DIR = paths.OUTPUT_DIR / "enroll"
 
 
 # helpers
@@ -41,6 +42,7 @@ def main():
     parser.add_argument("--end", help="clip end, such as 6:10")
     parser.add_argument("--source", default="other", choices=["plaud", "zoom", "other"])
     args = parser.parse_args()
+    paths.migrate()
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     wav = OUTPUT_DIR / f"{args.audio.stem}_16k.wav"

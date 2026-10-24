@@ -18,7 +18,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 CHANNELS = {"left": 0, "right": 1}
 
-from local_transcription import diarize, match, pipeline, settings  # noqa: E402
+from local_transcription import diarize, match, paths, pipeline, settings  # noqa: E402
 
 
 # main
@@ -41,6 +41,7 @@ def main():
     parser.add_argument("--owner", default=settings.owner(),
                         help="name for the mic channel in split mode (default your name from settings)")
     args = parser.parse_args()
+    paths.migrate()
 
     out_dir, speakers, review = pipeline.run(
         args.audio, threshold=args.threshold, num_speakers=args.num_speakers,
@@ -52,11 +53,11 @@ def main():
     table = speakers[["speaker", "name", "status", "score", "best_name", "best_score", "minutes"]]
     print(table.fillna({"name": "", "best_name": ""}).to_string(index=False, na_rep=""))
     print()
-    print(f"transcript: {(out_dir / 'transcript.md').relative_to(BASE_DIR)}")
+    print(f"transcript: {out_dir / 'transcript.md'}")
     if review:
-        print(f"review:     {review.relative_to(BASE_DIR)}")
+        print(f"review:     {review}")
         print("fill in the name column, then run:")
-        print(f'    uv run scripts/confirm.py "{out_dir.relative_to(BASE_DIR)}"')
+        print(f'    uv run scripts/confirm.py "{out_dir.name}"')
 
 
 if __name__ == "__main__":

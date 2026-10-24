@@ -22,7 +22,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # values already set in the shell take precedence over .env
 load_dotenv(BASE_DIR / ".env")
 
-from local_transcription import library, pipeline, plaud  # noqa: E402
+from local_transcription import library, paths, pipeline, plaud  # noqa: E402
 
 
 # helpers
@@ -57,6 +57,7 @@ def main():
     parser.add_argument("--retime", action="store_true",
                         help="swap the transcript of meetings already reprocessed for their note's, keeping confirmed names")
     args = parser.parse_args()
+    paths.migrate()
 
     if args.retime:
         for meeting_id in reprocessed():

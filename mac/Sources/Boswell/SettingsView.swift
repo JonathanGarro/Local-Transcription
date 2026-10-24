@@ -267,6 +267,15 @@ struct SettingsView: View {
 
             Section("About") {
                 Button("Run Setup Again...") { store.showSetup = true }
+                LabeledContent {
+                    Button(s.libraryDir) { NSWorkspace.shared.open(URL(fileURLWithPath: s.libraryDir)) }
+                        .buttonStyle(.link)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                } label: {
+                    Text("Library folder")
+                    Text("Recordings, meetings, settings and templates. BOSWELL_HOME in .env can move it.")
+                }
                 LabeledContent("Project folder") {
                     Button(Server.shared.projectDir.path) { NSWorkspace.shared.open(Server.shared.projectDir) }
                         .buttonStyle(.link)

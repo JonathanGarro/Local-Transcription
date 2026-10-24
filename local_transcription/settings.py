@@ -8,10 +8,10 @@ import json
 import os
 from pathlib import Path
 
-from local_transcription import templates
+from local_transcription import paths, templates
 
 # config
-SETTINGS_PATH = Path(__file__).parent.parent / "data" / "settings.json"
+SETTINGS_PATH = paths.DATA_DIR / "settings.json"
 ACCENTS = ["blue", "red", "green", "purple", "orange"]
 # where found to-dos go, one app at a time. "none" turns the to-do features off
 TODO_APPS = ["things", "todoist", "reminders", "none"]

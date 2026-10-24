@@ -23,6 +23,7 @@ PORT = 8765
 
 import uvicorn  # noqa: E402
 
+from local_transcription import paths  # noqa: E402
 from local_transcription.server import create_app  # noqa: E402
 
 
@@ -40,6 +41,8 @@ def exit_with_app(pid):
 
 # main
 def main():
+    # the library moves out of the project folder the first time this version runs
+    paths.migrate()
     print(f"serving on http://{HOST}:{PORT}")
     if pid := os.environ.get("BOSWELL_APP_PID"):
         exit_with_app(int(pid))

@@ -22,12 +22,11 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
-from local_transcription import (ask, audio, directory, hf, keychain, library, notes, pipeline, plaud, projects,
+from local_transcription import (ask, audio, directory, hf, keychain, library, notes, paths, pipeline, plaud, projects,
                                  render, settings, templates, todoist, todos, vocab)
 
 # config
-BASE_DIR = Path(__file__).parent.parent
-DATA_DIR = BASE_DIR / "data"
+DATA_DIR = paths.DATA_DIR
 AUDIO_TYPES = {".m4a", ".mp3", ".wav"}
 CHANNELS = {"left": 0, "right": 1}
 # progress messages from pipeline.run, in order, mapped to a share of the job
@@ -369,7 +368,7 @@ def create_app():
                 "mic_channel": settings.mic_channel(), "summary_backend": settings.summary_backend(),
                 "setup_needed": settings.setup_needed(), "people": sorted(set(library.person_names().values())),
                 "hf_token": hf.masked_token(), "hf_source": hf.token_source(), "model_ready": hf.model_ready(),
-                "hf_terms_url": hf.TERMS_URL}
+                "hf_terms_url": hf.TERMS_URL, "library_dir": str(paths.HOME)}
 
     def folder_state():
         """each obsidian folder in use, and whether it was chosen in settings or comes from .env."""
@@ -890,7 +889,7 @@ def create_app():
             else:
                 turns.append(dict(seg))
         return {"turns": turns, "markdown": (out_dir / "transcript.md").read_text(),
-                "path": str((out_dir / "transcript.md").relative_to(BASE_DIR))}
+                "path": str(out_dir / "transcript.md")}
 
     @app.post("/api/meetings/{meeting_id}/apply")
     def apply(meeting_id: str, request: ApplyRequest):
@@ -924,7 +923,7 @@ def create_app():
         vault = pipeline.sync_from_vault(out_dir) if summary.exists() and not running else None
         info = json.loads(summary.read_text()) if summary.exists() else {}
         return {"exists": path.exists(), "markdown": path.read_text() if path.exists() else "",
-                "path": str(path.relative_to(BASE_DIR)), "project": library.meeting_project(meeting_id),
+                "path": str(path), "project": library.meeting_project(meeting_id),
                 "backend": info.get("backend"), "model": info.get("model"), "created": info.get("created"),
                 "template": (info.get("template") or templates.DEFAULT) if info else None,
                 "edited": info.get("edited"), "sent_path": library.meeting_sent_path(meeting_id),

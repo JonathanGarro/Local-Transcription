@@ -1,10 +1,10 @@
 """confirm speaker names for a processed recording and add them to voice profiles.
 
 usage:
-    uv run scripts/confirm.py "outputs/<recording>"                          # use the name column in review.csv
-    uv run scripts/confirm.py "outputs/<recording>" SPEAKER_01=Alex SPEAKER_00=Priya
-    uv run scripts/confirm.py "outputs/<recording>" SPEAKER_01=Alex --no-enroll
-    uv run scripts/confirm.py "outputs/<recording>" --skip SPEAKER_00      # leave a speaker unnamed
+    uv run scripts/confirm.py "<meeting>"                          # use the name column in review.csv
+    uv run scripts/confirm.py "<meeting>" SPEAKER_01=Alex SPEAKER_00=Priya
+    uv run scripts/confirm.py "<meeting>" SPEAKER_01=Alex --no-enroll
+    uv run scripts/confirm.py "<meeting>" --skip SPEAKER_00      # leave a speaker unnamed
 """
 
 import argparse
@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from local_transcription import pipeline
+from local_transcription import paths, pipeline
 
 # config
 # the project folder, one up from scripts/
@@ -42,13 +42,15 @@ def mapping_from_review(out_dir):
 # main
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("output_dir", type=Path)
+    parser.add_argument("output_dir", type=Path, help="the meeting's folder, or just its name")
     parser.add_argument("pairs", nargs="*", help="SPEAKER_XX=Name")
     parser.add_argument("--no-enroll", action="store_true",
                         help="rename in the transcript only, do not touch profiles")
     parser.add_argument("--skip", nargs="+", default=[], metavar="SPEAKER",
                         help="leave these speakers unnamed so the meeting no longer needs review")
     args = parser.parse_args()
+    paths.migrate()
+    args.output_dir = paths.meeting_folder(args.output_dir)
 
     if args.pairs:
         mapping = parse_pairs(args.pairs)

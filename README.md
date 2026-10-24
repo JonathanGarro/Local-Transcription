@@ -50,7 +50,7 @@ For development, `uv run app.py` runs the server on its own at http://127.0.0.1:
 
 The flow: drop a recording on the window or import one from Plaud, it is transcribed, you confirm speakers if asked, the note is written automatically with `SUMMARY_BACKEND` once every speaker is named, then you review and send it. Cmd+1 to Cmd+8 switch pages.
 
-- **Inbox:** drop m4a, mp3 or wav recordings on the window, or press Cmd+O, to queue them. One file runs at a time, with live progress in the sidebar. Dropped files are copied into `data/`, and the source (Plaud or a split Zoom call) is detected. A file that was already processed is skipped, because re-running replaces its confirmed names. Each meeting shows where it is: needs review, writing note, ready to send or no note yet. Right-click to rename, show it in Finder or open it in Obsidian. The Dock icon shows how many meetings need review.
+- **Inbox:** drop m4a, mp3 or wav recordings on the window, or press Cmd+O, to queue them. One file runs at a time, with live progress in the sidebar. Dropped files are copied into the library's `data/` folder (see [The library folder](#the-library-folder)), and the source (Plaud or a split Zoom call) is detected. A file that was already processed is skipped, because re-running replaces its confirmed names. Each meeting shows where it is: needs review, writing note, ready to send or no note yet. Right-click to rename, show it in Finder or open it in Obsidian. The Dock icon shows how many meetings need review.
 - **Archive:** sent meetings, searchable, with a filter for meetings with to-dos sent or not yet checked. **Move to Inbox** on the right-click menu brings one back. Meetings imported from Obsidian open as their note, read only.
 - **Plaud:** recordings uploaded to Plaud in the last 14 days. Import downloads the audio with the Plaud CLI (`npm install -g @plaud-ai/cli`, then Sign In in Settings) and runs it here like a dropped file, so Plaud doesn't need to transcribe it. Recordings already in the app show as such, and open their meeting. Right-click one to hide it, for a meeting already in the app from another recording, and Show Hidden in the toolbar brings hidden ones back. The page only appears when the Plaud CLI is installed, and Settings can turn it off.
 - **Speakers:** each unknown speaker gets a few short clips with what they said, suggested names with scores, and a name field that suggests existing people or creates a new one. You can also mark a speaker as the same person as another speaker (diarization split them), leave a speaker unnamed, or name them without adding the voice to their profile. Identified speakers are collapsed, with a "Wrong?" link. Nothing is saved until you press Save Names (Cmd+Return).
@@ -81,15 +81,19 @@ Links to the old web version in to-dos already in Things (`http://127.0.0.1:8765
 
 The server listens on 127.0.0.1 only and loads nothing from the internet.
 
+## The library folder
+
+Recordings, meeting folders, the database, settings and note templates live in `~/Library/Application Support/Boswell`, in a `data/` folder (recordings and the rest) and an `outputs/` folder (one per meeting). Settings shows where under About. Set `BOSWELL_HOME` in `.env` to keep it somewhere else. Earlier versions kept `data/` and `outputs/` in the project folder. The first time this version starts, they're moved into the library folder, which on the same disk is an instant rename. Each meeting's recording path is rewritten to be relative to the library, so the library can move again later. If the library folder already has either one, nothing is moved.
+
 ## Command line
 
-Put recordings in `data/`. File names like `2026-10-14 - Manager Check-In.mp3` give the transcript its date and title.
+File names like `2026-10-14 - Manager Check-In.mp3` give the transcript its date and title. Scripts that take a meeting take its folder or just its name.
 
 ```
-uv run scripts/transcribe.py "data/2026-10-14 - Manager Check-In.mp3" --source plaud
+uv run scripts/transcribe.py ~/Downloads/"2026-10-14 - Manager Check-In.mp3" --source plaud
 ```
 
-Outputs go to `outputs/<recording name>/`:
+Outputs go to `outputs/<recording name>/` in the library folder:
 
 | File | Contents |
 |---|---|
@@ -114,13 +118,13 @@ Set `MIC_CHANNEL=right` in `.env` if your setup is reversed, or pass `--split of
 Either fill in the `name` column of `review.csv` and run:
 
 ```
-uv run scripts/confirm.py "outputs/2026-10-14 - Manager Check-In"
+uv run scripts/confirm.py "2026-10-14 - Manager Check-In"
 ```
 
 or name speakers directly:
 
 ```
-uv run scripts/confirm.py "outputs/2026-10-14 - Manager Check-In" SPEAKER_01=Alex SPEAKER_00=Priya
+uv run scripts/confirm.py "2026-10-14 - Manager Check-In" SPEAKER_01=Alex SPEAKER_00=Priya
 ```
 
 Confirming re-renders the transcript and adds that speaker's voice from this meeting to their profile. Use `--no-enroll` to rename without touching profiles, or `--skip SPEAKER_00` to leave a speaker unnamed (for example a video playing on someone's side). Confirming the same speaker again replaces the entry it added before.
@@ -128,8 +132,8 @@ Confirming re-renders the transcript and adds that speaker's voice from this mee
 ### Enrolling from a clip
 
 ```
-uv run scripts/enroll.py "data/priya_sample.wav" "Priya"
-uv run scripts/enroll.py "data/meeting.mp3" "Priya" --start 5:20 --end 6:10 --source plaud
+uv run scripts/enroll.py ~/Desktop/priya_sample.wav "Priya"
+uv run scripts/enroll.py ~/Desktop/meeting.mp3 "Priya" --start 5:20 --end 6:10 --source plaud
 ```
 
 The clip should contain only that person. 20 seconds or more works best.
@@ -155,14 +159,14 @@ People, voice entries and meetings live in `data/library.db` (SQLite). Each pers
 GAL prep = gal prep, galprep
 ```
 
-Every term, plus every profile name, is passed to Whisper as a spelling hint on each 28 second chunk. Variants after `=` are replaced with the term in the final transcript (case-insensitive, whole words), which catches anything the hint misses. The file is under `data/`, so it is never committed.
+Every term, plus every profile name, is passed to Whisper as a spelling hint on each 28 second chunk. Variants after `=` are replaced with the term in the final transcript (case-insensitive, whole words), which catches anything the hint misses. The file is in the library folder, so it is never committed.
 
 ## Meeting notes
 
 ```
-uv run scripts/summarize.py "outputs/2026-10-13 - Dashboard Review"
-uv run scripts/summarize.py "outputs/2026-10-13 - Dashboard Review" --backend claude --project "Customer Dashboard"
-uv run scripts/summarize.py "outputs/2026-10-13 - Dashboard Review" --template "Decisions and Next Steps"
+uv run scripts/summarize.py "2026-10-13 - Dashboard Review"
+uv run scripts/summarize.py "2026-10-13 - Dashboard Review" --backend claude --project "Customer Dashboard"
+uv run scripts/summarize.py "2026-10-13 - Dashboard Review" --template "Decisions and Next Steps"
 ```
 
 Writes `note.md` in a note template (see below). The Standard template is the Obsidian layout: frontmatter, Agenda, Discussion and Transcript. The model writes the agenda and discussion. An Action Items section is added only once you run Find my to-dos and send them to your to-do app, holding just those to-dos as links. Code fills in the rest:
@@ -234,7 +238,7 @@ uv run scripts/import_plaud.py --retime
 
 ## Privacy
 
-`data/`, `outputs/`, and `.env` are gitignored, so audio, transcripts, voice profiles, and the token are never committed. The only step that can send anything off the Mac is a note written with the claude backend, and only when you choose it. Deleting a person removes their voice entries from `data/library.db`. Each meeting's `speaker_embeddings.npz` in `outputs/` also holds that meeting's voices, so delete the meeting folder too for a complete removal.
+The library lives outside the project folder, and `.env` is gitignored, so audio, transcripts, voice profiles, and the token are never committed. The only step that can send anything off the Mac is a note written with the claude backend, and only when you choose it. Deleting a person removes their voice entries from `data/library.db`. Each meeting's `speaker_embeddings.npz` in `outputs/` also holds that meeting's voices, so delete the meeting folder too for a complete removal.
 
 ## Layout
 
@@ -254,5 +258,6 @@ scripts/               command line tools
   manage_profiles.py     list, prune, delete profiles
   check_setup.py         verify ffmpeg, token, and models
 assets/                the app icon and the screenshots in this readme
-data/, outputs/        recordings and the library, and what's made from them (never committed)
+~/Library/Application Support/Boswell/
+  data/, outputs/      recordings and the library, and what's made from them (never committed)
 ```

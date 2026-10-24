@@ -17,10 +17,10 @@ from urllib.parse import quote
 import numpy as np
 import pandas as pd
 
-from local_transcription import asr, audio, diarize, embed, match, library, merge, notes, render, settings, templates, vocab
+from local_transcription import asr, audio, diarize, embed, match, library, merge, notes, paths, render, settings, templates, vocab
 
 # config
-OUTPUT_DIR = Path(__file__).parent.parent / "outputs"
+OUTPUT_DIR = paths.OUTPUT_DIR
 ORIGINAL_NOTE = "note_original.md"
 # exactly what was last sent to or loaded from obsidian, to tell which side changed since
 SENT_NOTE = "note_sent.md"
@@ -150,9 +150,14 @@ def meeting_dir(meeting_id):
 
 
 def source_path(meta):
-    """the original recording. older runs store it relative to the project folder."""
+    """the original recording, stored relative to the library. older runs stored its full
+    path, in the project folder's data/ before the library moved out of it."""
     source = Path(meta["source"])
-    return source if source.is_absolute() else OUTPUT_DIR.parent / source
+    if not source.is_absolute():
+        return OUTPUT_DIR.parent / source
+    if not source.exists() and source.is_relative_to(paths.OLD_DATA_DIR):
+        return paths.DATA_DIR / source.relative_to(paths.OLD_DATA_DIR)
+    return source
 
 
 def ensure_audio(out_dir, meta=None):
@@ -334,7 +339,7 @@ def run(source, threshold=match.THRESHOLD, num_speakers=None, min_speakers=diari
     # speakers that never got a transcribed word are dropped from the outputs
     speakers = speakers[speakers["speaker"].isin(segments["speaker"])].reset_index(drop=True)
 
-    meta = {"source": str(source), "title": title, "date": None, "source_type": source_type,
+    meta = {"source": paths.relative(source), "title": title, "date": None, "source_type": source_type,
             "threshold": threshold, "language": detected, "prompt": prompt, "split": use_split,
             "mic_channel": mic_channel if use_split else None, "owner": owner if use_split else None}
     (out_dir / "run.json").write_text(json.dumps(meta, indent=2))

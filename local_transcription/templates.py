@@ -24,10 +24,11 @@ settings only affects notes written after.
 """
 
 import re
-from pathlib import Path
+
+from local_transcription import paths
 
 # config
-TEMPLATES_DIR = Path(__file__).parent.parent / "data" / "templates"
+TEMPLATES_DIR = paths.DATA_DIR / "templates"
 DEFAULT = "Standard"
 PLACEHOLDER = re.compile(r"\{\{\s*(\w+)\s*(?::\s*(.*?))?\s*\}\}")
 FILLED = {"date", "title", "people", "teams", "organizations", "project", "transcript_link", "transcript",

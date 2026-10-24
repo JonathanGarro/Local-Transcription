@@ -307,6 +307,8 @@ struct SettingsState: Codable {
     // whether the speaker detection model is downloaded, so no token is needed
     let modelReady: Bool
     let hfTermsUrl: String
+    // where recordings, meetings and settings are kept
+    let libraryDir: String
 }
 
 struct NoteTemplate: Codable, Hashable {

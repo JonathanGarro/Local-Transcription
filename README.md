@@ -2,6 +2,8 @@
 
 Boswell is offline meeting transcription with speaker diarization and voice profile matching, built for Apple Silicon. Audio, transcripts, and voice profiles never leave the machine.
 
+It needs a Mac with Apple Silicon and macOS 26 or later, about 16 GB of memory (32 GB or more for writing notes with the local model), and around 5 GB of disk for Python, its packages and the models, plus the recordings.
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/screenshot-dark.png">
   <img alt="Boswell's Inbox with a meeting note open" src="assets/screenshot-light.png">
@@ -19,6 +21,8 @@ Boswell is offline meeting transcription with speaker diarization and voice prof
 On a 30 minute meeting the whole run takes about 2 to 3 minutes on an M3 Max. mlx-whisper ran 5 to 6x faster than faster-whisper (CPU only on macOS) with near identical output, so it is the default.
 
 ## Setup
+
+From a release: open `Boswell-<version>.dmg`, drag Boswell to Applications, and open it. The first launch downloads Python and its packages (about 1.5 GB), then setup takes over. To build it yourself instead, with [uv](https://docs.astral.sh/uv/) and Xcode installed:
 
 ```
 uv sync
@@ -48,10 +52,10 @@ It goes in `/Applications/Boswell.app`, or is rebuilt wherever you moved it. The
 
 For development, `uv run app.py` runs the server on its own at http://127.0.0.1:8765 (the app uses it when it's already running), and `cd mac && DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift run` runs the app. Set `BOSWELL_URL` to point the app at a server on another port, `BOSWELL_PAGE` (such as `vocabulary`) to open on a page, `BOSWELL_MEETING` to select a meeting by its id, and `BOSWELL_SNAPSHOT=/path/to/file.png` to save a picture of the window a few seconds after launch, which checks a layout without needing screen recording access.
 
-The flow: drop a recording on the window or import one from Plaud, it is transcribed, you confirm speakers if asked, the note is written automatically with `SUMMARY_BACKEND` once every speaker is named, then you review and send it. Cmd+1 to Cmd+8 switch pages.
+The flow: drop a recording on the window or import one from Plaud, it is transcribed, you confirm speakers if asked, the note is written automatically, with the notes model chosen in Settings, once every speaker is named, then you review and send it. Cmd+1 to Cmd+8 switch pages.
 
 - **Inbox:** drop m4a, mp3 or wav recordings on the window, or press Cmd+O, to queue them. One file runs at a time, with live progress in the sidebar. Dropped files are copied into the library's `data/` folder (see [The library folder](#the-library-folder)), and the source (Plaud or a split Zoom call) is detected. A file that was already processed is skipped, because re-running replaces its confirmed names. Each meeting shows where it is: needs review, writing note, ready to send or no note yet. Right-click to rename, show it in Finder or open it in Obsidian. The Dock icon shows how many meetings need review.
-- **Archive:** sent meetings, searchable, with a filter for meetings with to-dos sent or not yet checked. **Move to Inbox** on the right-click menu brings one back. Meetings imported from Obsidian open as their note, read only.
+- **Archive:** meetings sent to Obsidian or marked done, searchable, with a filter for meetings with to-dos sent or not yet checked. **Move to Inbox** on the right-click menu brings one back. Meetings imported from Obsidian open as their note, read only.
 - **Plaud:** recordings uploaded to Plaud in the last 14 days. Import downloads the audio with the Plaud CLI (`npm install -g @plaud-ai/cli`, then Sign In in Settings) and runs it here like a dropped file, so Plaud doesn't need to transcribe it. Recordings already in the app show as such, and open their meeting. Right-click one to hide it, for a meeting already in the app from another recording, and Show Hidden in the toolbar brings hidden ones back. The page only appears when the Plaud CLI is installed, and Settings can turn it off.
 - **Speakers:** each unknown speaker gets a few short clips with what they said, suggested names with scores, and a name field that suggests existing people or creates a new one. You can also mark a speaker as the same person as another speaker (diarization split them), leave a speaker unnamed, or name them without adding the voice to their profile. Identified speakers are collapsed, with a "Wrong?" link. Nothing is saved until you press Save Names (Cmd+Return).
 - **Transcript:** play any turn, filter the transcript, copy it as markdown, or show the file in Finder. A link to a moment, from an answer or a to-do, opens the transcript on that turn.
@@ -66,7 +70,16 @@ Once sent, the Obsidian copy is the master copy. Opening a sent note in the app 
 - **Data:** totals for meetings, hours, people and voices, your share of talk time, meetings per month and by weekday, and the people, teams and projects you meet with most. A person opens in People.
 - **People:** everyone in the library, searchable and sortable, with their organizations, teams, voice profile and meetings. Double-click a meeting to open it. Edit (Cmd+E) changes the name, organizations and teams. Organizations and teams are read from and saved to each person's Obsidian note. Edits rewrite every past transcript and note they appear in.
 - **Vocabulary:** terms Whisper should spell your way (see Custom vocabulary below), with a meter for how much of the spelling hint they use. Edit a term or its "also heard as" spellings in place, and they save as you type.
-- **Settings:** accent color, to-dos (the to-do app, and whether sending asks to find to-dos first, see below), Obsidian (the meeting notes and people folders, which win over the ones in `.env`, and opening a note in Obsidian as soon as it's sent), Plaud (on or off, which hides the Plaud page, and signing in or out of your Plaud account, in the browser), the Anthropic API key, the Claude model, usage, and where the project folder and log are.
+- **Settings:**
+  - **You:** your name, which notes are written for and whose to-dos are found, and which channel is your mic in split call recordings
+  - **Appearance:** the accent color
+  - **To-dos:** the to-do app, its Todoist token or Things areas, and whether sending asks to find to-dos first (see below)
+  - **Notes:** what writes them (the local model or Claude) and the note template (see [Note templates](#meeting-notes))
+  - **Obsidian:** the meeting notes, people and project index folders, which win over the ones in `.env`, and opening a note in Obsidian as soon as it's sent
+  - **Plaud:** on or off, which hides the Plaud page, and signing in or out of your Plaud account, in the browser
+  - **Claude:** the Anthropic API key, the model, and usage
+  - **Models:** whether Whisper and the speaker detection model are downloaded, a Download button, and the Hugging Face token
+  - **About:** Run Setup Again and Reset Setup, the library folder, the server code inside the app, Show Licenses, Copy Diagnostics, and the log
 
 **To-do apps.** To-dos go to one app at a time, picked in Settings, and work the same way in each:
 
@@ -79,7 +92,7 @@ Switching apps leaves to-dos already sent where they are, and their links still 
 
 Links to the old web version in to-dos already in Things (`http://127.0.0.1:8765/#/transcript/…`) still work while the app is open: the server answers them with a page that hands the meeting to the app.
 
-The server listens on 127.0.0.1 only and loads nothing from the internet.
+The server listens on 127.0.0.1 only. It reaches the internet only for what you turn on, listed under [Privacy](#privacy).
 
 ## The library folder
 
@@ -209,7 +222,7 @@ uv run scripts/manage_profiles.py set "Maya Chen" --org "Northwind Foundation" -
 uv run scripts/manage_profiles.py projects --add "Customer Dashboard"
 ```
 
-Two backends, chosen per note or with `SUMMARY_BACKEND` in `.env`:
+Two backends, chosen in Settings, per note in the write form, or with `SUMMARY_BACKEND` in `.env`:
 
 | | local (default) | claude |
 |---|---|---|
@@ -251,29 +264,51 @@ uv run scripts/import_plaud.py --retime
 
 ## Privacy
 
-The library lives outside the project folder, and `.env` is gitignored, so audio, transcripts, voice profiles, and the token are never committed. The only step that can send anything off the Mac is a note written with the claude backend, and only when you choose it. Deleting a person removes their voice entries from `data/library.db`. Each meeting's `speaker_embeddings.npz` in `outputs/` also holds that meeting's voices, so delete the meeting folder too for a complete removal.
+Recordings, transcripts, voice profiles and notes stay on the Mac, in the library folder, outside the project folder, and `.env` is gitignored, so none of it is ever committed. There's no analytics or telemetry. What reaches the internet, and only when you use it:
+
+- **Claude** (with your Anthropic API key): the transcript text when a note is written with the Claude backend, and when Find my to-dos reads a meeting; the notes and transcript excerpts Ask reads to answer a question. Never audio or voice profiles.
+- **Todoist**: the to-dos you choose to add, with their notes, and reading your project list. Things and Reminders run on the Mac (and sync however you've set them up).
+- **Hugging Face**: downloading Whisper and the speaker detection model, once, with your token for the speaker model.
+- **Python packages**: downloaded by uv on the first launch, and again only when an update changes them.
+- **Plaud**: your recording list and the audio you import, through the Plaud CLI, if you use it.
+
+Deleting a person removes their voice entries from the library's database (`data/library.db` in the library folder). Each meeting's `speaker_embeddings.npz` in `outputs/` also holds that meeting's voices, so delete the meeting folder too for a complete removal. To remove Boswell entirely, delete the app, `~/Library/Application Support/Boswell`, `~/Library/Caches/Boswell` and `~/Library/Logs/Boswell.log`, uv's cache in `~/.cache/uv` if nothing else uses it, and the Boswell items in Keychain Access.
 
 ## Layout
 
 ```
 app.py                 run the server the mac app talks to
-make_app.py            build the mac app
-local_transcription/   the engine and its local api: audio, diarize, asr, merge, embed, match,
-                       library, render, pipeline, notes, ask, server
+make_app.py            build the mac app, or with --release a notarized dmg in dist/
+local_transcription/   the server and its local api
+  audio, diarize, asr, merge, embed, match, render, pipeline
+                         the transcription pipeline
+  library                the sqlite library of people, voices and meetings
+  notes, templates       writing notes, in a note template
+  ask                    questions about past meetings, and finding to-dos, with claude
+  todos, things, todoist, reminders
+                         the to-do app chosen in settings
+  settings, paths, keychain, hf
+                         settings, where the library lives, keys and tokens, and the models
+  obsidian, directory, projects, plaud, vocab
+                         the obsidian vault, people's notes, the project index, plaud, and vocabulary
+  server                 the api the mac app calls
 mac/                   the mac app, in swiftui
 scripts/               command line tools
   transcribe.py          process a recording
   confirm.py             confirm names and grow profiles
-  summarize.py           write an obsidian meeting note
+  summarize.py           write a meeting note
   import_obsidian.py     import older obsidian notes into the archive
   import_plaud.py        reprocess imported notes from their plaud recordings
   enroll.py              add a voice sample
   manage_profiles.py     list, prune, delete profiles
   check_setup.py         verify ffmpeg, token, and models
   build_ffmpeg.py        build the lgpl ffmpeg and ffprobe the app ships
-assets/                the app icon and the screenshots in this readme
+assets/                the app icon, the screenshots in this readme, and uv's license
 ~/Library/Application Support/Boswell/
-  data/, outputs/      recordings and the library, and what's made from them (never committed)
+  data/, outputs/        recordings and the library, and what's made from them (never committed)
+  env/                   the python environment the app installs on first launch
+  .env                   optional settings the app reads
+~/Library/Logs/Boswell.log   what the server prints
 ```
 
 ## License

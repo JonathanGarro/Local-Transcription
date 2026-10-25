@@ -9,7 +9,7 @@ or is rebuilt where it is if you moved it to ~/Applications. any square png work
 looks best.
 
 the app doesn't need this project folder to run. the server's code is copied into the app,
-with uv, which installs python and the server's packages from uv.lock into
+with ffmpeg and ffprobe built from source under the lgpl (scripts/build_ffmpeg.py), and uv, which installs python and the server's packages from uv.lock into
 ~/Library/Application Support/Boswell/env when the app first opens, and again only when an
 update changes uv.lock. the library is in the library folder (see local_transcription/paths.py).
 run this again after changing the code or the icon, since the app runs its own copy of the code.
@@ -149,6 +149,10 @@ def main():
         print(f"made a plain icon at {ICON_PNG.relative_to(BASE_DIR)}, pass --icon to use your own")
 
     binary = build_native()
+    sys.path.insert(0, str(BASE_DIR / "scripts"))
+    import build_ffmpeg
+
+    ffmpeg = build_ffmpeg.build()
     uv = shutil.which("uv")
     if not uv:
         raise SystemExit("uv isn't on the PATH, and the app ships a copy of it")
@@ -170,6 +174,13 @@ def main():
     shutil.copy2(binary, contents / "MacOS" / APP_NAME)
     # the uv the app installs python with, the one this project is built with
     shutil.copy2(Path(uv).resolve(), contents / "MacOS" / "uv")
+    # ffmpeg reads the recordings. the lgpl asks for its license and how it was built to go along
+    for name in build_ffmpeg.BINARIES:
+        shutil.copy2(ffmpeg / "bin" / name, contents / "MacOS" / name)
+    licenses = contents / "Resources" / "licenses" / "ffmpeg"
+    licenses.mkdir(parents=True)
+    for name in ("COPYING.LGPLv2.1", "README.txt"):
+        shutil.copy2(ffmpeg / name, licenses / name)
     print(subprocess.run([uv, "--version"], capture_output=True, text=True).stdout.strip(), "goes in the app")
     with (contents / "Info.plist").open("wb") as f:
         plistlib.dump({"CFBundleName": APP_NAME, "CFBundleDisplayName": APP_NAME,
@@ -182,9 +193,10 @@ def main():
     identity = signing_identity()
     if identity == "-":
         print("no apple development certificate, so macos will ask for folder access again after each rebuild")
-    # uv is signed first, since the app's signature covers the code inside it
-    subprocess.run(["codesign", "--force", "--sign", identity, str(contents / "MacOS" / "uv")],
-                   check=True, capture_output=True)
+    # the helpers are signed first, since the app's signature covers the code inside it
+    for helper in ["uv", *build_ffmpeg.BINARIES]:
+        subprocess.run(["codesign", "--force", "--sign", identity, str(contents / "MacOS" / helper)],
+                       check=True, capture_output=True)
     subprocess.run(["codesign", "--force", "--sign", identity, str(app_dir)], check=True, capture_output=True)
     # tell finder and the dock to pick up the new icon, and launch services the link type
     subprocess.run(["touch", str(app_dir)], check=False)

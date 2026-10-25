@@ -65,9 +65,11 @@ final class Server {
         p.executableURL = python
         p.arguments = ["app.py"]
         p.currentDirectoryURL = serverDir
-        // apps opened from finder get a bare PATH, so add homebrew for ffmpeg and ffprobe
+        // the app's own ffmpeg and ffprobe come first. apps opened from finder get a bare PATH, so
+        // homebrew's are added after, for swift run, and for the plaud cli
         var env = ProcessInfo.processInfo.environment
-        env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + (env["PATH"] ?? "/usr/bin:/bin")
+        let helpers = Bundle.main.executableURL?.deletingLastPathComponent().path ?? ""
+        env["PATH"] = "\(helpers):/opt/homebrew/bin:/usr/local/bin:" + (env["PATH"] ?? "/usr/bin:/bin")
         // compiled python goes to the caches folder, since writing it inside the app would break its signature
         env["PYTHONPYCACHEPREFIX"] = FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Caches/Boswell/pycache").path
         // the server stops itself when this process goes away

@@ -20,6 +20,9 @@ THINGS_APP = Path("/Applications/Things3.app")
 MIC_CHANNELS = ["left", "right"]
 # what writes notes: an mlx model on this mac, or claude
 SUMMARY_BACKENDS = ["local", "claude"]
+# what setup asks for, which resetting it forgets
+SETUP_KEYS = ["owner", "summary_backend", "mic_channel", "meeting_notes_dir", "people_dir", "project_index_dir",
+              "todo_app", "note_template", "things_areas"]
 # obsidian folders chosen on the settings page, which win over the same names in .env
 FOLDERS = {"meeting_notes_dir": "MEETING_NOTES_DIR", "people_dir": "PEOPLE_DIR", "project_index_dir": "PROJECT_INDEX_DIR"}
 DEFAULT_CLAUDE_MODEL = "claude-opus-5-5"
@@ -61,6 +64,7 @@ def load():
             "summary_backend": saved.get("summary_backend") if saved.get("summary_backend") in SUMMARY_BACKENDS
             else None,
             "setup_done": bool(saved.get("setup_done")),
+            "setup_reset": bool(saved.get("setup_reset")),
             # things areas to read projects from. an empty list is every area, None falls back to .env
             "things_areas": saved.get("things_areas") if isinstance(saved.get("things_areas"), list) else None}
 
@@ -91,6 +95,8 @@ def save(**changes):
                 raise ValueError(f"there's no folder at {path}")
             changes[key] = str(path)
     current.update({k: v for k, v in changes.items() if v is not None})
+    if changes.get("setup_done"):
+        current.pop("setup_reset", None)
     # unset values aren't kept, so load gives them their defaults
     current = {k: v for k, v in current.items() if v not in ("", None)}
     SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -126,8 +132,24 @@ def summary_backend():
 
 def setup_needed():
     """whether to show the setup that's shown when the app is first opened: not yet finished,
-    and no name in .env, so someone already set up through .env doesn't see it."""
-    return not load()["setup_done"] and not os.environ.get("MIC_OWNER", "").strip()
+    and no name in .env, so someone already set up through .env doesn't see it, unless setup
+    was reset."""
+    saved = load()
+    return not saved["setup_done"] and (saved["setup_reset"] or not os.environ.get("MIC_OWNER", "").strip())
+
+
+def reset_setup():
+    """forget what setup asked for, so it shows again when the app opens, even with a name in
+    .env. the library, the keys and tokens in the keychain, and .env itself are left alone."""
+    try:
+        saved = json.loads(SETTINGS_PATH.read_text())
+    except (OSError, ValueError):
+        saved = {}
+    for key in SETUP_KEYS:
+        saved.pop(key, None)
+    saved.update(setup_done=False, setup_reset=True)
+    SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    SETTINGS_PATH.write_text(json.dumps(saved, indent=2))
 
 
 def claude_model():

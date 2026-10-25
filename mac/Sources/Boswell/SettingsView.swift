@@ -14,6 +14,7 @@ struct SettingsView: View {
     @State private var templates: Templates?
     @State private var thingsAreas: ThingsAreas?
     @State private var thingsError: String?
+    @State private var confirmReset = false
     @State private var owner = ""
     @State private var enteringHFToken = false
     @State private var hfCheck: KeyCheck?
@@ -277,7 +278,12 @@ struct SettingsView: View {
             }
 
             Section("About") {
-                Button("Run Setup Again...") { store.showSetup = true }
+                HStack {
+                    Button("Run Setup Again...") { store.showSetup = true }
+                        .help("Go through setup again, starting from what's set now")
+                    Button("Reset Setup...", role: .destructive) { confirmReset = true }
+                        .help("Forget what setup asked for, and show it whenever Boswell opens until it's finished")
+                }
                 LabeledContent {
                     Button(s.libraryDir) { NSWorkspace.shared.open(URL(fileURLWithPath: s.libraryDir)) }
                         .buttonStyle(.link)
@@ -350,6 +356,11 @@ struct SettingsView: View {
                      link: URL(string: "https://app.todoist.com/app/settings/integrations/developer")!) { token in
                 await tokenAction { try await API.put(["api", "settings", "todoist"], ["key": token]) }
             }
+        }
+        .confirmationDialog("Reset setup?", isPresented: $confirmReset) {
+            Button("Reset Setup", role: .destructive) { Task { await resetSetup() } }
+        } message: {
+            Text("Your name, the notes model, mic channel, Obsidian folders, to-do app and template go back to unset, and setup opens until you finish it. Meetings, people, keys and tokens stay. Values in .env fill in again.")
         }
         .confirmationDialog("Remove the Todoist token?", isPresented: $confirmRemoveToken) {
             Button("Remove Token", role: .destructive) { Task { await tokenAction { try await API.delete(["api", "settings", "todoist"]) } } }
@@ -444,6 +455,18 @@ struct SettingsView: View {
             }
             Text(path == nil ? "\(purpose) Not chosen yet."
                  : source == "env" ? "\(purpose) Set in .env." : purpose)
+        }
+    }
+
+    private func resetSetup() async {
+        do {
+            let updated: SettingsState = try await API.post(["api", "settings", "reset-setup"])
+            settings = updated
+            owner = updated.owner ?? ""
+            store.apply(updated)
+            store.showSetup = true
+        } catch {
+            store.show(error.localizedDescription)
         }
     }
 

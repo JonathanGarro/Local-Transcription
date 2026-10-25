@@ -492,6 +492,12 @@ def create_app():
         hf.download()
         return hf.models_state()
 
+    @app.post("/api/settings/reset-setup")
+    def reset_setup():
+        settings.reset_setup()
+        things.clear_cache()
+        return settings_state()
+
     # the hugging face token, kept in the keychain, is only needed to download the speaker model
     @app.put("/api/settings/hf")
     def save_hf_token(request: KeyRequest):

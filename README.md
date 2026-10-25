@@ -85,6 +85,15 @@ The server listens on 127.0.0.1 only and loads nothing from the internet.
 
 Recordings, meeting folders, the database, settings and note templates live in `~/Library/Application Support/Boswell`, in a `data/` folder (recordings and the rest) and an `outputs/` folder (one per meeting). Settings shows where under About. Set `BOSWELL_HOME` in `.env` to keep it somewhere else. Earlier versions kept `data/` and `outputs/` in the project folder. The first time this version starts, they're moved into the library folder, which on the same disk is an instant rename. Each meeting's recording path is rewritten to be relative to the library, so the library can move again later. If the library folder already has either one, nothing is moved.
 
+## Releasing
+
+`uv run make_app.py --release` builds a copy to share in `dist/`, leaving the app in `/Applications` alone. It's signed with your Developer ID certificate and the hardened runtime, with the one entitlement Boswell needs (sending Apple Events, to add to-dos to Things and Reminders). Apple notarizes it, as the app and then as `dist/Boswell-<version>.dmg`, and each is stapled, so it opens on any Mac with only the usual downloaded-from-the-internet question. The Python environment and models it downloads on first launch aren't part of what Apple checks, since they aren't marked as downloaded. It needs, once:
+
+- a **Developer ID Application** certificate, added in Xcode, Settings, Accounts, Manage Certificates
+- the notary credentials saved in the Keychain: `xcrun notarytool store-credentials boswell --apple-id <your Apple ID> --team-id <team ID>`, with an app-specific password from account.apple.com
+
+It checks for both before building. A release doesn't copy your `.env` anywhere.
+
 ## Logs and reporting a problem
 
 The server's output goes to `~/Library/Logs/Boswell.log`, a timestamped line at a time: when it starts, each transcription and note as it starts and finishes (and how long it took), and the full error when one fails. A log over 5 MB starts over at the next launch, keeping the one before as `Boswell.old.log`. **Copy Diagnostics** in Settings, under About, copies the app and macOS versions, the Mac's chip and memory, what's set up (as yes or no, never names, keys or transcripts), whether the models are downloaded, and the last 150 lines of the log, ready to paste into a bug report. Log lines can name meetings, so look before sharing.

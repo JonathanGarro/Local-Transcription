@@ -3,6 +3,14 @@
 usage:
     uv run make_app.py                      # uses assets/icon.png, makes a plain one if missing
     uv run make_app.py --icon ~/Pictures/my-icon.png
+    uv run make_app.py --release            # a notarized dmg in dist/ to share
+
+a release is signed with your developer id certificate and the hardened runtime, notarized
+by apple, and stapled, as an app and then as a dmg, so it opens on any mac without a
+warning. it needs a "Developer ID Application" certificate (xcode, settings, accounts, manage
+certificates) and the notary credentials saved once with:
+    xcrun notarytool store-credentials boswell --apple-id <email> --team-id <team id>
+it leaves the app in /Applications alone.
 
 it needs xcode, whose tools have swiftui's macros. the app goes in /Applications/Boswell.app,
 or is rebuilt where it is if you moved it to ~/Applications. any square png works, 1024x1024
@@ -39,6 +47,13 @@ MAC_DIR = BASE_DIR / "mac"
 # what the app needs of this folder to run the server, copied into Contents/Resources/server.
 # pyproject.toml and uv.lock are what the python environment is installed from
 SERVER_FILES = ["app.py", "local_transcription", "pyproject.toml", "uv.lock", ".python-version"]
+DIST_DIR = BASE_DIR / "dist"
+# the name the notary credentials are saved under in the keychain
+NOTARY_PROFILE = "boswell"
+# the hardened runtime blocks sending apple events, which add to-dos to things and reminders,
+# unless the app says it does
+ENTITLEMENTS = {"com.apple.security.automation.apple-events": True}
+APPLE_EVENTS_USAGE = "Boswell adds the to-dos you choose to Things or Reminders."
 XCODE_DIR = Path("/Applications/Xcode.app/Contents/Developer")
 INSTALL_DIRS = [Path("/Applications"), Path.home() / "Applications"]
 
@@ -101,6 +116,70 @@ def version():
     return project, count.stdout.strip() or "1"
 
 
+def developer_id():
+    """the developer id certificate that releases are signed with, which macos trusts on any mac."""
+    found = subprocess.run(["security", "find-identity", "-v", "-p", "codesigning"],
+                           capture_output=True, text=True).stdout
+    for line in found.splitlines():
+        if '"Developer ID Application:' in line:
+            return line.split()[1]
+    raise SystemExit("no Developer ID Application certificate. Add one in Xcode, Settings, Accounts, Manage Certificates")
+
+
+def check_notary():
+    """stop before the long build when the notary credentials aren't saved yet."""
+    result = subprocess.run(["xcrun", "notarytool", "history", "--keychain-profile", NOTARY_PROFILE],
+                            env=xcode_env(), capture_output=True, text=True)
+    if result.returncode != 0:
+        raise SystemExit(f"no notary credentials saved as {NOTARY_PROFILE}. Run: xcrun notarytool store-credentials "
+                         f"{NOTARY_PROFILE} --apple-id <email> --team-id <team id>")
+
+
+def sign(path, identity, release, entitlements=None):
+    """sign one piece of the app. a release adds the hardened runtime and a secure timestamp,
+    which notarization requires."""
+    cmd = ["codesign", "--force", "--sign", identity]
+    if release:
+        cmd += ["--options", "runtime", "--timestamp"]
+    if entitlements:
+        cmd += ["--entitlements", str(entitlements)]
+    subprocess.run(cmd + [str(path)], check=True, capture_output=True)
+
+
+def notarize(path):
+    """send a zip or dmg to apple and wait for its verdict, usually a few minutes."""
+    print(f"notarizing {path.name}")
+    result = subprocess.run(["xcrun", "notarytool", "submit", str(path), "--keychain-profile", NOTARY_PROFILE, "--wait"],
+                            env=xcode_env(), capture_output=True, text=True)
+    if "status: Accepted" not in result.stdout:
+        found = [line.split(":", 1)[1].strip() for line in result.stdout.splitlines() if line.strip().startswith("id:")]
+        detail = (f" See why with: xcrun notarytool log {found[0]} --keychain-profile {NOTARY_PROFILE}"
+                  if found else "")
+        raise SystemExit(f"apple didn't accept {path.name}.{detail}\n{result.stdout}{result.stderr}")
+    subprocess.run(["xcrun", "stapler", "staple", str(path)], env=xcode_env(), check=True, capture_output=True)
+
+
+def make_release(app_dir, identity):
+    """notarize the app, then put it in a signed, notarized dmg. returns the dmg."""
+    archive = DIST_DIR / f"{APP_NAME}.zip"
+    subprocess.run(["ditto", "-c", "-k", "--keepParent", str(app_dir), str(archive)], check=True)
+    notarize(archive)
+    # the ticket went to the zip's copy, so the app itself is stapled from apple's records
+    subprocess.run(["xcrun", "stapler", "staple", str(app_dir)], env=xcode_env(), check=True, capture_output=True)
+    archive.unlink()
+    dmg = DIST_DIR / f"{APP_NAME}-{version()[0]}.dmg"
+    dmg.unlink(missing_ok=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run(["ditto", str(app_dir), str(Path(tmp) / app_dir.name)], check=True)
+        # dragging the app onto this installs it
+        (Path(tmp) / "Applications").symlink_to("/Applications")
+        subprocess.run(["hdiutil", "create", "-volname", APP_NAME, "-srcfolder", tmp, "-format", "UDZO", str(dmg)],
+                       check=True, capture_output=True)
+    sign(dmg, identity, release=True)
+    notarize(dmg)
+    return dmg
+
+
 def signing_identity():
     """the apple development certificate xcode made, if there is one. macos remembers
     permissions like documents folder access by the app's signature, and an ad hoc one
@@ -139,10 +218,17 @@ def build_native():
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--icon", type=Path, help=f"square png to use, copied to {ICON_PNG.relative_to(BASE_DIR)}")
+    parser.add_argument("--release", action="store_true", help="build a notarized dmg in dist/ to share")
     args = parser.parse_args()
-    # rebuild in place if the app was moved to /Applications, so there is only one copy
-    app_dir = next((d / f"{APP_NAME}.app" for d in INSTALL_DIRS if (d / f"{APP_NAME}.app").exists()),
-                   INSTALL_DIRS[0] / f"{APP_NAME}.app")
+    if args.release:
+        identity = developer_id()
+        check_notary()
+        app_dir = DIST_DIR / f"{APP_NAME}.app"
+    else:
+        identity = signing_identity()
+        # rebuild in place if the app was moved to /Applications, so there is only one copy
+        app_dir = next((d / f"{APP_NAME}.app" for d in INSTALL_DIRS if (d / f"{APP_NAME}.app").exists()),
+                       INSTALL_DIRS[0] / f"{APP_NAME}.app")
 
     if args.icon:
         source = args.icon.expanduser()
@@ -165,7 +251,8 @@ def main():
     uv = shutil.which("uv")
     if not uv:
         raise SystemExit("uv isn't on the PATH, and the app ships a copy of it")
-    copy_env_file()
+    if not args.release:
+        copy_env_file()
     if app_dir.exists():
         shutil.rmtree(app_dir)
     contents = app_dir / "Contents"
@@ -205,17 +292,22 @@ def main():
                        "CFBundleIconFile": "AppIcon", "CFBundleIconName": "AppIcon", "CFBundlePackageType": "APPL",
                        "CFBundleShortVersionString": version()[0], "CFBundleVersion": version()[1],
                        "LSMinimumSystemVersion": "26.0", "BoswellOldBundleID": OLD_BUNDLE_ID,
-                       "NSHighResolutionCapable": True,
+                       "NSHighResolutionCapable": True, "NSAppleEventsUsageDescription": APPLE_EVENTS_USAGE,
                        "CFBundleURLTypes": [{"CFBundleURLName": f"{BUNDLE_ID}.links",
                                              "CFBundleURLSchemes": [URL_SCHEME]}]}, f)
-    identity = signing_identity()
     if identity == "-":
         print("no apple development certificate, so macos will ask for folder access again after each rebuild")
     # the helpers are signed first, since the app's signature covers the code inside it
     for helper in ["uv", *build_ffmpeg.BINARIES]:
-        subprocess.run(["codesign", "--force", "--sign", identity, str(contents / "MacOS" / helper)],
-                       check=True, capture_output=True)
-    subprocess.run(["codesign", "--force", "--sign", identity, str(app_dir)], check=True, capture_output=True)
+        sign(contents / "MacOS" / helper, identity, args.release)
+    with tempfile.NamedTemporaryFile(suffix=".plist") as entitlements:
+        plistlib.dump(ENTITLEMENTS, entitlements)
+        entitlements.flush()
+        sign(app_dir, identity, args.release, entitlements.name)
+    if args.release:
+        dmg = make_release(app_dir, identity)
+        print(f"built {dmg}, notarized and ready to share")
+        return
     # tell finder and the dock to pick up the new icon, and launch services the link type
     subprocess.run(["touch", str(app_dir)], check=False)
     subprocess.run(["/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",

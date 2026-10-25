@@ -50,6 +50,8 @@ SERVER_FILES = ["app.py", "local_transcription", "pyproject.toml", "uv.lock", ".
 DIST_DIR = BASE_DIR / "dist"
 # the name the notary credentials are saved under in the keychain
 NOTARY_PROFILE = "boswell"
+# how many half hours to wait for apple's verdict
+NOTARY_WAITS = 6
 # the hardened runtime blocks sending apple events, which add to-dos to things and reminders,
 # unless the app says it does
 ENTITLEMENTS = {"com.apple.security.automation.apple-events": True}
@@ -146,16 +148,35 @@ def sign(path, identity, release, entitlements=None):
     subprocess.run(cmd + [str(path)], check=True, capture_output=True)
 
 
+def _notary(*args):
+    return subprocess.run(["xcrun", "notarytool", *args, "--keychain-profile", NOTARY_PROFILE],
+                          env=xcode_env(), capture_output=True, text=True)
+
+
+def _field(output, name):
+    return next((line.split(":", 1)[1].strip() for line in output.splitlines() if line.strip().startswith(f"{name}:")),
+                None)
+
+
 def notarize(path):
-    """send a zip or dmg to apple and wait for its verdict, usually a few minutes."""
+    """send a zip or dmg to apple, wait for its verdict, and staple it. usually a few minutes,
+    though a new developer id's first submissions can take an hour or more."""
     print(f"notarizing {path.name}")
-    result = subprocess.run(["xcrun", "notarytool", "submit", str(path), "--keychain-profile", NOTARY_PROFILE, "--wait"],
-                            env=xcode_env(), capture_output=True, text=True)
-    if "status: Accepted" not in result.stdout:
-        found = [line.split(":", 1)[1].strip() for line in result.stdout.splitlines() if line.strip().startswith("id:")]
-        detail = (f" See why with: xcrun notarytool log {found[0]} --keychain-profile {NOTARY_PROFILE}"
-                  if found else "")
-        raise SystemExit(f"apple didn't accept {path.name}.{detail}\n{result.stdout}{result.stderr}")
+    submitted = _notary("submit", str(path))
+    submission = _field(submitted.stdout, "id")
+    if not submission:
+        raise SystemExit(f"couldn't send {path.name} to apple:\n{submitted.stdout}{submitted.stderr}")
+    print(f"  submission {submission}, waiting for apple")
+    status = None
+    for _ in range(NOTARY_WAITS):
+        _notary("wait", submission, "--timeout", "30m")
+        status = _field(_notary("info", submission).stdout, "status")
+        if status != "In Progress":
+            break
+        print("  still in progress")
+    if status != "Accepted":
+        log = _notary("log", submission).stdout
+        raise SystemExit(f"apple's verdict on {path.name} is {status or 'unknown'}:\n{log}")
     subprocess.run(["xcrun", "stapler", "staple", str(path)], env=xcode_env(), check=True, capture_output=True)
 
 

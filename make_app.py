@@ -32,6 +32,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 # config
@@ -171,9 +172,11 @@ def notarize(path):
     for _ in range(NOTARY_WAITS):
         _notary("wait", submission, "--timeout", "30m")
         status = _field(_notary("info", submission).stdout, "status")
-        if status != "In Progress":
+        if status in ("Accepted", "Invalid", "Rejected"):
             break
-        print("  still in progress")
+        # no answer, as when the mac locks and the keychain can't be read, means waiting longer
+        print(f"  {status or 'no answer yet'}, still waiting")
+        time.sleep(60)
     if status != "Accepted":
         log = _notary("log", submission).stdout
         raise SystemExit(f"apple's verdict on {path.name} is {status or 'unknown'}:\n{log}")

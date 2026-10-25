@@ -388,7 +388,7 @@ struct NoteView: View {
             .frame(maxWidth: 340)
             .textInputSuggestions {
                 ForEach(matchingProjects, id: \.name) { p in
-                    Label(p.name, systemImage: p.status == "In-Progress" ? "circle.fill" : "circle")
+                    Label(p.name, systemImage: p.active == true ? "circle.fill" : "circle")
                         .textInputCompletion(p.name)
                 }
             }
@@ -398,7 +398,7 @@ struct NoteView: View {
     private var matchingProjects: [Project] {
         let all = lookups?.projects ?? []
         let typed = project.trimmingCharacters(in: .whitespaces)
-        if typed.isEmpty { return Array(all.filter { $0.status == "In-Progress" }.prefix(12)) }
+        if typed.isEmpty { return Array(all.filter { $0.active == true }.prefix(12)) }
         return Array(all.filter { $0.name.localizedCaseInsensitiveContains(typed) && $0.name != typed }.prefix(12))
     }
 

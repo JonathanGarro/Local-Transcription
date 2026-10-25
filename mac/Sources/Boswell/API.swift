@@ -136,6 +136,8 @@ struct SentTodo: Codable, Hashable {
 struct Project: Codable, Hashable {
     let name: String
     let status: String?
+    // an active status in the project index, so it's offered first
+    let active: Bool?
 }
 
 struct Lookups: Codable {
@@ -290,6 +292,8 @@ struct SettingsState: Codable {
     let meetingNotesDirSource: String?
     let peopleDir: String?
     let peopleDirSource: String?
+    let projectIndexDir: String?
+    let projectIndexDirSource: String?
     let noteTemplate: String
     // your name, and whether it was set here ("settings") or in .env
     let owner: String?
@@ -309,6 +313,12 @@ struct SettingsState: Codable {
     let hfTermsUrl: String
     // where recordings, meetings and settings are kept
     let libraryDir: String
+}
+
+struct ThingsAreas: Codable {
+    let areas: [String]
+    // an empty list is every area
+    let chosen: [String]
 }
 
 struct ModelInfo: Codable, Hashable {
@@ -358,6 +368,9 @@ struct SettingsChange: Encodable {
     // "" goes back to the folder in .env
     var meetingNotesDir: String?
     var peopleDir: String?
+    var projectIndexDir: String?
+    // an empty list reads projects from every things area
+    var thingsAreas: [String]?
     var noteTemplate: String?
     // "" goes back to MIC_OWNER in .env
     var owner: String?

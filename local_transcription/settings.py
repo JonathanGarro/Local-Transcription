@@ -21,7 +21,7 @@ MIC_CHANNELS = ["left", "right"]
 # what writes notes: an mlx model on this mac, or claude
 SUMMARY_BACKENDS = ["local", "claude"]
 # obsidian folders chosen on the settings page, which win over the same names in .env
-FOLDERS = {"meeting_notes_dir": "MEETING_NOTES_DIR", "people_dir": "PEOPLE_DIR"}
+FOLDERS = {"meeting_notes_dir": "MEETING_NOTES_DIR", "people_dir": "PEOPLE_DIR", "project_index_dir": "PROJECT_INDEX_DIR"}
 DEFAULT_CLAUDE_MODEL = "claude-opus-5-5"
 # dollars per million tokens. writing to the cache costs a quarter more than plain input
 MODELS = {
@@ -60,7 +60,9 @@ def load():
             "mic_channel": saved.get("mic_channel") if saved.get("mic_channel") in MIC_CHANNELS else None,
             "summary_backend": saved.get("summary_backend") if saved.get("summary_backend") in SUMMARY_BACKENDS
             else None,
-            "setup_done": bool(saved.get("setup_done"))}
+            "setup_done": bool(saved.get("setup_done")),
+            # things areas to read projects from. an empty list is every area, None falls back to .env
+            "things_areas": saved.get("things_areas") if isinstance(saved.get("things_areas"), list) else None}
 
 
 def save(**changes):
@@ -75,6 +77,8 @@ def save(**changes):
         raise ValueError(f"the mic channel must be one of {', '.join(MIC_CHANNELS)}")
     if changes.get("summary_backend") and changes["summary_backend"] not in SUMMARY_BACKENDS:
         raise ValueError(f"notes are written by one of {', '.join(SUMMARY_BACKENDS)}")
+    if changes.get("things_areas") is not None:
+        changes["things_areas"] = [str(a).strip() for a in changes["things_areas"] if str(a).strip()]
     if changes.get("owner") is not None:
         changes["owner"] = changes["owner"].strip()
     if changes.get("note_template") is not None and changes["note_template"] not in templates.names():

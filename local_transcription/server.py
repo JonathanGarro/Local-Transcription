@@ -8,8 +8,10 @@ import json
 import os
 import queue
 import re
+import shutil
 import subprocess
 import threading
+import time
 import traceback
 import uuid
 from datetime import datetime
@@ -23,7 +25,7 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
 from local_transcription import (ask, audio, directory, hf, keychain, library, notes, paths, pipeline, plaud, projects,
-                                 render, settings, templates, todoist, todos, vocab)
+                                 render, settings, templates, things, todoist, todos, vocab)
 
 # config
 DATA_DIR = paths.DATA_DIR
@@ -144,12 +146,18 @@ class Jobs:
         while True:
             job = self.queue.get()
             self._update(job, status="processing", step="starting")
+            # the log says what ran, for working out what went wrong
+            label = f"{job['kind'] or 'transcription'} job {job['job_id']} ({job.get('file')})"
+            print(f"started {label}")
+            started = time.time()
             try:
                 if job["kind"] == "note":
                     self._note(job)
                 else:
                     self._transcribe(job)
+                print(f"finished {label} in {time.time() - started:.0f}s")
             except Exception as err:
+                print(f"failed {label}: {err}")
                 traceback.print_exc()
                 self._update(job, status="failed", step="failed", error=str(err) or type(err).__name__)
 
@@ -240,12 +248,15 @@ class SettingsRequest(BaseModel):
     # "" clears one, going back to .env
     meeting_notes_dir: str | None = None
     people_dir: str | None = None
+    project_index_dir: str | None = None
     note_template: str | None = None
     # "" clears your name, going back to .env
     owner: str | None = None
     mic_channel: str | None = None
     summary_backend: str | None = None
     setup_done: bool | None = None
+    # an empty list reads projects from every things area
+    things_areas: list[str] | None = None
 
 
 class TodosRequest(BaseModel):
@@ -440,6 +451,35 @@ def create_app():
             raise HTTPException(400, str(err))
         return templates_state()
 
+    # for reporting a problem: versions, the mac, and what's set up, as yes or no rather than
+    # names, keys or transcripts, then the end of the log
+    @app.get("/api/diagnostics")
+    def diagnostics():
+        import platform
+
+        def sysctl(key):
+            return subprocess.run(["sysctl", "-n", key], capture_output=True, text=True).stdout.strip()
+
+        saved = settings.load()
+        memory = int(sysctl("hw.memsize") or 0) / 2 ** 30
+        rows = [
+            f"macOS {platform.mac_ver()[0]}, {sysctl('machdep.cpu.brand_string')}, {memory:.0f} GB memory",
+            f"python {platform.python_version()}, server code in {paths.PROJECT_DIR}, library in {paths.HOME}",
+            f"name set: {'yes' if settings.owner() else 'no'}, notes with: {settings.summary_backend()}, "
+            f"template: {saved['note_template']}, to-do app: {saved['todo_app']}",
+            f"anthropic key: {keychain.source() or 'none'}, hugging face token: {hf.token_source() or 'none'}, "
+            f"todoist token: {todoist.token_source() or 'none'}",
+            "folders: " + ", ".join(f"{key} {'set' if settings.folder(key)[0] else 'not set'}" for key in settings.FOLDERS),
+            "models: " + ", ".join(f"{m['label']} {'downloaded' if m['ready'] else 'missing'}"
+                                   for m in hf.models_state()["models"]),
+            f"ffmpeg: {shutil.which('ffmpeg') or 'missing'}, plaud cli: {'installed' if plaud.installed() else 'no'}",
+            f"meetings: {len(library.meetings())}, people: {len(library.person_names())}",
+            "jobs: " + (", ".join(f"{j['kind'] or 'transcription'} {j['status']} ({j.get('step')})" for j in jobs.snapshot())
+                        or "none"),
+        ]
+        log = paths.LOG_FILE.read_text(errors="replace").splitlines()[-150:] if paths.LOG_FILE.exists() else []
+        return Response("\n".join(rows + ["", "log:"] + log) + "\n", media_type="text/plain")
+
     # the models, downloaded from setup or settings with progress, so the first meeting doesn't wait
     @app.get("/api/models")
     def get_models():
@@ -501,9 +541,13 @@ def create_app():
         try:
             settings.save(accent=request.accent, claude_model=request.claude_model, todo_app=request.todo_app,
                           meeting_notes_dir=request.meeting_notes_dir,
-                          people_dir=request.people_dir, note_template=request.note_template, owner=request.owner,
+                          people_dir=request.people_dir, project_index_dir=request.project_index_dir,
+                          note_template=request.note_template, owner=request.owner,
                           mic_channel=request.mic_channel, summary_backend=request.summary_backend,
-                          setup_done=request.setup_done)
+                          setup_done=request.setup_done, things_areas=request.things_areas)
+            if request.things_areas is not None:
+                # the project menu follows a new choice of areas at once
+                things.clear_cache()
         except ValueError as err:
             raise HTTPException(400, str(err))
         return settings_state()
@@ -583,6 +627,13 @@ def create_app():
         app = todos.app()
         return {"projects": app.projects(), "areas": app.areas(), "app": todos.current(),
                 "app_name": todos.name(), "inbox": todos.inbox()}
+
+    @app.get("/api/things/areas")
+    def things_areas():
+        try:
+            return {"areas": things.all_areas(), "chosen": things.chosen_areas()}
+        except RuntimeError as err:
+            raise HTTPException(502, str(err))
 
     @app.get("/api/todos/projects")
     @app.get("/api/things/projects")

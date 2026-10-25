@@ -12,6 +12,8 @@ struct SettingsView: View {
     @State private var confirmRemoveToken = false
     @State private var tokenCheck: KeyCheck?
     @State private var templates: Templates?
+    @State private var thingsAreas: ThingsAreas?
+    @State private var thingsError: String?
     @State private var owner = ""
     @State private var enteringHFToken = false
     @State private var hfCheck: KeyCheck?
@@ -102,6 +104,10 @@ struct SettingsView: View {
                 if s.todoApp == "todoist" {
                     todoistToken(s)
                 }
+                if s.todoApp == "things" {
+                    thingsAreasRow
+                        .task { await loadThingsAreas() }
+                }
                 Toggle(isOn: $askTodos) {
                     Text("Ask to find to-dos before sending")
                     Text("When a note is sent to Obsidian or marked done before its meeting was checked for to-dos.")
@@ -151,6 +157,10 @@ struct SettingsView: View {
                 folderRow("People folder", path: s.peopleDir, source: s.peopleDirSource,
                           purpose: "One note per person, where their teams and organizations are read and saved.") {
                     SettingsChange(peopleDir: $0)
+                }
+                folderRow("Project index folder", path: s.projectIndexDir, source: s.projectIndexDirSource,
+                          purpose: "Optional. One note per project, offered when filing a meeting, with active ones first.") {
+                    SettingsChange(projectIndexDir: $0)
                 }
                 Toggle(isOn: $openAfterSend) {
                     Text("Open notes in Obsidian after sending")
@@ -284,6 +294,12 @@ struct SettingsView: View {
                         .truncationMode(.middle)
                 }
                 LabeledContent("Server", value: Server.shared.baseURL.absoluteString)
+                LabeledContent {
+                    Button("Copy Diagnostics") { Task { await copyDiagnostics() } }
+                } label: {
+                    Text("Reporting a problem")
+                    Text("Copies the app and macOS versions, what's set up and the end of the log. No keys, names or transcripts, though log lines can name meetings.")
+                }
                 LabeledContent("Log") {
                     Button(Server.shared.logFile.lastPathComponent) {
                         NSWorkspace.shared.activateFileViewerSelecting([Server.shared.logFile])
@@ -420,6 +436,57 @@ struct SettingsView: View {
             Text(path == nil ? "\(purpose) Not chosen yet."
                  : source == "env" ? "\(purpose) Set in .env." : purpose)
         }
+    }
+
+    private func copyDiagnostics() async {
+        do {
+            let text = String(decoding: try await API.data(["api", "diagnostics"]), as: UTF8.self)
+            let info = Bundle.main.infoDictionary
+            let version = "Boswell \(info?["CFBundleShortVersionString"] as? String ?? "development") (\(info?["CFBundleVersion"] as? String ?? "swift run"))"
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(version + "\n" + text, forType: .string)
+            store.show("Copied diagnostics")
+        } catch {
+            store.show(error.localizedDescription)
+        }
+    }
+
+    // which things areas the project menu for to-dos reads from
+    private var thingsAreasRow: some View {
+        let chosen = thingsAreas?.chosen ?? []
+        return LabeledContent {
+            if let thingsAreas {
+                Menu(chosen.isEmpty ? "All Areas" : chosen.joined(separator: ", ")) {
+                    Button("All Areas") { Task { await saveThingsAreas([]) } }
+                    Divider()
+                    ForEach(thingsAreas.areas, id: \.self) { area in
+                        Toggle(area, isOn: Binding(get: { chosen.contains(area) }, set: { on in
+                            Task { await saveThingsAreas(on ? chosen + [area] : chosen.filter { $0 != area }) }
+                        }))
+                    }
+                }
+                .fixedSize()
+            } else if thingsError == nil {
+                ProgressView().controlSize(.small)
+            }
+        } label: {
+            Text("Things areas")
+            Text(thingsError ?? "To-dos can go to open projects in these areas. All Areas includes projects outside any area.")
+        }
+    }
+
+    private func loadThingsAreas() async {
+        do {
+            thingsAreas = try await API.get(["api", "things", "areas"])
+            thingsError = nil
+        } catch {
+            thingsError = error.localizedDescription
+        }
+    }
+
+    private func saveThingsAreas(_ areas: [String]) async {
+        await save(SettingsChange(thingsAreas: areas))
+        await loadThingsAreas()
     }
 
     @ViewBuilder

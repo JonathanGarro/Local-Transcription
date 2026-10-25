@@ -19,6 +19,8 @@ DATA_DIR = HOME / "data"
 OUTPUT_DIR = HOME / "outputs"
 OLD_DATA_DIR = PROJECT_DIR / "data"
 OLD_OUTPUT_DIR = PROJECT_DIR / "outputs"
+# what the server prints, written there by the mac app
+LOG_FILE = Path.home() / "Library" / "Logs" / "Boswell.log"
 # the app reads .env from the library folder, since it runs its own copy of the code rather
 # than this project folder. values already set, as by a script from the project's .env, stay
 ENV_FILE = HOME / ".env"

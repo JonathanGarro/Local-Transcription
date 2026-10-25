@@ -7,9 +7,22 @@ struct BoswellApp: App {
     private var store: Store { delegate.store }
 
     init() {
+        Self.copyOldPreferences()
         // scroll bars only while scrolling. with a mouse plugged in macos otherwise keeps
         // them showing, and this app's own setting takes precedence over the system's
         UserDefaults.standard.set("WhenScrolling", forKey: "AppleShowScrollBars")
+    }
+
+    // the app's bundle id changed once. macos keeps preferences by it, so the old id's are
+    // copied over the first time this one opens, without replacing any already set
+    private static func copyOldPreferences() {
+        let defaults = UserDefaults.standard
+        guard let old = Bundle.main.object(forInfoDictionaryKey: "BoswellOldBundleID") as? String,
+              !defaults.bool(forKey: "copiedOldPreferences") else { return }
+        for (key, value) in defaults.persistentDomain(forName: old) ?? [:] where defaults.object(forKey: key) == nil {
+            defaults.set(value, forKey: key)
+        }
+        defaults.set(true, forKey: "copiedOldPreferences")
     }
 
     var body: some Scene {

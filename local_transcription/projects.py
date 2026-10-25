@@ -1,19 +1,20 @@
-"""project names from the obsidian project index, one note per project.
+"""project names from an obsidian project index, one note per project. optional: without one,
+the project picker offers the projects typed into the app.
 
-PROJECT_INDEX_DIR in .env points at the folder. only the "project status" and "things
+the folder is chosen in settings, or PROJECT_INDEX_DIR in .env. only the status and "things
 project" lines of each note's frontmatter are read, the rest of the note is never opened by
-the app.
+the app. projects with an active status are listed first.
 """
 
-import os
 import re
-from pathlib import Path
 
-from local_transcription import library
+from local_transcription import library, settings
 
 # config
-STATUS_KEY = "project status"
-ACTIVE_STATUS = "In-Progress"
+# the property a project's status is read from, the first of these a note has
+STATUS_KEYS = ("project status", "status")
+# statuses listed first, in any case
+ACTIVE_STATUSES = {"in-progress", "in progress", "active", "current"}
 # a charter's link to its things 3 project, such as things:///show?id=5rg4Dyv6CNpxh1jf3QbqET
 THINGS_KEY = "things project"
 THINGS_ID = re.compile(r"[?&]id=([A-Za-z0-9]+)")
@@ -21,8 +22,7 @@ THINGS_ID = re.compile(r"[?&]id=([A-Za-z0-9]+)")
 
 # helpers
 def index_dir():
-    folder = os.environ.get("PROJECT_INDEX_DIR")
-    return Path(folder).expanduser() if folder else None
+    return settings.folder("project_index_dir")[0]
 
 
 def _field(path, wanted):
@@ -40,7 +40,11 @@ def _field(path, wanted):
 
 
 def _status(path):
-    return _field(path, STATUS_KEY)
+    return next((value for key in STATUS_KEYS if (value := _field(path, key))), None)
+
+
+def _active(project):
+    return (project["status"] or "").strip().lower() in ACTIVE_STATUSES
 
 
 # main
@@ -66,9 +70,9 @@ def things_project_id(name):
 
 
 def all_projects():
-    """index projects plus any typed into the app, in-progress first, then a to z."""
+    """index projects plus any typed into the app, active ones first, then a to z."""
     found = {p["name"].lower(): p for p in index_projects()}
     for name in library.lookup_names("projects"):
         found.setdefault(name.lower(), {"name": name, "status": None})
-    return sorted(found.values(), key=lambda p: (p["status"] != ACTIVE_STATUS, p["name"].lower()))
+    return sorted(({**p, "active": _active(p)} for p in found.values()), key=lambda p: (not p["active"], p["name"].lower()))
 

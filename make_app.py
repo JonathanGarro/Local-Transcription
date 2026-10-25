@@ -17,6 +17,7 @@ run this again after changing the code or the icon, since the app runs its own c
 
 import argparse
 import json
+import tomllib
 import os
 import plistlib
 import shutil
@@ -29,8 +30,9 @@ from pathlib import Path
 BASE_DIR = Path(__file__).parent.resolve()
 APP_NAME = "Boswell"
 ICON_PNG = BASE_DIR / "assets" / "icon.png"
-# kept from when the app was called boswell native, since macos remembers its folder access by it
-BUNDLE_ID = "local.transcription.native"
+BUNDLE_ID = "io.github.jonathangarro.boswell"
+# the id before, whose preferences the app copies over the first time it opens
+OLD_BUNDLE_ID = "local.transcription.native"
 # boswell://meeting?id=... links, from answers and from to-dos in things, open the app
 URL_SCHEME = "boswell"
 MAC_DIR = BASE_DIR / "mac"
@@ -90,6 +92,13 @@ def make_icon(png, resources):
                         "--minimum-deployment-target", "26.0", "--app-icon", "AppIcon",
                         "--output-partial-info-plist", str(Path(tmp) / "partial.plist")],
                        env=xcode_env(), check=True, capture_output=True)
+
+
+def version():
+    """(the version from pyproject.toml, the build number), which is the commit count."""
+    project = tomllib.loads((BASE_DIR / "pyproject.toml").read_text())["project"]["version"]
+    count = subprocess.run(["git", "rev-list", "--count", "HEAD"], cwd=BASE_DIR, capture_output=True, text=True)
+    return project, count.stdout.strip() or "1"
 
 
 def signing_identity():
@@ -186,7 +195,8 @@ def main():
         plistlib.dump({"CFBundleName": APP_NAME, "CFBundleDisplayName": APP_NAME,
                        "CFBundleIdentifier": BUNDLE_ID, "CFBundleExecutable": APP_NAME,
                        "CFBundleIconFile": "AppIcon", "CFBundleIconName": "AppIcon", "CFBundlePackageType": "APPL",
-                       "CFBundleShortVersionString": "1.0", "LSMinimumSystemVersion": "26.0",
+                       "CFBundleShortVersionString": version()[0], "CFBundleVersion": version()[1],
+                       "LSMinimumSystemVersion": "26.0", "BoswellOldBundleID": OLD_BUNDLE_ID,
                        "NSHighResolutionCapable": True,
                        "CFBundleURLTypes": [{"CFBundleURLName": f"{BUNDLE_ID}.links",
                                              "CFBundleURLSchemes": [URL_SCHEME]}]}, f)

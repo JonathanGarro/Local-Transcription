@@ -55,6 +55,12 @@ final class Server {
         guard FileManager.default.isExecutableFile(atPath: python.path) else {
             throw ServerError("Boswell's Python environment isn't installed at \(python.path).")
         }
+        // a long log starts over, keeping the one before
+        if let size = try? FileManager.default.attributesOfItem(atPath: logFile.path)[.size] as? Int, size > 5_000_000 {
+            let old = logFile.deletingLastPathComponent().appending(path: "Boswell.old.log")
+            try? FileManager.default.removeItem(at: old)
+            try? FileManager.default.moveItem(at: logFile, to: old)
+        }
         if !FileManager.default.fileExists(atPath: logFile.path) {
             FileManager.default.createFile(atPath: logFile.path, contents: nil)
         }
@@ -70,6 +76,8 @@ final class Server {
         var env = ProcessInfo.processInfo.environment
         let helpers = Bundle.main.executableURL?.deletingLastPathComponent().path ?? ""
         env["PATH"] = "\(helpers):/opt/homebrew/bin:/usr/local/bin:" + (env["PATH"] ?? "/usr/bin:/bin")
+        // each line reaches the log as it's printed, rather than when a buffer fills
+        env["PYTHONUNBUFFERED"] = "1"
         // compiled python goes to the caches folder, since writing it inside the app would break its signature
         env["PYTHONPYCACHEPREFIX"] = FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Caches/Boswell/pycache").path
         // the server stops itself when this process goes away

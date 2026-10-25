@@ -9,9 +9,10 @@ or is rebuilt where it is if you moved it to ~/Applications. any square png work
 looks best.
 
 the app doesn't need this project folder to run. the server's code is copied into the app,
-its python packages are installed from uv.lock into ~/Library/Application Support/Boswell/env,
-and the library is in the library folder (see local_transcription/paths.py). run this again
-after changing the code or the icon, since the app runs its own copy of the code.
+with uv, which installs python and the server's packages from uv.lock into
+~/Library/Application Support/Boswell/env when the app first opens, and again only when an
+update changes uv.lock. the library is in the library folder (see local_transcription/paths.py).
+run this again after changing the code or the icon, since the app runs its own copy of the code.
 """
 
 import argparse
@@ -35,9 +36,7 @@ URL_SCHEME = "boswell"
 MAC_DIR = BASE_DIR / "mac"
 # what the app needs of this folder to run the server, copied into Contents/Resources/server.
 # pyproject.toml and uv.lock are what the python environment is installed from
-SERVER_FILES = ["app.py", "local_transcription", "pyproject.toml", "uv.lock"]
-# the app's python environment, kept out of the library so BOSWELL_HOME doesn't move it
-PYTHON_ENV = Path.home() / "Library" / "Application Support" / "Boswell" / "env"
+SERVER_FILES = ["app.py", "local_transcription", "pyproject.toml", "uv.lock", ".python-version"]
 XCODE_DIR = Path("/Applications/Xcode.app/Contents/Developer")
 INSTALL_DIRS = [Path("/Applications"), Path.home() / "Applications"]
 
@@ -105,13 +104,6 @@ def signing_identity():
     return "-"
 
 
-def install_python(env_dir):
-    """install the server's python packages, exactly as uv.lock has them, into env_dir. uv
-    reuses its download cache, so after the first time this takes seconds."""
-    env = {**os.environ, "UV_PROJECT_ENVIRONMENT": str(env_dir)}
-    subprocess.run(["uv", "sync", "--frozen", "--no-install-project"], cwd=BASE_DIR, env=env, check=True)
-
-
 def copy_env_file():
     """the app reads .env from the library folder, so a first build copies this folder's there."""
     sys.path.insert(0, str(BASE_DIR))
@@ -157,7 +149,9 @@ def main():
         print(f"made a plain icon at {ICON_PNG.relative_to(BASE_DIR)}, pass --icon to use your own")
 
     binary = build_native()
-    install_python(PYTHON_ENV)
+    uv = shutil.which("uv")
+    if not uv:
+        raise SystemExit("uv isn't on the PATH, and the app ships a copy of it")
     copy_env_file()
     if app_dir.exists():
         shutil.rmtree(app_dir)
@@ -174,6 +168,9 @@ def main():
         else:
             shutil.copy2(source, server / name)
     shutil.copy2(binary, contents / "MacOS" / APP_NAME)
+    # the uv the app installs python with, the one this project is built with
+    shutil.copy2(Path(uv).resolve(), contents / "MacOS" / "uv")
+    print(subprocess.run([uv, "--version"], capture_output=True, text=True).stdout.strip(), "goes in the app")
     with (contents / "Info.plist").open("wb") as f:
         plistlib.dump({"CFBundleName": APP_NAME, "CFBundleDisplayName": APP_NAME,
                        "CFBundleIdentifier": BUNDLE_ID, "CFBundleExecutable": APP_NAME,
@@ -185,6 +182,9 @@ def main():
     identity = signing_identity()
     if identity == "-":
         print("no apple development certificate, so macos will ask for folder access again after each rebuild")
+    # uv is signed first, since the app's signature covers the code inside it
+    subprocess.run(["codesign", "--force", "--sign", identity, str(contents / "MacOS" / "uv")],
+                   check=True, capture_output=True)
     subprocess.run(["codesign", "--force", "--sign", identity, str(app_dir)], check=True, capture_output=True)
     # tell finder and the dock to pick up the new icon, and launch services the link type
     subprocess.run(["touch", str(app_dir)], check=False)

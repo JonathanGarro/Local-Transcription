@@ -88,6 +88,8 @@ final class Store {
     static let todoApps = ["things": "Things", "todoist": "Todoist", "reminders": "Reminders"]
     var connected = false
     var startError: String?
+    // what installing the python packages is doing, the first time the app opens
+    var installing: String?
     var message: String?
     var importing = false
     // bumped when something outside a view changes its meeting, so the view reloads
@@ -135,12 +137,16 @@ final class Store {
     func start() async {
         // the window can close without quitting, and starts this again when it reopens
         guard !connected else { return }
+        startError = nil
         do {
-            try await Server.shared.start()
+            try await Server.shared.start { line in
+                Task { @MainActor in self.installing = line }
+            }
             connected = true
-            startError = nil
+            installing = nil
         } catch {
             startError = error.localizedDescription
+            installing = nil
             return
         }
         await refresh()

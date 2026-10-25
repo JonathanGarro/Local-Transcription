@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 // the python server holds all of the app's logic. the app starts its own copy of the code,
@@ -46,10 +47,13 @@ final class Server {
         return (response as? HTTPURLResponse)?.statusCode == 200
     }
 
-    func start() async throws {
+    // status is told what's happening while the python packages are installed, the first time
+    // or after an update changes them
+    func start(status: @escaping @Sendable (String) -> Void = { _ in }) async throws {
         if await isUp() { return }
+        try await installPython(status: status)
         guard FileManager.default.isExecutableFile(atPath: python.path) else {
-            throw ServerError("Boswell's Python environment isn't installed at \(python.path). Run uv run make_app.py in the project folder.")
+            throw ServerError("Boswell's Python environment isn't installed at \(python.path).")
         }
         if !FileManager.default.fileExists(atPath: logFile.path) {
             FileManager.default.createFile(atPath: logFile.path, contents: nil)
@@ -83,11 +87,81 @@ final class Server {
         throw ServerError("The server did not start. See \(logFile.path).")
     }
 
+    // python and the server's packages, installed by the uv inside the app from the app's
+    // uv.lock into application support. a marker keeps the lock it was installed from, so it's
+    // only done the first time and when an update changes the packages. under swift run the
+    // project folder's .venv is used as it is
+    private func installPython(status: @escaping @Sendable (String) -> Void) async throws {
+        guard let uv = Bundle.main.executableURL?.deletingLastPathComponent().appending(path: "uv"),
+              FileManager.default.isExecutableFile(atPath: uv.path),
+              let lock = try? Data(contentsOf: serverDir.appending(path: "uv.lock")) else { return }
+        let envDir = Self.appSupport.appending(path: "env")
+        let marker = envDir.appending(path: ".boswell-lock")
+        let wanted = SHA256.hash(data: lock).map { String(format: "%02x", $0) }.joined()
+        if FileManager.default.isExecutableFile(atPath: python.path),
+           (try? String(contentsOf: marker, encoding: .utf8)) == wanted {
+            return
+        }
+        status("Installing Boswell's Python packages")
+        try FileManager.default.createDirectory(at: Self.appSupport, withIntermediateDirectories: true)
+
+        let p = Process()
+        p.executableURL = uv
+        p.arguments = ["sync", "--frozen", "--no-install-project", "--project", serverDir.path]
+        // uv's own files stay out of the signed app, and it runs from application support
+        p.currentDirectoryURL = Self.appSupport
+        var env = ProcessInfo.processInfo.environment
+        env["UV_PROJECT_ENVIRONMENT"] = envDir.path
+        // its own python, never homebrew's or the system's
+        env["UV_PYTHON_PREFERENCE"] = "only-managed"
+        env["NO_COLOR"] = "1"
+        p.environment = env
+        let output = Pipe()
+        p.standardOutput = output
+        p.standardError = output
+        let lines = LineBuffer()
+        output.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
+            for line in text.split(whereSeparator: \.isNewline).map({ $0.trimmingCharacters(in: .whitespaces) }) where !line.isEmpty {
+                lines.append(line)
+                status(line)
+            }
+        }
+        try await withCheckedThrowingContinuation { (done: CheckedContinuation<Void, Error>) in
+            p.terminationHandler = { _ in done.resume() }
+            do { try p.run() } catch { done.resume(throwing: error) }
+        }
+        output.fileHandleForReading.readabilityHandler = nil
+        guard p.terminationStatus == 0 else {
+            throw ServerError("Couldn't install Boswell's Python packages. Check the internet connection and try again.\n\n\(lines.last(4))")
+        }
+        try wanted.write(to: marker, atomically: true, encoding: .utf8)
+    }
+
     // only stops a server this app started
     func stop() {
         guard let p = process, p.isRunning else { return }
         p.terminate()
         p.waitUntilExit()
+    }
+}
+
+// the last lines a process wrote, from the thread its output arrives on
+final class LineBuffer: @unchecked Sendable {
+    private var lines: [String] = []
+    private let lock = NSLock()
+
+    func append(_ line: String) {
+        lock.lock()
+        lines = Array((lines + [line]).suffix(20))
+        lock.unlock()
+    }
+
+    func last(_ n: Int) -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        return lines.suffix(n).joined(separator: "\n")
     }
 }
 

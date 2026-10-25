@@ -57,6 +57,22 @@ struct ContentView: View {
                 } actions: {
                     Button("Try Again") { Task { await store.start() } }
                 }
+            } else if let installing = store.installing {
+                VStack(spacing: 12) {
+                    ProgressView()
+                    Text("Getting Boswell ready").font(.title3.weight(.semibold))
+                    Text("The first time, Boswell downloads Python and the packages it transcribes with, about 1.5 GB. It takes a few minutes, and only happens once.")
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: 420)
+                    Text(installing)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: 420)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ProgressView("Starting the transcription server")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -186,10 +186,18 @@ def main():
     # ffmpeg reads the recordings. the lgpl asks for its license and how it was built to go along
     for name in build_ffmpeg.BINARIES:
         shutil.copy2(ffmpeg / "bin" / name, contents / "MacOS" / name)
-    licenses = contents / "Resources" / "licenses" / "ffmpeg"
-    licenses.mkdir(parents=True)
+    licenses = contents / "Resources" / "licenses"
+    (licenses / "ffmpeg").mkdir(parents=True)
     for name in ("COPYING.LGPLv2.1", "README.txt"):
-        shutil.copy2(ffmpeg / name, licenses / name)
+        shutil.copy2(ffmpeg / name, licenses / "ffmpeg" / name)
+    # uv is mit or apache 2.0, at the holder's choice, so both go along
+    shutil.copytree(BASE_DIR / "assets" / "licenses" / "uv", licenses / "uv")
+    uv_version = subprocess.run([uv, "--version"], capture_output=True, text=True).stdout.strip()
+    (licenses / "uv" / "README.txt").write_text(
+        f"Boswell includes {uv_version}, from Astral (https://github.com/astral-sh/uv), unchanged. It's licensed under "
+        "either the MIT license or the Apache License 2.0, in LICENSE-MIT and LICENSE-APACHE.\n")
+    (licenses / "boswell").mkdir()
+    shutil.copy2(BASE_DIR / "LICENSE", licenses / "boswell" / "LICENSE")
     print(subprocess.run([uv, "--version"], capture_output=True, text=True).stdout.strip(), "goes in the app")
     with (contents / "Info.plist").open("wb") as f:
         plistlib.dump({"CFBundleName": APP_NAME, "CFBundleDisplayName": APP_NAME,

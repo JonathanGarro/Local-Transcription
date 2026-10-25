@@ -294,6 +294,15 @@ struct SettingsView: View {
                         .truncationMode(.middle)
                 }
                 LabeledContent("Server", value: Server.shared.baseURL.absoluteString)
+                if let licenses = Bundle.main.resourceURL?.appending(path: "licenses"),
+                   FileManager.default.fileExists(atPath: licenses.path) {
+                    LabeledContent {
+                        Button("Show Licenses") { NSWorkspace.shared.open(licenses) }
+                    } label: {
+                        Text("Licenses")
+                        Text("Boswell is MIT licensed. It includes ffmpeg, under the LGPL 2.1, and uv, under MIT or Apache 2.0.")
+                    }
+                }
                 LabeledContent {
                     Button("Copy Diagnostics") { Task { await copyDiagnostics() } }
                 } label: {

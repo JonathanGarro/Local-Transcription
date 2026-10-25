@@ -266,3 +266,7 @@ assets/                the app icon and the screenshots in this readme
 ~/Library/Application Support/Boswell/
   data/, outputs/      recordings and the library, and what's made from them (never committed)
 ```
+
+## License
+
+Boswell is MIT licensed, see [LICENSE](LICENSE). The app it builds also includes ffmpeg and ffprobe, built from unchanged source under the LGPL 2.1, and uv, under the MIT license or the Apache License 2.0. Their licenses, with how ffmpeg was built and which uv is inside, are in the app under `Contents/Resources/licenses`, and **Show Licenses** in Settings, under About, opens them. The models it downloads have their own terms: Whisper is MIT licensed, and pyannote's speaker detection model is used under the terms each person accepts on Hugging Face.

@@ -19,7 +19,7 @@ struct SetupView: View {
     @State private var error: String?
 
     enum Step: Int, CaseIterable {
-        case welcome, name, speakers, notes, folder, todos, done
+        case welcome, name, models, notes, folder, todos, done
     }
 
     var body: some View {
@@ -78,18 +78,15 @@ struct SetupView: View {
                 .font(.callout)
                 .padding(.top, 4)
             }
-        case .speakers:
-            header("Speaker detection", "person.2.wave.2")
-            if s.modelReady {
-                Label("The speaker detection model is already on this Mac.", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-            } else {
-                Text("Telling voices apart uses a model from Hugging Face, downloaded once the first time you transcribe. Its makers ask you to accept their terms first, which takes a free account.")
-                    .foregroundStyle(.secondary)
+        case .models:
+            header("Download the models", "arrow.down.circle")
+            Text("Boswell transcribes and tells voices apart with two models, downloaded once. The speaker one asks you to accept its terms on Hugging Face first, which takes a free account.")
+                .foregroundStyle(.secondary)
+            if !s.modelReady {
                 VStack(alignment: .leading, spacing: 6) {
-                    Link("1. Accept the model's terms", destination: URL(string: s.hfTermsUrl)!)
+                    Link("1. Accept the speaker model's terms", destination: URL(string: s.hfTermsUrl)!)
                     Link("2. Create a read token", destination: URL(string: "https://huggingface.co/settings/tokens")!)
-                    Text("3. Paste the token here")
+                    Text("3. Paste the token here, then download")
                 }
                 .padding(.top, 10)
                 HStack {
@@ -101,12 +98,17 @@ struct SetupView: View {
                 }
                 .padding(.top, 4)
                 if let check {
-                    Label(check.ok ? "The token works, and the model will download the first time you transcribe."
-                          : check.error ?? "The token didn't work",
+                    Label(check.ok ? "The token works." : check.error ?? "The token didn't work",
                           systemImage: check.ok ? "checkmark.circle.fill" : "xmark.octagon.fill")
                         .foregroundStyle(check.ok ? .green : .red)
                 }
             }
+            ModelDownloads(tokenReady: s.hfToken != nil || s.modelReady)
+                .padding(.top, 14)
+            Text("They keep downloading if you continue.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .padding(.top, 8)
         case .notes:
             header("Writing notes", "doc.text")
             Picker("Write notes with", selection: $backend) {
@@ -195,7 +197,7 @@ struct SetupView: View {
             if step != .welcome && step != .done {
                 Button("Back") { move(-1) }
             }
-            if [.speakers, .folder].contains(step) {
+            if [.models, .folder].contains(step) {
                 Button("Skip") { move(1) }
             }
             Button(step == .done ? "Start Using Boswell" : "Continue") { Task { await next() } }
@@ -222,7 +224,7 @@ struct SetupView: View {
             switch step {
             case .name:
                 settings = try await API.put(["api", "settings"], SettingsChange(owner: name.trimmingCharacters(in: .whitespaces)))
-            case .speakers where !hfToken.isEmpty:
+            case .models where !hfToken.isEmpty:
                 settings = try await API.put(["api", "settings", "hf"], ["key": hfToken])
                 hfToken = ""
             case .notes:

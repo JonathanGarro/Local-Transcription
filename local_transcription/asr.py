@@ -5,8 +5,10 @@ import re
 import numpy as np
 import pandas as pd
 
+from local_transcription import hf
+
 # config
-MLX_WHISPER_REPO = "mlx-community/whisper-large-v3-turbo"
+MLX_WHISPER_REPO = hf.WHISPER_REPO
 FASTER_WHISPER_MODEL = "large-v3-turbo"
 WORD_COLUMNS = ["word", "start", "end", "probability"]
 SAMPLE_RATE = 16000

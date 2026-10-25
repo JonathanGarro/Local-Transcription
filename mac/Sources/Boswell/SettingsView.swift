@@ -237,7 +237,8 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section("Speaker Detection") {
+            Section("Models") {
+                ModelDownloads(tokenReady: s.hfToken != nil || s.modelReady)
                 LabeledContent {
                     Text(s.hfToken.map { "••••" + $0.suffix(3) } ?? "not set")
                         .font(.system(.body, design: .monospaced))

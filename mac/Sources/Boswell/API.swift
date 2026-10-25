@@ -311,6 +311,30 @@ struct SettingsState: Codable {
     let libraryDir: String
 }
 
+struct ModelInfo: Codable, Hashable {
+    let repo: String
+    let label: String
+    let detail: String
+    let size: String
+    // needs a hugging face token whose account accepted its terms
+    let gated: Bool
+    let ready: Bool
+}
+
+struct ModelDownload: Codable {
+    let running: Bool
+    // the model downloading now
+    let repo: String?
+    let done: Double
+    let total: Double
+    let error: String?
+}
+
+struct ModelsState: Codable {
+    let models: [ModelInfo]
+    let download: ModelDownload
+}
+
 struct NoteTemplate: Codable, Hashable {
     let name: String
     let builtIn: Bool

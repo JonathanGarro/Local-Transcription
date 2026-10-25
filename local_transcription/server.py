@@ -440,6 +440,18 @@ def create_app():
             raise HTTPException(400, str(err))
         return templates_state()
 
+    # the models, downloaded from setup or settings with progress, so the first meeting doesn't wait
+    @app.get("/api/models")
+    def get_models():
+        return hf.models_state()
+
+    @app.post("/api/models/download")
+    def download_models():
+        if not hf.model_ready() and not hf.token():
+            raise HTTPException(400, "add a Hugging Face token first, for the speaker detection model")
+        hf.download()
+        return hf.models_state()
+
     # the hugging face token, kept in the keychain, is only needed to download the speaker model
     @app.put("/api/settings/hf")
     def save_hf_token(request: KeyRequest):

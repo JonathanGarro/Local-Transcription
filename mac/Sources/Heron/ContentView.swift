@@ -256,6 +256,13 @@ struct RecordingView: View {
                 .controlSize(.small)
             LevelMeter(label: "You", level: recorder.micLevel)
             LevelMeter(label: "Call", level: recorder.callLevel)
+            if !recorder.micName.isEmpty {
+                // it changes when the mac's input does, such as when airpods connect
+                Label(recorder.micName, systemImage: "mic")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
         }
         .padding(12)
         .background(.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))

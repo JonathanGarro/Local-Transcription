@@ -43,6 +43,10 @@ struct HeronApp: App {
             CommandGroup(replacing: .newItem) {
                 Button("Import Recording...") { store.importing = true }
                     .keyboardShortcut("o")
+                Button(store.recorder.isRecording ? "Stop Recording" : "Record Call") {
+                    Task { store.recorder.isRecording ? await store.stopRecording() : await store.startRecording() }
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
             }
             CommandGroup(after: .sidebar) {
                 Button("Refresh") { Task { await store.refresh(); store.revision += 1 } }
@@ -109,6 +113,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // a recording going is closed off, and transcribed the next time the app opens
+        store.recorder.stop()
         Server.shared.stop()
     }
 }

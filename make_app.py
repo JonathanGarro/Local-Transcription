@@ -55,9 +55,12 @@ NOTARY_PROFILE = "boswell"
 # how many half hours to wait for apple's verdict
 NOTARY_WAITS = 6
 # the hardened runtime blocks sending apple events, which add to-dos to things and reminders,
-# unless the app says it does
-ENTITLEMENTS = {"com.apple.security.automation.apple-events": True}
+# and the microphone, which records calls, unless the app says it uses them
+ENTITLEMENTS = {"com.apple.security.automation.apple-events": True, "com.apple.security.device.audio-input": True}
 APPLE_EVENTS_USAGE = "Heron adds the to-dos you choose to Things or Reminders."
+# what macos shows when asking to let a call be recorded: your mic, and the mac's own audio
+MICROPHONE_USAGE = "Heron records your side of a call when you record one."
+AUDIO_CAPTURE_USAGE = "Heron records the other side of a call, from the Mac's audio, when you record one."
 XCODE_DIR = Path("/Applications/Xcode.app/Contents/Developer")
 INSTALL_DIRS = [Path("/Applications"), Path.home() / "Applications"]
 
@@ -318,6 +321,7 @@ def main():
                        "CFBundleShortVersionString": version()[0], "CFBundleVersion": version()[1],
                        "LSMinimumSystemVersion": "26.0", "OldBundleID": OLD_BUNDLE_ID,
                        "NSHighResolutionCapable": True, "NSAppleEventsUsageDescription": APPLE_EVENTS_USAGE,
+                       "NSMicrophoneUsageDescription": MICROPHONE_USAGE, "NSAudioCaptureUsageDescription": AUDIO_CAPTURE_USAGE,
                        "CFBundleURLTypes": [{"CFBundleURLName": f"{BUNDLE_ID}.links",
                                              "CFBundleURLSchemes": URL_SCHEMES}]}, f)
     if identity == "-":

@@ -160,6 +160,7 @@ final class Store {
             UserDefaults.standard.removeObject(forKey: Prefs.things)
         }
         if let settings: SettingsState = try? await API.get(["api", "settings"]) { apply(settings) }
+        await recoverRecordings()
         polling = Task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(2))
@@ -178,6 +179,7 @@ final class Store {
         if transcriptions > 0 { parts.append(transcriptions == 1 ? "1 transcription" : "\(transcriptions) transcriptions") }
         if notes > 0 { parts.append(notes == 1 ? "1 note" : "\(notes) notes") }
         if chat.pending { parts.append("an answer in Ask") }
+        if recorder.isRecording { parts.append("a recording, which is saved and transcribed when Heron next opens") }
         return parts.isEmpty ? nil : ListFormatter.localizedString(byJoining: parts)
     }
 
@@ -210,6 +212,65 @@ final class Store {
     }
 
     // actions
+
+    // recording
+
+    let recorder = Recorder()
+
+    func startRecording() async {
+        await run {
+            guard await AVCaptureDevice.requestAccess(for: .audio) else {
+                throw RecorderError("Heron isn't allowed to use the microphone. Allow it in System Settings, Privacy & Security, Microphone")
+            }
+            let settings: SettingsState = try await API.get(["api", "settings"])
+            try recorder.start(micOnRight: settings.micChannel == "right")
+        }
+    }
+
+    func stopRecording() async {
+        let name = recorder.name.trimmingCharacters(in: .whitespaces)
+        guard let caf = recorder.stop() else { return }
+        await transcribeRecording(caf, name: name.isEmpty ? "Call" : name)
+    }
+
+    // compress a finished recording and send it to be transcribed. the files are deleted once
+    // the server has its copy, and kept in the recordings folder if anything goes wrong
+    private func transcribeRecording(_ caf: URL, name: String) async {
+        await run {
+            let date = String(caf.lastPathComponent.prefix(10))
+            // a meeting already named this on the same day would make the upload a rerun of it
+            var unique = name, n = 2
+            while meetings.contains(where: { $0.meetingId == "\(date) - \(unique)" }) {
+                unique = "\(name) \(n)"
+                n += 1
+            }
+            let m4a = try await Task.detached { [unique] in try Recorder.compress(caf, name: unique) }.value
+            do {
+                let result = try await API.upload([m4a], sourceType: "zoom")
+                guard !result.queued.isEmpty else {
+                    throw RecorderError(result.skipped.map(\.reason).first ?? "The server didn't take the recording")
+                }
+            } catch {
+                throw RecorderError("Couldn't send the recording to be transcribed: \(error.localizedDescription). It's kept in \(Recorder.folder.path)")
+            }
+            try? FileManager.default.removeItem(at: caf)
+            try? FileManager.default.removeItem(at: m4a)
+            show("Transcribing \(unique)")
+            section = .inbox
+            await refresh()
+        }
+    }
+
+    // a recording that was going when the app quit or crashed is finished and transcribed
+    // the next time it opens, named after when it started
+    private func recoverRecordings() async {
+        let files = (try? FileManager.default.contentsOfDirectory(at: Recorder.folder, includingPropertiesForKeys: [.creationDateKey])) ?? []
+        for caf in files where caf.pathExtension == "caf" {
+            let started = (try? caf.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? Date()
+            let time = started.formatted(date: .omitted, time: .shortened).replacingOccurrences(of: ":", with: ".")
+            await transcribeRecording(caf, name: "Call at \(time)")
+        }
+    }
 
     func importFiles(_ urls: [URL]) async {
         let audio = urls.filter { ["m4a", "mp3", "wav"].contains($0.pathExtension.lowercased()) }

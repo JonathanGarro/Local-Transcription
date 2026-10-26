@@ -135,8 +135,13 @@ struct Sidebar: View {
         }
         .navigationSplitViewColumnWidth(min: 170, ideal: 190)
         .safeAreaInset(edge: .bottom) {
-            if !store.jobs.isEmpty {
-                JobsView()
+            VStack(spacing: 0) {
+                if store.recorder.isRecording {
+                    RecordingView()
+                }
+                if !store.jobs.isEmpty {
+                    JobsView()
+                }
             }
         }
     }
@@ -162,6 +167,78 @@ private struct SidebarIcon<Icon: View>: View {
         icon
             .foregroundStyle(prominence == .increased ? AnyShapeStyle(.primary) : AnyShapeStyle(.tint))
             .frame(width: 22, alignment: .center)
+    }
+}
+
+// starts recording a call, or stops the one going
+struct RecordButton: View {
+    @Environment(Store.self) private var store
+
+    var body: some View {
+        if store.recorder.isRecording {
+            Button { Task { await store.stopRecording() } } label: {
+                Label("Stop Recording", systemImage: "stop.circle.fill")
+            }
+            .tint(.red)
+            .help("Stop recording and transcribe the call")
+        } else {
+            Button { Task { await store.startRecording() } } label: {
+                Label("Record Call", systemImage: "record.circle")
+            }
+            .help("Record your mic and the Mac's audio, such as a Zoom call, then transcribe it")
+        }
+    }
+}
+
+// the recording going, under the sidebar: how long, how loud each side is, what it's called
+struct RecordingView: View {
+    @Environment(Store.self) private var store
+
+    var body: some View {
+        @Bindable var recorder = store.recorder
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Circle().fill(.red).frame(width: 8, height: 8)
+                if let started = recorder.startedAt {
+                    Text(started, style: .timer)
+                        .font(.caption.weight(.semibold).monospacedDigit())
+                }
+                Spacer()
+                Button("Stop") { Task { await store.stopRecording() } }
+                    .controlSize(.small)
+            }
+            TextField("Meeting name", text: $recorder.name)
+                .textFieldStyle(.roundedBorder)
+                .controlSize(.small)
+            LevelMeter(label: "You", level: recorder.micLevel)
+            LevelMeter(label: "Call", level: recorder.callLevel)
+        }
+        .padding(12)
+        .background(.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+        .padding(.horizontal, 10)
+        .padding(.bottom, 8)
+    }
+}
+
+private struct LevelMeter: View {
+    let label: String
+    let level: Float
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .frame(width: 28, alignment: .leading)
+            GeometryReader { geo in
+                Capsule().fill(.quaternary)
+                    .overlay(alignment: .leading) {
+                        Capsule().fill(.tint).frame(width: geo.size.width * CGFloat(level))
+                    }
+            }
+            .frame(height: 5)
+            .animation(.linear(duration: 0.1), value: level)
+        }
     }
 }
 
@@ -272,6 +349,9 @@ struct MeetingList: View {
                     }
                     .help("Filter by to-dos")
                 }
+            }
+            ToolbarItem {
+                RecordButton()
             }
             ToolbarItem {
                 Button { store.importing = true } label: { Label("Import Recording", systemImage: "plus") }

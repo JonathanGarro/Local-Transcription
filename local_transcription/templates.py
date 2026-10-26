@@ -5,7 +5,7 @@ code fills in some placeholders and the model writes the others:
     {{date}} {{title}}                         the meeting's date and name
     {{people}} {{teams}} {{organizations}}     who was there, other than you, as obsidian links
     {{project}}                                the meeting's project, as a link
-    {{transcript_link}}                        the heron:// link that opens the transcript
+    {{transcript_link}}                        the wemmick:// link that opens the transcript
     {{transcript}}                             the transcript, in a code block
     {{action_items}}                           links to the to-dos sent from the meeting
 

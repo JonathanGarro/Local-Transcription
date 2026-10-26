@@ -74,7 +74,7 @@ def _osascript(script, *args):
     if result.returncode != 0:
         message = result.stderr.strip()
         if "-1743" in message:
-            message = "Heron isn't allowed to control Reminders. Allow it in System Settings, Privacy & Security, Automation"
+            message = "Wemmick isn't allowed to control Reminders. Allow it in System Settings, Privacy & Security, Automation"
         raise RuntimeError(message or "reminders did not answer")
     return result.stdout
 

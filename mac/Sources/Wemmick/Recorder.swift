@@ -108,8 +108,8 @@ private final class RecordingSession: @unchecked Sendable {
     private var fileFormat: AVAudioFormat?
     private var converter: AVAudioConverter?
     private var listener: AudioObjectPropertyListenerBlock?
-    private let queue = DispatchQueue(label: "heron.recorder", qos: .userInteractive)
-    private let control = DispatchQueue(label: "heron.recorder.control")
+    private let queue = DispatchQueue(label: "wemmick.recorder", qos: .userInteractive)
+    private let control = DispatchQueue(label: "wemmick.recorder.control")
     private let peaks = OSAllocatedUnfairLock(initialState: (mic: Float(0), call: Float(0)))
     private let mic = OSAllocatedUnfairLock(initialState: "")
 
@@ -137,7 +137,7 @@ private final class RecordingSession: @unchecked Sendable {
     private func makeTap() throws {
         let description = CATapDescription(stereoGlobalTapButExcludeProcesses: [])
         description.uuid = UUID()
-        description.name = "Heron call audio"
+        description.name = "Wemmick call audio"
         description.isPrivate = true
         description.muteBehavior = .unmuted
         try check(AudioHardwareCreateProcessTap(description, &tapID), "Couldn't start recording the Mac's audio")
@@ -150,7 +150,7 @@ private final class RecordingSession: @unchecked Sendable {
         let micChannels = Self.inputChannels(of: micDevice)
         guard micChannels > 0 else { throw RecorderError("There's no microphone to record from") }
         let aggregate: [String: Any] = [
-            kAudioAggregateDeviceNameKey: "Heron Recorder",
+            kAudioAggregateDeviceNameKey: "Wemmick Recorder",
             kAudioAggregateDeviceUIDKey: UUID().uuidString,
             kAudioAggregateDeviceMainSubDeviceKey: micUID,
             kAudioAggregateDeviceIsPrivateKey: true,

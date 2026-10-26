@@ -2,10 +2,10 @@
 import PackageDescription
 
 let package = Package(
-    name: "Heron",
+    name: "Wemmick",
     platforms: [.macOS(.v26)],
     targets: [
-        .executableTarget(name: "Heron", path: "Sources/Heron"),
+        .executableTarget(name: "Wemmick", path: "Sources/Wemmick"),
     ],
     swiftLanguageModes: [.v5]
 )

@@ -392,13 +392,13 @@ struct AnswerText: View {
     }
 
     private func inline(_ s: String) -> AttributedString {
-        // meeting links become heron: links the chat view opens, unknown meetings plain text
+        // meeting links become wemmick: links the chat view opens, unknown meetings plain text
         let linked = s.replacing(#/\[([^\]]+)\]\(meeting:([^)@]+?)(?:@(\d+))?\)/#) { m in
             let id = String(m.2)
             guard links[id] != nil, let encoded = id.addingPercentEncoding(withAllowedCharacters: .alphanumerics) else {
                 return String(m.1)
             }
-            return "[\(m.1)](heron://meeting?id=\(encoded)\(m.3.map { "&at=\($0)" } ?? ""))"
+            return "[\(m.1)](wemmick://meeting?id=\(encoded)\(m.3.map { "&at=\($0)" } ?? ""))"
         }
         return (try? AttributedString(markdown: linked, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
             ?? AttributedString(s)

@@ -12,13 +12,13 @@ certificates) and the notary credentials saved once with:
     xcrun notarytool store-credentials boswell --apple-id <email> --team-id <team id>
 it leaves the app in /Applications alone.
 
-it needs xcode, whose tools have swiftui's macros. the app goes in /Applications/Heron.app,
+it needs xcode, whose tools have swiftui's macros. the app goes in /Applications/Wemmick.app,
 or is rebuilt where it is if you moved it to ~/Applications. any square png works, 1024x1024
 looks best.
 
 the app doesn't need this project folder to run. the server's code is copied into the app,
 with ffmpeg and ffprobe built from source under the lgpl (scripts/build_ffmpeg.py), and uv, which installs python and the server's packages from uv.lock into
-~/Library/Application Support/Heron/env when the app first opens, and again only when an
+~/Library/Application Support/Wemmick/env when the app first opens, and again only when an
 update changes uv.lock. the library is in the library folder (see local_transcription/paths.py).
 run this again after changing the code or the icon, since the app runs its own copy of the code.
 """
@@ -37,14 +37,15 @@ from pathlib import Path
 
 # config
 BASE_DIR = Path(__file__).parent.resolve()
-APP_NAME = "Heron"
+APP_NAME = "Wemmick"
 ICON_PNG = BASE_DIR / "assets" / "icon.png"
-BUNDLE_ID = "io.github.jonathangarro.heron"
-# the id while the app was called boswell, whose preferences it copies over the first time it opens
-OLD_BUNDLE_ID = "io.github.jonathangarro.boswell"
-# heron://meeting?id=... links, from answers and from to-dos in things, open the app, and so do
-# the boswell:// links in notes and to-dos from before the rename
-URL_SCHEMES = ["heron", "boswell"]
+BUNDLE_ID = "io.github.jonathangarro.wemmick"
+# the ids while the app was called heron, and boswell before that, whose preferences it copies
+# over the first time it opens
+OLD_BUNDLE_IDS = ["io.github.jonathangarro.heron", "io.github.jonathangarro.boswell"]
+# wemmick://meeting?id=... links, from answers and from to-dos in things, open the app, and so do
+# the heron:// and boswell:// links in notes and to-dos from before the renames
+URL_SCHEMES = ["wemmick", "heron", "boswell"]
 MAC_DIR = BASE_DIR / "mac"
 # what the app needs of this folder to run the server, copied into Contents/Resources/server.
 # pyproject.toml and uv.lock are what the python environment is installed from
@@ -57,10 +58,10 @@ NOTARY_WAITS = 6
 # the hardened runtime blocks sending apple events, which add to-dos to things and reminders,
 # and the microphone, which records calls, unless the app says it uses them
 ENTITLEMENTS = {"com.apple.security.automation.apple-events": True, "com.apple.security.device.audio-input": True}
-APPLE_EVENTS_USAGE = "Heron adds the to-dos you choose to Things or Reminders."
+APPLE_EVENTS_USAGE = "Wemmick adds the to-dos you choose to Things or Reminders."
 # what macos shows when asking to let a call be recorded: your mic, and the mac's own audio
-MICROPHONE_USAGE = "Heron records your side of a call when you record one."
-AUDIO_CAPTURE_USAGE = "Heron records the other side of a call, from the Mac's audio, when you record one."
+MICROPHONE_USAGE = "Wemmick records your side of a call when you record one."
+AUDIO_CAPTURE_USAGE = "Wemmick records the other side of a call, from the Mac's audio, when you record one."
 XCODE_DIR = Path("/Applications/Xcode.app/Contents/Developer")
 INSTALL_DIRS = [Path("/Applications"), Path.home() / "Applications"]
 
@@ -309,17 +310,17 @@ def main():
     shutil.copytree(BASE_DIR / "assets" / "licenses" / "uv", licenses / "uv")
     uv_version = subprocess.run([uv, "--version"], capture_output=True, text=True).stdout.strip()
     (licenses / "uv" / "README.txt").write_text(
-        f"Heron includes {uv_version}, from Astral (https://github.com/astral-sh/uv), unchanged. It's licensed under "
+        f"Wemmick includes {uv_version}, from Astral (https://github.com/astral-sh/uv), unchanged. It's licensed under "
         "either the MIT license or the Apache License 2.0, in LICENSE-MIT and LICENSE-APACHE.\n")
-    (licenses / "heron").mkdir()
-    shutil.copy2(BASE_DIR / "LICENSE", licenses / "heron" / "LICENSE")
+    (licenses / "wemmick").mkdir()
+    shutil.copy2(BASE_DIR / "LICENSE", licenses / "wemmick" / "LICENSE")
     print(subprocess.run([uv, "--version"], capture_output=True, text=True).stdout.strip(), "goes in the app")
     with (contents / "Info.plist").open("wb") as f:
         plistlib.dump({"CFBundleName": APP_NAME, "CFBundleDisplayName": APP_NAME,
                        "CFBundleIdentifier": BUNDLE_ID, "CFBundleExecutable": APP_NAME,
                        "CFBundleIconFile": "AppIcon", "CFBundleIconName": "AppIcon", "CFBundlePackageType": "APPL",
                        "CFBundleShortVersionString": version()[0], "CFBundleVersion": version()[1],
-                       "LSMinimumSystemVersion": "26.0", "OldBundleID": OLD_BUNDLE_ID,
+                       "LSMinimumSystemVersion": "26.0", "OldBundleIDs": OLD_BUNDLE_IDS,
                        "NSHighResolutionCapable": True, "NSAppleEventsUsageDescription": APPLE_EVENTS_USAGE,
                        "NSMicrophoneUsageDescription": MICROPHONE_USAGE, "NSAudioCaptureUsageDescription": AUDIO_CAPTURE_USAGE,
                        "CFBundleURLTypes": [{"CFBundleURLName": f"{BUNDLE_ID}.links",

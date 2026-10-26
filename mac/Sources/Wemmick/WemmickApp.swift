@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct HeronApp: App {
+struct WemmickApp: App {
     @NSApplicationDelegateAdaptor private var delegate: AppDelegate
     @AppStorage(Prefs.plaud) private var plaudEnabled = true
     @AppStorage(Prefs.menuBar) private var showInMenuBar = true
@@ -14,21 +14,23 @@ struct HeronApp: App {
         UserDefaults.standard.set("WhenScrolling", forKey: "AppleShowScrollBars")
     }
 
-    // the app's bundle id changed when it was renamed from boswell. macos keeps preferences by
-    // it, so the old id's are copied over the first time this one opens, without replacing any
-    // already set
+    // the app's bundle id changed with each rename, from boswell to heron to wemmick. macos
+    // keeps preferences by it, so the old ids' are copied over the first time this one opens,
+    // newest first, without replacing any already set
     private static func copyOldPreferences() {
         let defaults = UserDefaults.standard
-        guard let old = Bundle.main.object(forInfoDictionaryKey: "OldBundleID") as? String,
+        guard let olds = Bundle.main.object(forInfoDictionaryKey: "OldBundleIDs") as? [String],
               !defaults.bool(forKey: "copiedOldPreferences") else { return }
-        for (key, value) in defaults.persistentDomain(forName: old) ?? [:] where defaults.object(forKey: key) == nil {
-            defaults.set(value, forKey: key)
+        for old in olds {
+            for (key, value) in defaults.persistentDomain(forName: old) ?? [:] where defaults.object(forKey: key) == nil {
+                defaults.set(value, forKey: key)
+            }
         }
         defaults.set(true, forKey: "copiedOldPreferences")
     }
 
     var body: some Scene {
-        Window("Heron", id: "main") {
+        Window("Wemmick", id: "main") {
             ContentView()
                 .environment(store)
                 .task { await store.start() }
@@ -90,10 +92,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         snapshotIfAsked()
     }
 
-    // HERON_SNAPSHOT=/path/to/file.png saves a picture of the window a few seconds after
+    // WEMMICK_SNAPSHOT=/path/to/file.png saves a picture of the window a few seconds after
     // launch, for checking a layout from the command line without screen recording access
     private func snapshotIfAsked() {
-        guard let path = ProcessInfo.processInfo.environment["HERON_SNAPSHOT"] else { return }
+        guard let path = ProcessInfo.processInfo.environment["WEMMICK_SNAPSHOT"] else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
             // a sheet, such as setup, is a window of its own over the main one
             let window = NSApp.windows.first(where: \.isVisible)
@@ -119,7 +121,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let work = await store.unfinishedWork() else { return true }
         let alert = NSAlert()
         alert.messageText = "Quit while work is running?"
-        alert.informativeText = "Still running: \(work). It stops when Heron quits and won't pick up again."
+        alert.informativeText = "Still running: \(work). It stops when Wemmick quits and won't pick up again."
         alert.addButton(withTitle: "Quit Anyway").hasDestructiveAction = true
         alert.addButton(withTitle: "Cancel")
         return alert.runModal() == .alertFirstButtonReturn

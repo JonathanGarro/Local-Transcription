@@ -3,7 +3,7 @@ import CoreAudio
 import UserNotifications
 
 // notices a call starting, when an app like zoom or a browser starts using the microphone, and
-// offers to record it in a notification. when that app stops using the mic while heron is
+// offers to record it in a notification. when that app stops using the mic while wemmick is
 // recording, it offers to stop. core audio lists each process using audio and whether it's
 // taking input, which is checked every couple of seconds, without recording anything
 @MainActor
@@ -78,7 +78,7 @@ final class CallDetector: NSObject, UNUserNotificationCenterDelegate {
         if let app = started.first, !store.recorder.isRecording {
             recordingFor = app
             notify(category: Self.callCategory, title: "\(Self.name(of: app)) is using the microphone",
-                   body: "Record this call to transcribe it with Heron?")
+                   body: "Record this call to transcribe it with Wemmick?")
         }
         if let app = recordingFor, ended.contains(app) {
             if store.recorder.isRecording {
@@ -95,11 +95,11 @@ final class CallDetector: NSObject, UNUserNotificationCenterDelegate {
         content.body = body
         content.categoryIdentifier = category
         // a newer offer replaces the last one rather than stacking up
-        let request = UNNotificationRequest(identifier: "heron.call", content: content, trigger: nil)
+        let request = UNNotificationRequest(identifier: "wemmick.call", content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
     }
 
-    // shown even while heron is in front
+    // shown even while wemmick is in front
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async
         -> UNNotificationPresentationOptions {
         [.banner, .sound]

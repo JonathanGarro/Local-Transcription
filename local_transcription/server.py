@@ -335,15 +335,15 @@ class DetailsRequest(BaseModel):
 
 FORWARD_PAGE = """<!doctype html>
 <meta charset="utf-8">
-<title>Heron</title>
+<title>Wemmick</title>
 <body style="font: 15px -apple-system, sans-serif; margin: 40px; color: #555">
-<p id="message">Heron runs as a Mac app now. Open it from your Applications folder.</p>
+<p id="message">Wemmick runs as a Mac app now. Open it from your Applications folder.</p>
 <script>
   const [, page, id, tab, at] = location.hash.split("/");
   if (["transcript", "review", "imported"].includes(page) && id) {
-    const link = "heron://meeting?id=" + encodeURIComponent(decodeURIComponent(id))
+    const link = "wemmick://meeting?id=" + encodeURIComponent(decodeURIComponent(id))
       + (tab === "at" && at ? "&at=" + at : "");
-    document.getElementById("message").innerHTML = 'Opening the meeting in Heron. <a href="' + link + '">Open it</a> if nothing happens.';
+    document.getElementById("message").innerHTML = 'Opening the meeting in Wemmick. <a href="' + link + '">Open it</a> if nothing happens.';
     location.replace(link);
   }
 </script>
@@ -352,7 +352,7 @@ FORWARD_PAGE = """<!doctype html>
 
 # main
 def create_app():
-    app = FastAPI(title="Heron", docs_url=None, redoc_url=None)
+    app = FastAPI(title="Wemmick", docs_url=None, redoc_url=None)
     keychain.load()
     jobs = Jobs()
     pipeline.register_existing()
@@ -570,11 +570,11 @@ def create_app():
     asks = {}
 
     def meeting_link(meeting_id, seconds=-1):
-        """a heron:// link the mac app opens the meeting from, at a moment of its transcript
+        """a wemmick:// link the mac app opens the meeting from, at a moment of its transcript
         when given. None for a meeting with neither a transcript nor an imported note."""
         if not (pipeline.OUTPUT_DIR / meeting_id / "segments.json").exists() and not library.meeting_sent_path(meeting_id):
             return None
-        return f"heron://meeting?id={quote(meeting_id, safe='')}" + (f"&at={seconds}" if seconds >= 0 else "")
+        return f"wemmick://meeting?id={quote(meeting_id, safe='')}" + (f"&at={seconds}" if seconds >= 0 else "")
 
     def run_ask(ask_id, conversation_id, question):
         job = asks[ask_id]

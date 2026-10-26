@@ -58,11 +58,11 @@ enum Stage {
 // the library as the server last reported it, refreshed every couple of seconds
 @MainActor @Observable
 final class Store {
-    // HERON_PAGE=vocabulary opens on that page, for trying one page from the command line
-    var section: Place = ProcessInfo.processInfo.environment["HERON_PAGE"]
+    // WEMMICK_PAGE=vocabulary opens on that page, for trying one page from the command line
+    var section: Place = ProcessInfo.processInfo.environment["WEMMICK_PAGE"]
         .flatMap { page in Place.allCases.first { $0.rawValue.lowercased() == page.lowercased() } } ?? .inbox
-    // HERON_MEETING=<meeting id> selects that meeting at launch, with HERON_PAGE=archive say
-    var selection: String? = ProcessInfo.processInfo.environment["HERON_MEETING"]
+    // WEMMICK_MEETING=<meeting id> selects that meeting at launch, with WEMMICK_PAGE=archive say
+    var selection: String? = ProcessInfo.processInfo.environment["WEMMICK_MEETING"]
     var personSelection: String?
     var people: [Person] = []
     let chat = Chat()
@@ -81,7 +81,7 @@ final class Store {
     // whether the plaud cli is installed, so the plaud page can be shown
     var plaudInstalled = false
     // the setup shown when the app is first opened, or again from settings
-    var showSetup = ProcessInfo.processInfo.environment["HERON_SETUP_STEP"] != nil
+    var showSetup = ProcessInfo.processInfo.environment["WEMMICK_SETUP_STEP"] != nil
     // the to-do app chosen in settings, nil when the to-do features are off
     var todoApp: String?
     var todoAppName: String { Self.todoApps[todoApp ?? ""] ?? "your to-do app" }
@@ -179,7 +179,7 @@ final class Store {
         if transcriptions > 0 { parts.append(transcriptions == 1 ? "1 transcription" : "\(transcriptions) transcriptions") }
         if notes > 0 { parts.append(notes == 1 ? "1 note" : "\(notes) notes") }
         if chat.pending { parts.append("an answer in Ask") }
-        if recorder.isRecording { parts.append("a recording, which is saved and transcribed when Heron next opens") }
+        if recorder.isRecording { parts.append("a recording, which is saved and transcribed when Wemmick next opens") }
         return parts.isEmpty ? nil : ListFormatter.localizedString(byJoining: parts)
     }
 
@@ -220,7 +220,7 @@ final class Store {
     func startRecording() async {
         await run {
             guard await AVCaptureDevice.requestAccess(for: .audio) else {
-                throw RecorderError("Heron isn't allowed to use the microphone. Allow it in System Settings, Privacy & Security, Microphone")
+                throw RecorderError("Wemmick isn't allowed to use the microphone. Allow it in System Settings, Privacy & Security, Microphone")
             }
             let settings: SettingsState = try await API.get(["api", "settings"])
             try recorder.start(micOnRight: settings.micChannel == "right")
@@ -339,12 +339,12 @@ final class Store {
         focusTime = seconds
     }
 
-    // heron://meeting?id=ID&at=SECONDS, from answers and from to-dos in things. boswell://
-    // links, from notes and to-dos made before the app was renamed, work the same. returns
+    // wemmick://meeting?id=ID&at=SECONDS, from answers and from to-dos in things. heron:// and
+    // boswell:// links, from notes and to-dos made before the app was renamed, work the same. returns
     // false for a link that is not one of these
     @discardableResult
     func open(link url: URL) -> Bool {
-        guard ["heron", "boswell"].contains(url.scheme ?? ""), url.host == "meeting",
+        guard ["wemmick", "heron", "boswell"].contains(url.scheme ?? ""), url.host == "meeting",
               let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let id = parts.queryItems?.first(where: { $0.name == "id" })?.value else { return false }
         // a link that launched the app waits for the library to load

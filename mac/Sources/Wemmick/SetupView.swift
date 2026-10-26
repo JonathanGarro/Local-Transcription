@@ -7,8 +7,8 @@ struct SetupView: View {
     @Environment(Store.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var settings: SettingsState?
-    // HERON_SETUP_STEP=notes opens setup on that step, for checking a page from the command line
-    @State private var step = ProcessInfo.processInfo.environment["HERON_SETUP_STEP"]
+    // WEMMICK_SETUP_STEP=notes opens setup on that step, for checking a page from the command line
+    @State private var step = ProcessInfo.processInfo.environment["WEMMICK_SETUP_STEP"]
         .flatMap { name in Step.allCases.first { "\($0)" == name } } ?? .welcome
     @State private var name = ""
     @State private var hfToken = ""
@@ -53,14 +53,14 @@ struct SetupView: View {
     private func page(_ s: SettingsState) -> some View {
         switch step {
         case .welcome:
-            header("Welcome to Heron", "waveform")
-            Text("Heron transcribes your meetings on this Mac, works out who said what, and writes a note for each one. Recordings, transcripts and voice profiles never leave it.")
+            header("Welcome to Wemmick", "waveform")
+            Text("Wemmick transcribes your meetings on this Mac, works out who said what, and writes a note for each one. Recordings, transcripts and voice profiles never leave it.")
             Text("A few questions get it ready. Everything here can be changed later in Settings.")
                 .foregroundStyle(.secondary)
                 .padding(.top, 8)
         case .name:
             header("What's your name?", "person.crop.circle")
-            Text("Notes are written for you, and your to-dos are the ones Heron looks for. Use the name people will be confirmed under, so your own voice is matched to you.")
+            Text("Notes are written for you, and your to-dos are the ones Wemmick looks for. Use the name people will be confirmed under, so your own voice is matched to you.")
                 .foregroundStyle(.secondary)
             TextField("Your full name", text: $name)
                 .textFieldStyle(.roundedBorder)
@@ -70,7 +70,7 @@ struct SetupView: View {
             let matches = s.people.filter { !name.isEmpty && $0.localizedCaseInsensitiveContains(name) && $0 != name }.prefix(4)
             if !matches.isEmpty {
                 HStack {
-                    Text("Already in Heron:").foregroundStyle(.secondary)
+                    Text("Already in Wemmick:").foregroundStyle(.secondary)
                     ForEach(Array(matches), id: \.self) { person in
                         Button(person) { name = person }.buttonStyle(.link)
                     }
@@ -80,7 +80,7 @@ struct SetupView: View {
             }
         case .models:
             header("Download the models", "arrow.down.circle")
-            Text("Heron transcribes and tells voices apart with two models, downloaded once. The speaker one asks you to accept its terms on Hugging Face first, which takes a free account.")
+            Text("Wemmick transcribes and tells voices apart with two models, downloaded once. The speaker one asks you to accept its terms on Hugging Face first, which takes a free account.")
                 .foregroundStyle(.secondary)
             if !s.modelReady {
                 VStack(alignment: .leading, spacing: 6) {
@@ -151,7 +151,7 @@ struct SetupView: View {
             .padding(.top, 12)
         case .todos:
             header("To-dos", "checklist")
-            Text("Heron can find the things you were asked to do or offered to do in a meeting, and add them to your to-do app after you check them. This uses Claude.")
+            Text("Wemmick can find the things you were asked to do or offered to do in a meeting, and add them to your to-do app after you check them. This uses Claude.")
                 .foregroundStyle(.secondary)
             Picker("To-do app", selection: Binding(get: { s.todoApp }, set: { app in
                 Task { await save(SettingsChange(todoApp: app)) }
@@ -171,7 +171,7 @@ struct SetupView: View {
             }
         case .done:
             header("You're set", "checkmark.seal")
-            Text("Drop a recording on the window, or press Cmd+O, to transcribe your first meeting. The first time you confirm who's who, Heron learns their voices, so later meetings name them on their own.")
+            Text("Drop a recording on the window, or press Cmd+O, to transcribe your first meeting. The first time you confirm who's who, Wemmick learns their voices, so later meetings name them on their own.")
             Text("Everything you chose is in Settings.")
                 .foregroundStyle(.secondary)
                 .padding(.top, 8)
@@ -200,7 +200,7 @@ struct SetupView: View {
             if [.models, .folder].contains(step) {
                 Button("Skip") { move(1) }
             }
-            Button(step == .done ? "Start Using Heron" : "Continue") { Task { await next() } }
+            Button(step == .done ? "Start Using Wemmick" : "Continue") { Task { await next() } }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
                 .disabled(working || (step == .name && name.trimmingCharacters(in: .whitespaces).isEmpty))

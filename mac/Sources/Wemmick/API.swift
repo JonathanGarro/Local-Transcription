@@ -609,7 +609,7 @@ enum API {
     // sourceType "zoom" says each file has the mic on one channel and the call on the other,
     // without the server having to work it out
     static func upload(_ files: [URL], sourceType: String = "auto") async throws -> UploadResult {
-        let boundary = "heron-\(UUID().uuidString)"
+        let boundary = "wemmick-\(UUID().uuidString)"
         var body = Data()
         func field(_ name: String, _ value: String) {
             body.append("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n")

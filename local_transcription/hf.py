@@ -1,4 +1,4 @@
-"""the models heron downloads from hugging face, and the token the speaker model needs.
+"""the models wemmick downloads from hugging face, and the token the speaker model needs.
 
 two models: whisper, which transcribes, and pyannote's speaker detection, whose embedding
 model also matches voices to profiles. both download once, from setup or settings, with

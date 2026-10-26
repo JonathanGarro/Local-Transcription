@@ -14,23 +14,23 @@ final class Server {
     let python: URL
     private var process: Process?
 
-    static let appSupport = FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Application Support/Heron")
-    // the app was called boswell, with its library and log under that name
-    private static let boswellSupport = FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Application Support/Boswell")
-    private static let boswellBundleID = "io.github.jonathangarro.boswell"
+    static let appSupport = FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Application Support/Wemmick")
+    // the app was called heron, and boswell before that, with its library, log and bundle id
+    // under those names. newest first
+    private static let oldNames = ["Heron", "Boswell"]
 
     private init() {
         let env = ProcessInfo.processInfo.environment
-        baseURL = URL(string: env["HERON_URL"] ?? "http://127.0.0.1:8765")!
+        baseURL = URL(string: env["WEMMICK_URL"] ?? "http://127.0.0.1:8765")!
         if let bundled = Bundle.main.resourceURL?.appending(path: "server"),
            FileManager.default.fileExists(atPath: bundled.appending(path: "app.py").path) {
             serverDir = bundled
             python = Self.appSupport.appending(path: "env/bin/python")
         } else {
-            if let dir = env["HERON_PROJECT_DIR"] {
+            if let dir = env["WEMMICK_PROJECT_DIR"] {
                 serverDir = URL(fileURLWithPath: dir)
             } else {
-                // swift run, from mac/Sources/Heron/Server.swift up to the project folder
+                // swift run, from mac/Sources/Wemmick/Server.swift up to the project folder
                 var dir = URL(fileURLWithPath: #filePath)
                 for _ in 0..<4 { dir.deleteLastPathComponent() }
                 serverDir = dir
@@ -40,7 +40,7 @@ final class Server {
     }
 
     var logFile: URL {
-        FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Logs/Heron.log")
+        FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Logs/Wemmick.log")
     }
 
     func isUp() async -> Bool {
@@ -53,15 +53,15 @@ final class Server {
     // status is told what's happening while the python packages are installed, the first time
     // or after an update changes them
     func start(status: @escaping @Sendable (String) -> Void = { _ in }) async throws {
-        try await adoptBoswellLibrary()
+        try await adoptOldLibrary()
         if await isUp() { return }
         try await installPython(status: status)
         guard FileManager.default.isExecutableFile(atPath: python.path) else {
-            throw ServerError("Heron's Python environment isn't installed at \(python.path).")
+            throw ServerError("Wemmick's Python environment isn't installed at \(python.path).")
         }
         // a long log starts over, keeping the one before
         if let size = try? FileManager.default.attributesOfItem(atPath: logFile.path)[.size] as? Int, size > 5_000_000 {
-            let old = logFile.deletingLastPathComponent().appending(path: "Heron.old.log")
+            let old = logFile.deletingLastPathComponent().appending(path: "Wemmick.old.log")
             try? FileManager.default.removeItem(at: old)
             try? FileManager.default.moveItem(at: logFile, to: old)
         }
@@ -83,9 +83,9 @@ final class Server {
         // each line reaches the log as it's printed, rather than when a buffer fills
         env["PYTHONUNBUFFERED"] = "1"
         // compiled python goes to the caches folder, since writing it inside the app would break its signature
-        env["PYTHONPYCACHEPREFIX"] = FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Caches/Heron/pycache").path
+        env["PYTHONPYCACHEPREFIX"] = FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Caches/Wemmick/pycache").path
         // the server stops itself when this process goes away
-        env["HERON_APP_PID"] = String(ProcessInfo.processInfo.processIdentifier)
+        env["WEMMICK_APP_PID"] = String(ProcessInfo.processInfo.processIdentifier)
         p.environment = env
         p.standardOutput = log
         p.standardError = log
@@ -101,26 +101,32 @@ final class Server {
         throw ServerError("The server did not start. See \(logFile.path).")
     }
 
-    // boswell's library folder becomes heron's the first time heron opens. boswell runs from
-    // that folder and its server answers on the same port, so it's asked to quit first, and
-    // nothing moves while it's still open. it's a rename, so nothing is copied
-    private func adoptBoswellLibrary() async throws {
+    // the library folder of the app under an old name becomes wemmick's the first time wemmick
+    // opens. the old app runs from that folder and its server answers on the same port, so it's
+    // asked to quit first, and nothing moves while it's still open. it's a rename, so nothing
+    // is copied
+    private func adoptOldLibrary() async throws {
         // only the installed app takes it over, never a copy run from the project folder
         let files = FileManager.default
+        let home = files.homeDirectoryForCurrentUser
         guard Bundle.main.resourceURL.map({ files.fileExists(atPath: $0.appending(path: "server/app.py").path) }) == true,
-              files.fileExists(atPath: Self.boswellSupport.path), !files.fileExists(atPath: Self.appSupport.path) else { return }
-        let running = { NSRunningApplication.runningApplications(withBundleIdentifier: Self.boswellBundleID) }
+              !files.fileExists(atPath: Self.appSupport.path),
+              let old = Self.oldNames.first(where: { files.fileExists(atPath: home.appending(path: "Library/Application Support/\($0)").path) })
+        else { return }
+        let running = {
+            Self.oldNames.flatMap { NSRunningApplication.runningApplications(withBundleIdentifier: "io.github.jonathangarro.\($0.lowercased())") }
+        }
         running().forEach { $0.terminate() }
-        // quitting waits on boswell's own question when work is running, then its server stops
+        // quitting waits on the old app's own question when work is running, then its server stops
         for _ in 0..<150 {
             if running().isEmpty, !(await isUp()) { break }
             try await Task.sleep(for: .milliseconds(200))
         }
         guard running().isEmpty, !(await isUp()) else {
-            throw ServerError("Quit Boswell, then open Heron again. Heron takes over Boswell's meetings and settings once it's closed.")
+            throw ServerError("Quit \(old), then open Wemmick again. Wemmick takes over \(old)'s meetings and settings once it's closed.")
         }
-        try files.moveItem(at: Self.boswellSupport, to: Self.appSupport)
-        let oldLog = files.homeDirectoryForCurrentUser.appending(path: "Library/Logs/Boswell.log")
+        try files.moveItem(at: home.appending(path: "Library/Application Support/\(old)"), to: Self.appSupport)
+        let oldLog = home.appending(path: "Library/Logs/\(old).log")
         if !files.fileExists(atPath: logFile.path) { try? files.moveItem(at: oldLog, to: logFile) }
     }
 
@@ -133,13 +139,13 @@ final class Server {
               FileManager.default.isExecutableFile(atPath: uv.path),
               let lock = try? Data(contentsOf: serverDir.appending(path: "uv.lock")) else { return }
         let envDir = Self.appSupport.appending(path: "env")
-        let marker = envDir.appending(path: ".heron-lock")
+        let marker = envDir.appending(path: ".wemmick-lock")
         let wanted = SHA256.hash(data: lock).map { String(format: "%02x", $0) }.joined()
         if FileManager.default.isExecutableFile(atPath: python.path),
            (try? String(contentsOf: marker, encoding: .utf8)) == wanted {
             return
         }
-        status("Installing Heron's Python packages")
+        status("Installing Wemmick's Python packages")
         try FileManager.default.createDirectory(at: Self.appSupport, withIntermediateDirectories: true)
 
         let p = Process()
@@ -171,7 +177,7 @@ final class Server {
         }
         output.fileHandleForReading.readabilityHandler = nil
         guard p.terminationStatus == 0 else {
-            throw ServerError("Couldn't install Heron's Python packages. Check the internet connection and try again.\n\n\(lines.last(4))")
+            throw ServerError("Couldn't install Wemmick's Python packages. Check the internet connection and try again.\n\n\(lines.last(4))")
         }
         try wanted.write(to: marker, atomically: true, encoding: .utf8)
     }

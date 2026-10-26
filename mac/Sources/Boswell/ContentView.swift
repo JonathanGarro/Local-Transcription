@@ -148,7 +148,7 @@ struct SidebarLabel: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: 10) {
             SidebarIcon(icon: configuration.icon)
-            configuration.title.fontWeight(.medium)
+            configuration.title.fontWeight(.semibold)
         }
     }
 }

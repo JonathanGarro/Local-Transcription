@@ -41,7 +41,7 @@ struct SettingsView: View {
 
     private func form(_ s: SettingsState) -> some View {
         Form {
-            Section("You") {
+            SettingsSection("You") {
                 LabeledContent {
                     TextField("Your name", text: $owner, prompt: Text("Your full name"))
                         .labelsHidden()
@@ -65,7 +65,7 @@ struct SettingsView: View {
                 }
             }
 
-            Section("Appearance") {
+            SettingsSection("Appearance") {
                 LabeledContent {
                     HStack(spacing: 10) {
                         ForEach(s.accents, id: \.self) { name in
@@ -90,7 +90,7 @@ struct SettingsView: View {
                 }
             }
 
-            Section("To-dos") {
+            SettingsSection("To-dos") {
                 Picker(selection: Binding(get: { s.todoApp }, set: { app in
                     Task { await save(SettingsChange(todoApp: app)) }
                 })) {
@@ -116,7 +116,7 @@ struct SettingsView: View {
                 .disabled(s.todoApp == "none")
             }
 
-            Section("Notes") {
+            SettingsSection("Notes") {
                 Picker(selection: Binding(get: { s.summaryBackend }, set: { backend in
                     Task { await save(SettingsChange(summaryBackend: backend)) }
                 })) {
@@ -150,7 +150,7 @@ struct SettingsView: View {
                 }
             }
 
-            Section("Obsidian") {
+            SettingsSection("Obsidian") {
                 folderRow("Meeting notes folder", path: s.meetingNotesDir, source: s.meetingNotesDirSource,
                           purpose: "Where Send to Obsidian puts notes, and where imported notes are read from. Without one, meetings are marked done instead.") {
                     SettingsChange(meetingNotesDir: $0)
@@ -170,7 +170,7 @@ struct SettingsView: View {
                 .disabled(s.meetingNotesDir == nil)
             }
 
-            Section("Plaud") {
+            SettingsSection("Plaud") {
                 if s.plaudInstalled {
                     Toggle(isOn: $plaudEnabled) {
                         Text("Use Plaud")
@@ -191,7 +191,7 @@ struct SettingsView: View {
                 }
             }
 
-            Section("Claude") {
+            SettingsSection("Claude") {
                 LabeledContent {
                     // only ever the masked key, a new one is pasted in rather than shown
                     Text(s.key.map { "••••" + $0.suffix(3) } ?? "not set")
@@ -248,7 +248,7 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section("Models") {
+            SettingsSection("Models") {
                 ModelDownloads(tokenReady: s.hfToken != nil || s.modelReady)
                 LabeledContent {
                     Text(s.hfToken.map { "••••" + $0.suffix(3) } ?? "not set")
@@ -277,7 +277,7 @@ struct SettingsView: View {
                 }
             }
 
-            Section("About") {
+            SettingsSection("About") {
                 HStack {
                     Button("Run Setup Again...") { store.showSetup = true }
                         .help("Go through setup again, starting from what's set now")
@@ -325,6 +325,8 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+        // the descriptions under each setting at the size of its name, as the system's are small
+        .font(.body)
         // the form fills the page so its scroll bar sits at the window's edge,
         // with the sections kept to a readable width in the middle
         .contentMargins(.horizontal, max(0, (width - 680) / 2), for: .scrollContent)
@@ -643,6 +645,22 @@ struct SettingsView: View {
 }
 
 // pastes a new key in a password field, so it is never shown
+// a section of settings. its header is set bold here, since the font set on the form would
+// otherwise make it plain
+struct SettingsSection<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+
+    init(_ title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        Section { content } header: { Text(title).font(.headline) }
+    }
+}
+
 struct KeySheet: View {
     @Environment(\.dismiss) private var dismiss
     var title = "Anthropic API Key"

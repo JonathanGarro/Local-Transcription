@@ -101,6 +101,8 @@ private final class RecordingSession: @unchecked Sendable {
     private let micOnRight: Bool
     private var tapID = AudioObjectID(kAudioObjectUnknown)
     private var tapUID = ""
+    private var tapDescription: CATapDescription?
+    private var excluded: [AudioObjectID] = []
     private var deviceID = AudioObjectID(kAudioObjectUnknown)
     private var procID: AudioDeviceIOProcID?
     private var output: AVAudioFile?
@@ -108,6 +110,7 @@ private final class RecordingSession: @unchecked Sendable {
     private var fileFormat: AVAudioFormat?
     private var converter: AVAudioConverter?
     private var listener: AudioObjectPropertyListenerBlock?
+    private var processListener: AudioObjectPropertyListenerBlock?
     private let queue = DispatchQueue(label: "wemmick.recorder", qos: .userInteractive)
     private let control = DispatchQueue(label: "wemmick.recorder.control")
     private let peaks = OSAllocatedUnfairLock(initialState: (mic: Float(0), call: Float(0)))
@@ -118,6 +121,13 @@ private final class RecordingSession: @unchecked Sendable {
     private static let defaultInputAddress = AudioObjectPropertyAddress(
         mSelector: kAudioHardwarePropertyDefaultInputDevice,
         mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+    private static let processListAddress = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyProcessObjectList,
+        mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+
+    // audio hijack, recording the call as a backup, plays what it captures back out a few
+    // buffers late, so the tap would hear the call twice, 80 ms or so apart
+    private static let excludedBundlePrefixes = ["com.rogueamoeba.audiohijack"]
 
     init(file: URL, micOnRight: Bool) throws {
         self.file = file
@@ -126,6 +136,7 @@ private final class RecordingSession: @unchecked Sendable {
             try makeTap()
             try connect(to: try Self.defaultInputDevice())
             watchInput()
+            watchProcesses()
         } catch {
             stop()
             throw error
@@ -135,13 +146,48 @@ private final class RecordingSession: @unchecked Sendable {
     // everything the mac plays, mixed to stereo, and left playing as usual. it outlives a
     // change of mic
     private func makeTap() throws {
-        let description = CATapDescription(stereoGlobalTapButExcludeProcesses: [])
+        excluded = Self.excludedProcesses()
+        let description = CATapDescription(stereoGlobalTapButExcludeProcesses: excluded)
         description.uuid = UUID()
         description.name = "Wemmick call audio"
         description.isPrivate = true
         description.muteBehavior = .unmuted
         try check(AudioHardwareCreateProcessTap(description, &tapID), "Couldn't start recording the Mac's audio")
         tapUID = description.uuid.uuidString
+        tapDescription = description
+    }
+
+    // an app only gets a process object once it uses audio, so audio hijack started after the
+    // recording is left out when it appears
+    private func watchProcesses() {
+        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            guard let self, let description = self.tapDescription, self.tapID != kAudioObjectUnknown else { return }
+            let now = Self.excludedProcesses()
+            guard now != self.excluded else { return }
+            self.excluded = now
+            description.processes = now
+            var address = AudioObjectPropertyAddress(mSelector: kAudioTapPropertyDescription,
+                                                     mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+            var value = description
+            AudioObjectSetPropertyData(self.tapID, &address, 0, nil, UInt32(MemoryLayout<CATapDescription>.size), &value)
+        }
+        var address = Self.processListAddress
+        if AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, control, block) == noErr {
+            processListener = block
+        }
+    }
+
+    private static func excludedProcesses() -> [AudioObjectID] {
+        var address = processListAddress
+        var size = UInt32(0)
+        let system = AudioObjectID(kAudioObjectSystemObject)
+        guard AudioObjectGetPropertyDataSize(system, &address, 0, nil, &size) == noErr, size > 0 else { return [] }
+        var processes = [AudioObjectID](repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
+        guard AudioObjectGetPropertyData(system, &address, 0, nil, &size, &processes) == noErr else { return [] }
+        return processes.filter { process in
+            let bundle = string(kAudioProcessPropertyBundleID, of: process) ?? ""
+            return excludedBundlePrefixes.contains { bundle.hasPrefix($0) }
+        }.sorted()
     }
 
     // a private aggregate device of the mic and the tap, and the io block writing from it
@@ -280,6 +326,11 @@ private final class RecordingSession: @unchecked Sendable {
             var address = Self.defaultInputAddress
             AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, control, listener)
             self.listener = nil
+        }
+        if let processListener {
+            var address = Self.processListAddress
+            AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, control, processListener)
+            self.processListener = nil
         }
         control.sync { disconnect() }
         if tapID != kAudioObjectUnknown {

@@ -301,6 +301,15 @@ final class Store {
         await run { let _: Ok = try await API.post(API.meeting(id, "open-obsidian")) }
     }
 
+    func delete(_ id: String) async {
+        await run {
+            let _: Ok = try await API.post(API.meeting(id, "delete"))
+            if selection == id { selection = nil }
+            await refresh()
+            show("Moved to the Trash")
+        }
+    }
+
     func moveToInbox(_ id: String) async {
         await run {
             let _: Ok = try await API.post(API.meeting(id, "unarchive"))

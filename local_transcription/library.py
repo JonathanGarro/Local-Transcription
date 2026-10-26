@@ -717,7 +717,11 @@ def home_stats(owner=None, top=5):
 
 
 def delete_meeting(meeting_id):
+    """forget a meeting: its speakers, the voices learned from it, the record of its to-dos
+    and of the plaud recording it came from. the people stay, with their other voices."""
     with connect() as con:
+        for table in ("entries", "things_todos", "plaud_files"):
+            con.execute(f"delete from {table} where meeting_id = ?", (meeting_id,))
         con.execute("delete from meetings where meeting_id = ?", (meeting_id,))
 
 

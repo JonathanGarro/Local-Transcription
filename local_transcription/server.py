@@ -68,6 +68,13 @@ def _meeting_dir(meeting_id):
         raise HTTPException(404, str(err))
 
 
+def _trash(path):
+    """move a file or folder to the trash, so a deletion can be undone from the finder."""
+    trash = Path.home() / ".Trash"
+    trash.mkdir(exist_ok=True)
+    os.rename(path, _unique_path(trash, path.name))
+
+
 def _dated_name(name):
     """'2026-10-16 - Zoom Call.mp3' stays as it is. a date elsewhere in the name moves to the
     front, and a name with no date gets today's."""
@@ -1092,6 +1099,24 @@ def create_app():
             raise HTTPException(404, "the note is not in the vault yet, send it first")
         # obsidian finds the vault from the file's path
         subprocess.run(["open", f"obsidian://open?path={quote(path, safe='')}"], check=False)
+        return {"ok": True}
+
+    @app.post("/api/meetings/{meeting_id}/delete")
+    def delete_meeting(meeting_id: str):
+        """the meeting's folder and recording go to the trash, and the library forgets it. a
+        note already sent to obsidian stays there."""
+        out_dir = _meeting_dir(meeting_id)
+        with jobs.lock:
+            busy = any(j.get("meeting_id") == meeting_id and j["status"] in ("queued", "processing") for j in jobs.items)
+        if busy:
+            raise HTTPException(409, "This meeting is still being worked on. Delete it once that's finished")
+        run = out_dir / "run.json"
+        source = pipeline.source_path(json.loads(run.read_text())) if run.exists() else None
+        _trash(out_dir)
+        # only a recording in the library's own data folder, never a file somewhere else
+        if source and source.exists() and source.resolve().is_relative_to(paths.DATA_DIR.resolve()):
+            _trash(source)
+        library.delete_meeting(meeting_id)
         return {"ok": True}
 
     @app.post("/api/meetings/{meeting_id}/unarchive")

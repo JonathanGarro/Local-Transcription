@@ -284,6 +284,7 @@ struct MeetingList: View {
     @State private var search = ""
     @State private var renaming: Meeting?
     @State private var newName = ""
+    @State private var deleting: Meeting?
     @State private var todoFilter = TodoFilter.all
 
     private var shown: [Meeting] {
@@ -317,7 +318,21 @@ struct MeetingList: View {
                         Divider()
                         Button("Move to Inbox") { Task { await store.moveToInbox(m.meetingId) } }
                     }
+                    Divider()
+                    Button("Delete...", role: .destructive) { deleting = m }
                 }
+        }
+        // the delete key, or cmd-delete, on the selected meeting
+        .onDeleteCommand { deleting = shown.first { $0.meetingId == store.selection } }
+        .confirmationDialog("Delete \u{201C}\(deleting?.name ?? "")\u{201D}?",
+                            isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
+            Button("Delete", role: .destructive) {
+                if let m = deleting { Task { await store.delete(m.meetingId) } }
+            }
+        } message: {
+            Text(deleting?.sentPath != nil
+                 ? "The recording, transcript and note move to the Trash, and voices learned from this meeting are forgotten. The note in Obsidian stays."
+                 : "The recording, transcript and note move to the Trash, and voices learned from this meeting are forgotten.")
         }
         .overlay {
             if shown.isEmpty {

@@ -78,6 +78,8 @@ section { padding: 0 24px; }
   display: inline-block; padding: 12px 26px; border-radius: 999px;
   background: var(--text); color: var(--bg); font-weight: 600; font-size: 16px;
 }
+a.pill { transition: transform .15s, opacity .15s; }
+a.pill:hover { transform: translateY(-1px); opacity: .9; }
 .fine { font-size: 13px; color: var(--faint); }
 
 /* the app window */
@@ -192,7 +194,7 @@ ins { background: rgba(48, 209, 88, 0.18); color: var(--green); text-decoration:
 .stats span { color: var(--muted); font-size: 15px; }
 
 /* workflow */
-.workflow { text-align: center; max-width: 1080px; margin: clamp(120px, 16vw, 200px) auto 0; }
+.workflow { text-align: center; max-width: 1080px; margin: clamp(120px, 16vw, 200px) auto 0; scroll-margin-top: 80px; }
 .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-top: 56px; text-align: left; }
 
 /* closing */

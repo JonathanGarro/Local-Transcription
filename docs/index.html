@@ -3,11 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Boswell – Meeting notes, written on your Mac</title>
-  <meta name="description" content="Boswell transcribes your meetings, recognizes who is speaking and writes the note, all on your Mac. Audio and voice profiles never leave it.">
-  <meta property="og:title" content="Boswell">
+  <title>Wemmick – Meeting notes, written on your Mac</title>
+  <meta name="description" content="Wemmick transcribes your meetings, recognizes who is speaking and writes the note, all on your Mac. Audio and voice profiles never leave it.">
+  <meta property="og:title" content="Wemmick">
   <meta property="og:description" content="Meeting notes, written on your Mac.">
-  <meta property="og:image" content="icon.png">
+  <meta property="og:image" content="https://wemmick.app/icon.png">
+  <meta property="og:url" content="https://wemmick.app/">
   <meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0b0b0d" media="(prefers-color-scheme: dark)">
   <link rel="icon" href="favicon.png">
@@ -17,11 +18,12 @@
 <body>
 
 <header class="nav">
-  <a class="brand" href="#top"><img src="icon.png" alt="" width="28" height="28"> Boswell</a>
+  <a class="brand" href="#top"><img src="icon.png" alt="" width="28" height="28"> Wemmick</a>
   <nav>
     <a href="#features">Features</a>
     <a href="#privacy">Privacy</a>
     <a href="#workflow">Workflow</a>
+    <a href="#start">Download</a>
   </nav>
 </header>
 
@@ -29,17 +31,18 @@
 
   <!-- hero -->
   <section class="hero">
-    <img class="hero-icon" src="icon.png" alt="Boswell app icon" width="128" height="128">
+    <img class="hero-icon" src="icon.png" alt="Wemmick app icon" width="128" height="128">
     <h1>Every meeting,<br>written down.</h1>
-    <p class="lede">Boswell transcribes your recordings, recognizes who&rsquo;s speaking and writes the note. All on your Mac.</p>
+    <p class="lede">Wemmick transcribes your recordings, recognizes who&rsquo;s speaking and writes the note. All on your Mac.</p>
     <div class="cta">
-      <span class="pill">Coming soon for Mac</span>
-      <span class="fine">Requires a Mac with Apple silicon</span>
+      <!-- until the first release: then https://github.com/JonathanGarro/Local-Transcription/releases/latest/download/Wemmick.dmg, "Download for Mac" -->
+      <a class="pill" href="https://github.com/JonathanGarro/Local-Transcription">Coming soon · Follow on GitHub</a>
+      <span class="fine">Free · Apple silicon · macOS 26 or later</span>
     </div>
   </section>
 
   <!-- the app window -->
-  <section class="shot reveal" aria-label="Boswell's Inbox with a meeting note open">
+  <section class="shot reveal" aria-label="Wemmick's Inbox with a meeting note open">
     <div class="window">
       <div class="win-sidebar">
         <div class="lights"><i></i><i></i><i></i></div>
@@ -105,7 +108,7 @@
     <div class="copy">
       <p class="kicker">Speakers</p>
       <h2>Knows who&rsquo;s talking.</h2>
-      <p>Boswell learns each person&rsquo;s voice the first time you name them. After that, it recognizes them in every meeting, and only asks about the voices it hasn&rsquo;t heard before.</p>
+      <p>Wemmick learns each person&rsquo;s voice the first time you name them. After that, it recognizes them in every meeting, and only asks about the voices it hasn&rsquo;t heard before.</p>
     </div>
     <div class="card speakers">
       <p class="card-head">Speaker 3 <span>· 6 min of talk</span></p>
@@ -121,7 +124,7 @@
     <div class="copy">
       <p class="kicker">Notes</p>
       <h2>Notes that write themselves.</h2>
-      <p>Once every speaker has a name, Boswell writes the note: an agenda, the discussion and the full transcript, with the right people and project filled in. Review it, change what you like, and send it to Obsidian.</p>
+      <p>Once every speaker has a name, Wemmick writes the note: an agenda, the discussion and the full transcript, with the right people and project filled in. Review it, change what you like, and send it to Obsidian.</p>
     </div>
     <div class="card note">
       <p class="card-head">Design Review</p>
@@ -138,7 +141,7 @@
     <div class="copy">
       <p class="kicker">Ask</p>
       <h2>Ask your meetings anything.</h2>
-      <p>What did you and Sam agree to last time? Where does the roadmap stand? Boswell searches your notes and transcripts and answers with links to the exact moments it used.</p>
+      <p>What did you and Sam agree to last time? Where does the roadmap stand? Wemmick searches your notes and transcripts and answers with links to the exact moments it used.</p>
     </div>
     <div class="card chat">
       <p class="bubble me">What did Sam and I agree on last week?</p>
@@ -152,7 +155,7 @@
     <div class="copy">
       <p class="kicker">To-dos</p>
       <h2>Never lose a promise.</h2>
-      <p>Find my to-dos picks out what you were asked to do and what you offered, and leaves everyone else&rsquo;s tasks alone. Check them over, then add them to Things in one click.</p>
+      <p>Find my to-dos picks out what you were asked to do and what you offered, and leaves everyone else&rsquo;s tasks alone. Check them over, then add them to Things, Todoist or Reminders in one click.</p>
     </div>
     <div class="card todos-card">
       <p class="todo"><span class="box on"></span>Send Priya the week-one churn numbers<small>Q1 Roadmap · Friday</small></p>
@@ -200,21 +203,34 @@
       <div class="tile"><h3>Plaud</h3><p>Import recordings straight from your Plaud, without using its transcription minutes.</p></div>
       <div class="tile"><h3>Zoom calls</h3><p>Recordings with your mic on one channel and the call on the other are split, so you&rsquo;re always named right.</p></div>
       <div class="tile"><h3>Obsidian</h3><p>Notes land in your vault with people, teams and projects linked, and links back to the moment in the transcript.</p></div>
-      <div class="tile"><h3>Things 3</h3><p>To-dos go to Things with their project and deadline, and the note links to each one.</p></div>
+      <div class="tile"><h3>Things, Todoist, Reminders</h3><p>To-dos go to the app you use, with their project and deadline, and the note links to each one.</p></div>
+    </div>
+  </section>
+
+  <!-- getting started -->
+  <section id="start" class="workflow reveal">
+    <h2>Up and running in minutes.</h2>
+    <p class="lede">Wemmick needs a Mac with Apple silicon, macOS 26 or later, and about 16 GB of memory.</p>
+    <div class="tiles">
+      <div class="tile"><h3>1. Download</h3><p>Open the disk image and drag Wemmick to Applications. It&rsquo;s signed and notarized by Apple.</p></div>
+      <div class="tile"><h3>2. First launch</h3><p>Wemmick downloads the Python packages it transcribes with, about 1.5 GB, once.</p></div>
+      <div class="tile"><h3>3. Setup</h3><p>Tell it your name, add a free Hugging Face token for the speaker model, and choose where notes and to-dos go.</p></div>
+      <div class="tile"><h3>4. Record</h3><p>Drop in a recording. Name the speakers once, and Wemmick knows their voices from then on.</p></div>
     </div>
   </section>
 
   <section class="closing reveal">
     <img src="icon.png" alt="" width="88" height="88">
-    <h2>Named for the man who wrote everything down.</h2>
-    <p class="lede">James Boswell followed Samuel Johnson around London for twenty years and wrote down what he said. This one is a little quieter about it.</p>
-    <span class="pill">Coming soon for Mac</span>
+    <h2>Named for a clerk who kept work at work.</h2>
+    <p class="lede">In <em>Great Expectations</em>, John Wemmick writes everything down at the office, then goes home to his little castle in Walworth, pulls up the drawbridge, and none of it follows him. Your meetings stay on your Mac the same way.</p>
+    <!-- until the first release: then https://github.com/JonathanGarro/Local-Transcription/releases/latest/download/Wemmick.dmg, "Download for Mac" -->
+      <a class="pill" href="https://github.com/JonathanGarro/Local-Transcription">Coming soon · Follow on GitHub</a>
   </section>
 
 </main>
 
 <footer>
-  <p>Boswell · Made on a Mac, for the Mac.</p>
+  <p>Wemmick · Private meeting notes for the Mac · <a href="https://github.com/JonathanGarro/Local-Transcription">Source on GitHub</a> · MIT license</p>
 </footer>
 
 <script>

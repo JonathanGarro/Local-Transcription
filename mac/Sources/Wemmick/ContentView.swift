@@ -447,16 +447,18 @@ struct MeetingRow: View {
             Text(meeting.name)
                 .font(.system(size: 14, weight: .medium))
                 .lineLimit(2)
+            Text(details)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            // the badges get a line of their own, so a narrow list doesn't squeeze them into the date
             HStack(spacing: 6) {
-                Text(details)
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 4)
-                TodoBadge(meeting: meeting)
                 if meeting.archived == nil {
                     StageBadge(stage: store.stage(meeting))
                 }
+                TodoBadge(meeting: meeting)
             }
-            .font(.system(size: 12))
+            .padding(.top, 2)
             if let project = meeting.project {
                 Text(project)
                     .font(.system(size: 12))

@@ -10,6 +10,9 @@ struct NoteView: View {
     @State private var saved = ""
     @State private var saveTask: Task<Void, Never>?
     @State private var project = ""
+    // a picked project shows as a pill. clicking it or clearing it goes back to the search field
+    @State private var projectPicked = false
+    @FocusState private var projectFocused: Bool
     @State private var backend = "local"
     @State private var template = ""
     @State private var showChanges = false
@@ -387,16 +390,55 @@ struct NoteView: View {
         .frame(maxWidth: 520)
     }
 
+    @ViewBuilder
     private var projectField: some View {
-        TextField("Project", text: $project, prompt: Text("Search projects"))
-            .frame(maxWidth: 340)
-            .textInputSuggestions {
-                ForEach(matchingProjects, id: \.name) { p in
-                    Label(p.name, systemImage: p.active == true ? "circle.fill" : "circle")
-                        .textInputCompletion(p.name)
+        if projectPicked && !project.isEmpty {
+            HStack(spacing: 5) {
+                Button {
+                    projectPicked = false
+                    projectFocused = true
+                } label: {
+                    Label(project, systemImage: "folder")
+                        .lineLimit(1)
                 }
+                .buttonStyle(.plain)
+                .help("Change the project")
+                Button { Task { await pickProject("") } } label: {
+                    Image(systemName: "xmark.circle.fill")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Clear the project")
             }
-            .onSubmit { Task { await saveProject() } }
+            .font(.callout.weight(.medium))
+            .foregroundStyle(store.accentColor)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 3)
+            .background(store.accentColor.opacity(0.15), in: Capsule())
+            .frame(maxWidth: 340, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+        } else {
+            TextField("Project", text: $project, prompt: Text("Search projects"))
+                .frame(maxWidth: 340)
+                .focused($projectFocused)
+                .textInputSuggestions {
+                    ForEach(matchingProjects, id: \.name) { p in
+                        Label(p.name, systemImage: p.active == true ? "circle.fill" : "circle")
+                            .textInputCompletion(p.name)
+                    }
+                }
+                // a suggestion fills in the whole name at once, where typing adds a letter at a time
+                .onChange(of: project) { old, new in
+                    if new.count > old.count + 1, lookups?.projects.contains(where: { $0.name == new }) == true {
+                        Task { await pickProject(new) }
+                    }
+                }
+                .onSubmit { Task { await pickProject(project) } }
+                .onExitCommand {
+                    project = note?.project ?? ""
+                    projectPicked = !project.isEmpty
+                }
+        }
     }
 
     private var matchingProjects: [Project] {
@@ -419,7 +461,10 @@ struct NoteView: View {
             text = fetched.markdown
             saved = fetched.markdown
         }
-        project = fetched.project ?? ""
+        if !projectFocused {
+            project = fetched.project ?? ""
+            projectPicked = !project.isEmpty
+        }
         if lookups == nil, let l = try? await fetchedLookups {
             lookups = l
             todosReady = l.todosReady == true
@@ -454,9 +499,14 @@ struct NoteView: View {
         }
     }
 
-    private func saveProject() async {
-        let name = project.trimmingCharacters(in: .whitespaces)
-        guard note?.exists == true, name != (note?.project ?? ""), !name.isEmpty else { return }
+    // a blank name clears the project
+    private func pickProject(_ typed: String) async {
+        let name = typed.trimmingCharacters(in: .whitespaces)
+        project = name
+        projectPicked = !name.isEmpty
+        projectFocused = false
+        // before the note is written, the pick waits for Write Note
+        guard note?.exists == true, name != (note?.project ?? "") else { return }
         await flush()
         await store.run {
             let _: [String: String?] = try await API.post(API.meeting(meetingId, "project"), ["name": name])

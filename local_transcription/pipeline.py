@@ -17,7 +17,7 @@ from urllib.parse import quote
 import numpy as np
 import pandas as pd
 
-from local_transcription import asr, audio, diarize, embed, match, library, merge, notes, paths, render, settings, templates, vocab
+from local_transcription import asr, audio, diarize, echo, embed, match, library, merge, notes, paths, render, settings, templates, vocab
 
 # config
 OUTPUT_DIR = paths.OUTPUT_DIR
@@ -263,6 +263,8 @@ def run(source, threshold=match.THRESHOLD, num_speakers=None, min_speakers=diari
         mic_wav, main_wav = out_dir / "mic_16k.wav", out_dir / "remote_16k.wav"
         audio.extract_channel(source, mic_wav, mic_channel)
         audio.extract_channel(source, main_wav, 1 - mic_channel)
+        # recorded on speakers, the mic hears the call too, which would be transcribed as the owner
+        echo.cancel(mic_wav, main_wav, progress=lambda message: _log(progress, message))
         # the owner is on the mic channel, so the call side has one fewer speaker
         min_speakers, max_speakers = max(1, min_speakers - 1), max(1, max_speakers - 1)
         num_speakers = max(1, num_speakers - 1) if num_speakers else None

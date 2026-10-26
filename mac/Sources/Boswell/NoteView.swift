@@ -63,17 +63,9 @@ struct NoteView: View {
                 .allowsHitTesting(false)
         }
         .inspector(isPresented: $showChanges) {
+            // the toolbar's Changes and To-dos buttons pick what it shows. with no to-do app,
+            // it's only the changes
             VStack(spacing: 0) {
-                // with no to-do app, the inspector is only the changes
-                if store.todoApp != nil {
-                    Picker("Show", selection: $inspectorTab) {
-                        ForEach(InspectorTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .padding(10)
-                    Divider()
-                }
                 switch store.todoApp != nil ? inspectorTab : .changes {
                 case .changes: DiffView(diff: diff)
                 case .todos: todos
@@ -235,16 +227,28 @@ struct NoteView: View {
                 .disabled(!sent)
                 .help(sent ? "Open the note in Obsidian" : "Send the note first")
             }
+        }
 
-            Button { toggleInspector(.changes) } label: {
+        // gaps, so these are separate buttons rather than one control
+        ToolbarSpacer(.fixed)
+
+        ToolbarItemGroup {
+            // toggles, so the one whose pane is open shows as pressed
+            Toggle(isOn: inspectorShowing(.changes)) {
                 Label("Changes", systemImage: "plus.forwardslash.minus")
             }
+            .toggleStyle(.button)
             .help("Show what changed")
+        }
 
+        ToolbarSpacer(.fixed)
+
+        ToolbarItemGroup {
             if store.todoApp != nil {
-                Button { toggleInspector(.todos) } label: {
+                Toggle(isOn: inspectorShowing(.todos)) {
                     Label("To-dos", systemImage: "checklist")
                 }
+                .toggleStyle(.button)
                 .help("Find your to-dos in the transcript and send them to \(store.todoAppName)")
             }
 
@@ -287,13 +291,13 @@ struct NoteView: View {
         }
     }
 
-    private func toggleInspector(_ tab: InspectorTab) {
-        if showChanges && inspectorTab == tab {
-            showChanges = false
-        } else {
-            inspectorTab = tab
-            showChanges = true
-        }
+    // on when the pane is open on that tab. turning one on switches the pane to it, and
+    // turning it off closes the pane
+    private func inspectorShowing(_ tab: InspectorTab) -> Binding<Bool> {
+        Binding(get: { showChanges && inspectorTab == tab }, set: { on in
+            if on { inspectorTab = tab }
+            showChanges = on
+        })
     }
 
     // to-dos. claude reads the transcript for the owner's to-dos, and once they are added

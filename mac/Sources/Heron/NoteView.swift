@@ -571,6 +571,8 @@ enum Prefs {
     static let hideImported = "plaudHideImported"
     // the plaud page, shown only when the plaud cli is installed too
     static let plaud = "plaudEnabled"
+    // the recording control in the menu bar
+    static let menuBar = "showInMenuBar"
 }
 
 enum NoteMode: String {

@@ -23,6 +23,7 @@ struct SettingsView: View {
     @AppStorage(Prefs.askTodos) private var askTodos = true
     @AppStorage(Prefs.openAfterSend) private var openAfterSend = false
     @AppStorage(Prefs.plaud) private var plaudEnabled = true
+    @AppStorage(Prefs.menuBar) private var showInMenuBar = true
     @State private var plaud: PlaudAccount?
 
     var body: some View {
@@ -87,6 +88,10 @@ struct SettingsView: View {
                 } label: {
                     Text("Accent color")
                     Text("Buttons, links, highlights and charts.")
+                }
+                Toggle(isOn: $showInMenuBar) {
+                    Text("Show in menu bar")
+                    Text("Start and stop recording a call from the menu bar, with the window closed.")
                 }
             }
 

@@ -4,6 +4,7 @@ import SwiftUI
 struct HeronApp: App {
     @NSApplicationDelegateAdaptor private var delegate: AppDelegate
     @AppStorage(Prefs.plaud) private var plaudEnabled = true
+    @AppStorage(Prefs.menuBar) private var showInMenuBar = true
     private var store: Store { delegate.store }
 
     init() {
@@ -34,6 +35,15 @@ struct HeronApp: App {
                 .onOpenURL { store.open(link: $0) }
         }
         .defaultSize(width: 1200, height: 820)
+
+        // records a call without the window, and shows that one is going
+        MenuBarExtra(isInserted: $showInMenuBar) {
+            MenuBarRecorder()
+                .environment(store)
+        } label: {
+            Image(systemName: store.recorder.isRecording ? "record.circle.fill" : "waveform")
+        }
+        .menuBarExtraStyle(.window)
         .commands {
             // the settings page lives in the sidebar
             CommandGroup(replacing: .appSettings) {
@@ -92,7 +102,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    // closing the window quits, except while recording, which carries on from the menu bar
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { !store.recorder.isRecording }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         Task {

@@ -190,6 +190,50 @@ struct RecordButton: View {
     }
 }
 
+// the menu bar's panel: a button to record a call, or the recording going
+struct MenuBarRecorder: View {
+    @Environment(Store.self) private var store
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if store.recorder.isRecording {
+                RecordingView()
+            } else {
+                Button { Task { await store.startRecording() } } label: {
+                    Label("Record Call", systemImage: "record.circle")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .controlSize(.large)
+                Text("Records your mic and the Mac's audio, then transcribes it when you stop.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let message = store.message {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Divider()
+            HStack {
+                Button("Open Heron") {
+                    openWindow(id: "main")
+                    NSApp.activate()
+                }
+                Spacer()
+                Button("Quit") { NSApp.terminate(nil) }
+            }
+            .buttonStyle(.borderless)
+        }
+        .padding(12)
+        .frame(width: 280)
+    }
+}
+
 // the recording going, under the sidebar: how long, how loud each side is, what it's called
 struct RecordingView: View {
     @Environment(Store.self) private var store

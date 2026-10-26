@@ -297,8 +297,9 @@ struct MeetingRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
+            // a size up from the list's usual, for reading at a glance
             Text(meeting.name)
-                .fontWeight(.medium)
+                .font(.system(size: 14, weight: .medium))
                 .lineLimit(2)
             HStack(spacing: 6) {
                 Text(details)
@@ -309,15 +310,18 @@ struct MeetingRow: View {
                     StageBadge(stage: store.stage(meeting))
                 }
             }
-            .font(.caption)
+            .font(.system(size: 12))
             if let project = meeting.project {
                 Text(project)
-                    .font(.caption)
+                    .font(.system(size: 12))
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
             }
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 5)
+        // the line under the row starts at its left edge. otherwise it lines up with the last
+        // label's text, such as "1 sent", and breaks around that label's icon
+        .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
     }
 
     private var details: String {
@@ -371,12 +375,12 @@ struct TodoBadge: View {
             EmptyView()
         } else if let sent = meeting.todosSent, sent > 0 {
             Label("\(Int(sent)) sent", systemImage: "checkmark.circle")
-                .font(.caption2.weight(.medium))
+                .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.secondary)
                 .help("To-dos sent from this meeting")
         } else if let checked = meeting.todosChecked {
             Text("no to-dos")
-                .font(.caption2)
+                .font(.system(size: 11))
                 .foregroundStyle(.tertiary)
                 .help("Checked \(checked.prefix(10))")
         }

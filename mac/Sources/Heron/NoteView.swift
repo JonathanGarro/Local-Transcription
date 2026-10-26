@@ -573,6 +573,8 @@ enum Prefs {
     static let plaud = "plaudEnabled"
     // the recording control in the menu bar
     static let menuBar = "showInMenuBar"
+    // a notification offering to record when a call app starts using the mic
+    static let offerToRecord = "offerToRecordCalls"
 }
 
 enum NoteMode: String {

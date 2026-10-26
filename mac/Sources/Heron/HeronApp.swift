@@ -80,8 +80,10 @@ struct HeronApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     // here rather than in the app, so quitting can check it for unfinished work
     let store = Store()
+    private lazy var callDetector = CallDetector(store: store)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        callDetector.start()
         // swift run starts a bare binary, which would otherwise have no dock icon or menu bar
         NSApp.setActivationPolicy(.regular)
         NSApp.activate()

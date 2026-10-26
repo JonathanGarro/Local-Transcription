@@ -24,6 +24,7 @@ struct SettingsView: View {
     @AppStorage(Prefs.openAfterSend) private var openAfterSend = false
     @AppStorage(Prefs.plaud) private var plaudEnabled = true
     @AppStorage(Prefs.menuBar) private var showInMenuBar = true
+    @AppStorage(Prefs.offerToRecord) private var offerToRecord = true
     @State private var plaud: PlaudAccount?
 
     var body: some View {
@@ -88,6 +89,13 @@ struct SettingsView: View {
                 } label: {
                     Text("Accent color")
                     Text("Buttons, links, highlights and charts.")
+                }
+            }
+
+            SettingsSection("Recording") {
+                Toggle(isOn: $offerToRecord) {
+                    Text("Offer to record calls")
+                    Text("A notification with a Record button when Zoom, Teams, FaceTime, Slack or a browser starts using the microphone, and one to stop when the call ends.")
                 }
                 Toggle(isOn: $showInMenuBar) {
                     Text("Show in menu bar")

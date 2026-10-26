@@ -1,6 +1,6 @@
 import SwiftUI
 
-// the models boswell downloads, whether each is on this mac, and a button that downloads the
+// the models heron downloads, whether each is on this mac, and a button that downloads the
 // rest in the background with progress, from setup and from settings
 struct ModelDownloads: View {
     // the speaker model needs a hugging face token, unless it's downloaded already

@@ -83,7 +83,7 @@ def _osascript(script, *args):
     if result.returncode != 0:
         message = result.stderr.strip()
         if "-1743" in message:
-            message = "Boswell isn't allowed to control Things. Allow it in System Settings, Privacy & Security, Automation"
+            message = "Heron isn't allowed to control Things. Allow it in System Settings, Privacy & Security, Automation"
         raise RuntimeError(message or "things did not answer")
     return result.stdout
 

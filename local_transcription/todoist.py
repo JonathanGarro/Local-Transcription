@@ -14,13 +14,11 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-import keyring
-from keyring.errors import KeyringError, PasswordDeleteError
+from local_transcription import keychain
 
 # config
 API_URL = "https://api.todoist.com/api/v1"
 TASK_URL = "https://app.todoist.com/app/task/{}"
-SERVICE = "Boswell"
 ACCOUNT = "TODOIST_API_TOKEN"
 # where top level projects are grouped in the project menu
 TOP_LEVEL = "Projects"
@@ -32,10 +30,7 @@ _cache = {"at": 0, "projects": None}
 
 # helpers
 def _stored():
-    try:
-        return keyring.get_password(SERVICE, ACCOUNT)
-    except KeyringError:
-        return None
+    return keychain.get(ACCOUNT)
 
 
 def token():
@@ -76,15 +71,12 @@ def save_token(value):
     value = value.strip()
     if len(value) < 20 or " " in value:
         raise ValueError("that doesn't look like a Todoist API token, which is 40 letters and numbers")
-    keyring.set_password(SERVICE, ACCOUNT, value)
+    keychain.put(ACCOUNT, value)
     _cache["projects"] = None
 
 
 def remove_token():
-    try:
-        keyring.delete_password(SERVICE, ACCOUNT)
-    except PasswordDeleteError:
-        pass
+    keychain.forget(ACCOUNT)
     _cache["projects"] = None
 
 

@@ -51,7 +51,7 @@ struct ContentView: View {
                 }
             } else if let error = store.startError {
                 ContentUnavailableView {
-                    Label("Boswell could not start", systemImage: "exclamationmark.triangle")
+                    Label("Heron could not start", systemImage: "exclamationmark.triangle")
                 } description: {
                     Text(error)
                 } actions: {
@@ -60,8 +60,8 @@ struct ContentView: View {
             } else if let installing = store.installing {
                 VStack(spacing: 12) {
                     ProgressView()
-                    Text("Getting Boswell ready").font(.title3.weight(.semibold))
-                    Text("The first time, Boswell downloads Python and the packages it transcribes with, about 1.5 GB. It takes a few minutes, and only happens once.")
+                    Text("Getting Heron ready").font(.title3.weight(.semibold))
+                    Text("The first time, Heron downloads Python and the packages it transcribes with, about 1.5 GB. It takes a few minutes, and only happens once.")
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: 420)

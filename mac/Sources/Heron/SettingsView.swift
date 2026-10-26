@@ -186,7 +186,7 @@ struct SettingsView: View {
                         }
                     } label: {
                         Text("Plaud CLI not installed")
-                        Text("Importing from Plaud needs its command line tool. Install it with npm install -g @plaud-ai/cli in Terminal, then restart Boswell.")
+                        Text("Importing from Plaud needs its command line tool. Install it with npm install -g @plaud-ai/cli in Terminal, then restart Heron.")
                     }
                 }
             }
@@ -282,7 +282,7 @@ struct SettingsView: View {
                     Button("Run Setup Again...") { store.showSetup = true }
                         .help("Go through setup again, starting from what's set now")
                     Button("Reset Setup...", role: .destructive) { confirmReset = true }
-                        .help("Forget what setup asked for, and show it whenever Boswell opens until it's finished")
+                        .help("Forget what setup asked for, and show it whenever Heron opens until it's finished")
                 }
                 LabeledContent {
                     Button(s.libraryDir) { NSWorkspace.shared.open(URL(fileURLWithPath: s.libraryDir)) }
@@ -291,7 +291,7 @@ struct SettingsView: View {
                         .truncationMode(.middle)
                 } label: {
                     Text("Library folder")
-                    Text("Recordings, meetings, settings and templates. BOSWELL_HOME in .env can move it.")
+                    Text("Recordings, meetings, settings and templates. HERON_HOME in .env can move it.")
                 }
                 LabeledContent("Server code") {
                     Button(Server.shared.serverDir.path) { NSWorkspace.shared.activateFileViewerSelecting([Server.shared.serverDir]) }
@@ -306,7 +306,7 @@ struct SettingsView: View {
                         Button("Show Licenses") { NSWorkspace.shared.open(licenses) }
                     } label: {
                         Text("Licenses")
-                        Text("Boswell is MIT licensed. It includes ffmpeg, under the LGPL 2.1, and uv, under MIT or Apache 2.0.")
+                        Text("Heron is MIT licensed. It includes ffmpeg, under the LGPL 2.1, and uv, under MIT or Apache 2.0.")
                     }
                 }
                 LabeledContent {
@@ -476,7 +476,7 @@ struct SettingsView: View {
         do {
             let text = String(decoding: try await API.data(["api", "diagnostics"]), as: UTF8.self)
             let info = Bundle.main.infoDictionary
-            let version = "Boswell \(info?["CFBundleShortVersionString"] as? String ?? "development") (\(info?["CFBundleVersion"] as? String ?? "swift run"))"
+            let version = "Heron \(info?["CFBundleShortVersionString"] as? String ?? "development") (\(info?["CFBundleVersion"] as? String ?? "swift run"))"
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(version + "\n" + text, forType: .string)
             store.show("Copied diagnostics")
@@ -733,7 +733,7 @@ struct TemplateEditor: View {
         ("{{teams}}", "their teams"),
         ("{{organizations}}", "their organizations"),
         ("{{project}}", "the meeting's project, as a link"),
-        ("{{transcript_link}}", "a link that opens the transcript in Boswell"),
+        ("{{transcript_link}}", "a link that opens the transcript in Heron"),
         ("{{transcript}}", "the transcript, on a line of its own"),
         ("{{action_items}}", "links to to-dos sent, on a line of its own"),
         ("{{paragraph: ...}}", "a paragraph the model writes, as you describe it"),

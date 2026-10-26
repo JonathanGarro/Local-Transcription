@@ -607,7 +607,7 @@ enum API {
     }
 
     static func upload(_ files: [URL]) async throws -> UploadResult {
-        let boundary = "boswell-\(UUID().uuidString)"
+        let boundary = "heron-\(UUID().uuidString)"
         var body = Data()
         func field(_ name: String, _ value: String) {
             body.append("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n")

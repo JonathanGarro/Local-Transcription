@@ -1,4 +1,4 @@
-"""the models boswell downloads from hugging face, and the token the speaker model needs.
+"""the models heron downloads from hugging face, and the token the speaker model needs.
 
 two models: whisper, which transcribes, and pyannote's speaker detection, whose embedding
 model also matches voices to profiles. both download once, from setup or settings, with
@@ -13,11 +13,9 @@ import threading
 import time
 from pathlib import Path
 
-import keyring
-from keyring.errors import KeyringError, PasswordDeleteError
+from local_transcription import keychain
 
 # config
-SERVICE = "Boswell"
 ACCOUNT = "HF_TOKEN"
 DIARIZATION_REPO = "pyannote/speaker-diarization-community-1"
 TERMS_URL = f"https://hf.co/{DIARIZATION_REPO}"
@@ -38,10 +36,7 @@ _download = {"running": False, "repo": None, "done": 0, "total": 0, "error": Non
 
 # helpers
 def _stored():
-    try:
-        return keyring.get_password(SERVICE, ACCOUNT)
-    except KeyringError:
-        return None
+    return keychain.get(ACCOUNT)
 
 
 def _cached(model):
@@ -122,14 +117,11 @@ def save_token(value):
     value = value.strip()
     if not value.startswith("hf_") or " " in value:
         raise ValueError("that doesn't look like a Hugging Face token, which starts with hf_")
-    keyring.set_password(SERVICE, ACCOUNT, value)
+    keychain.put(ACCOUNT, value)
 
 
 def remove_token():
-    try:
-        keyring.delete_password(SERVICE, ACCOUNT)
-    except PasswordDeleteError:
-        pass
+    keychain.forget(ACCOUNT)
 
 
 def model_ready():

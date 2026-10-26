@@ -6,7 +6,7 @@ usage:
 the release is pinned by checksum (its pgp signature was checked against ffmpeg's release
 signing key when the checksum was taken). nothing gpl or nonfree is enabled, so the binaries
 are lgpl 2.1, and the app carries that license and a note of how they were built. the build
-is only what boswell needs: decoders for the audio files it takes, output to wav and raw pcm,
+is only what heron needs: decoders for the audio files it takes, output to wav and raw pcm,
 and local files only, with no network code. it takes a few minutes the first time.
 """
 
@@ -27,7 +27,7 @@ SOURCE_URL = f"https://ffmpeg.org/releases/ffmpeg-{VERSION}.tar.xz"
 SOURCE_SHA256 = "8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e"
 BUILD_DIR = BASE_DIR / "mac" / ".build" / f"ffmpeg-{VERSION}"
 XCODE_DIR = Path("/Applications/Xcode.app/Contents/Developer")
-# audio boswell may be given: mp3 and m4a from call recorders, opus in ogg from plaud, wav,
+# audio heron may be given: mp3 and m4a from call recorders, opus in ogg from plaud, wav,
 # and the other common ones, so an unusual file still opens
 DECODERS = ["aac", "aac_fixed", "aac_latm", "alac", "mp1", "mp1float", "mp2", "mp2float", "mp3", "mp3float",
             "opus", "vorbis", "flac", "ac3", "eac3", "wmav1", "wmav2", "amrnb", "amrwb", "adpcm_ima_wav", "adpcm_ms",
@@ -37,7 +37,7 @@ CONFIGURE = [
     "--enable-static", "--disable-shared", "--disable-debug", "--disable-doc", "--disable-ffplay",
     "--disable-network", "--disable-autodetect", "--disable-devices",
     "--disable-decoders", f"--enable-decoder={','.join(DECODERS)}",
-    # what boswell writes: 16 khz wav files and raw samples piped to python
+    # what heron writes: 16 khz wav files and raw samples piped to python
     "--disable-encoders", "--enable-encoder=pcm_s16le,pcm_f32le",
     "--disable-muxers", "--enable-muxer=wav,pcm_s16le,pcm_f32le",
     "--disable-protocols", "--enable-protocol=file,pipe",
@@ -84,7 +84,7 @@ def build():
             shutil.copy2(staging / "bin" / name, BUILD_DIR / "bin" / name)
         shutil.copy2(source / "COPYING.LGPLv2.1", BUILD_DIR / "COPYING.LGPLv2.1")
         (BUILD_DIR / "README.txt").write_text(
-            f"Boswell includes ffmpeg {VERSION} and ffprobe, from the FFmpeg project (https://ffmpeg.org), "
+            f"Heron includes ffmpeg {VERSION} and ffprobe, from the FFmpeg project (https://ffmpeg.org), "
             f"licensed under the GNU Lesser General Public License 2.1, in COPYING.LGPLv2.1.\n\n"
             f"They were built without changes from {SOURCE_URL}\n(sha256 {SOURCE_SHA256}) with:\n\n"
             f"./configure {' '.join(CONFIGURE)}\n")

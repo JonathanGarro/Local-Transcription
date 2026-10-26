@@ -58,11 +58,11 @@ enum Stage {
 // the library as the server last reported it, refreshed every couple of seconds
 @MainActor @Observable
 final class Store {
-    // BOSWELL_PAGE=vocabulary opens on that page, for trying one page from the command line
-    var section: Place = ProcessInfo.processInfo.environment["BOSWELL_PAGE"]
+    // HERON_PAGE=vocabulary opens on that page, for trying one page from the command line
+    var section: Place = ProcessInfo.processInfo.environment["HERON_PAGE"]
         .flatMap { page in Place.allCases.first { $0.rawValue.lowercased() == page.lowercased() } } ?? .inbox
-    // BOSWELL_MEETING=<meeting id> selects that meeting at launch, with BOSWELL_PAGE=archive say
-    var selection: String? = ProcessInfo.processInfo.environment["BOSWELL_MEETING"]
+    // HERON_MEETING=<meeting id> selects that meeting at launch, with HERON_PAGE=archive say
+    var selection: String? = ProcessInfo.processInfo.environment["HERON_MEETING"]
     var personSelection: String?
     var people: [Person] = []
     let chat = Chat()
@@ -81,7 +81,7 @@ final class Store {
     // whether the plaud cli is installed, so the plaud page can be shown
     var plaudInstalled = false
     // the setup shown when the app is first opened, or again from settings
-    var showSetup = ProcessInfo.processInfo.environment["BOSWELL_SETUP_STEP"] != nil
+    var showSetup = ProcessInfo.processInfo.environment["HERON_SETUP_STEP"] != nil
     // the to-do app chosen in settings, nil when the to-do features are off
     var todoApp: String?
     var todoAppName: String { Self.todoApps[todoApp ?? ""] ?? "your to-do app" }
@@ -269,11 +269,12 @@ final class Store {
         focusTime = seconds
     }
 
-    // boswell://meeting?id=ID&at=SECONDS, from answers and from to-dos in things. returns
+    // heron://meeting?id=ID&at=SECONDS, from answers and from to-dos in things. boswell://
+    // links, from notes and to-dos made before the app was renamed, work the same. returns
     // false for a link that is not one of these
     @discardableResult
     func open(link url: URL) -> Bool {
-        guard url.scheme == "boswell", url.host == "meeting",
+        guard ["heron", "boswell"].contains(url.scheme ?? ""), url.host == "meeting",
               let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let id = parts.queryItems?.first(where: { $0.name == "id" })?.value else { return false }
         // a link that launched the app waits for the library to load

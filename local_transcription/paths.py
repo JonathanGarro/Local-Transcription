@@ -1,9 +1,10 @@
-"""where boswell keeps your library: recordings, meeting folders, the database, settings, note
-templates and .env, in ~/Library/Application Support/Boswell, or wherever BOSWELL_HOME says
+"""where heron keeps your library: recordings, meeting folders, the database, settings, note
+templates and .env, in ~/Library/Application Support/Heron, or wherever HERON_HOME says
 (set in the environment, or in the project folder's .env for scripts). inside it, data/ holds the recordings and the rest, and outputs/ a folder per meeting.
 
 older versions kept data/ and outputs/ in the project folder. migrate() moves them over once,
 when the server starts, so the code can be updated or moved without touching the library.
+the app was called boswell before. see BOSWELL_HOME for its library folder.
 """
 
 import json
@@ -14,13 +15,23 @@ from dotenv import load_dotenv
 
 # config
 PROJECT_DIR = Path(__file__).resolve().parent.parent
-HOME = Path(os.environ.get("BOSWELL_HOME") or "~/Library/Application Support/Boswell").expanduser()
+DEFAULT_HOME = Path("~/Library/Application Support/Heron").expanduser()
+# the library's folder while the app was called boswell. the mac app renames it when it first
+# opens, once boswell has quit. until then, this reads it where it is, and never moves it, since
+# boswell may still be running from it
+BOSWELL_HOME = Path("~/Library/Application Support/Boswell").expanduser()
+# HERON_HOME moves the library. BOSWELL_HOME is the same setting from before the rename
+_chosen_home = os.environ.get("HERON_HOME") or os.environ.get("BOSWELL_HOME")
+if _chosen_home:
+    HOME = Path(_chosen_home).expanduser()
+else:
+    HOME = BOSWELL_HOME if BOSWELL_HOME.is_dir() and not DEFAULT_HOME.exists() else DEFAULT_HOME
 DATA_DIR = HOME / "data"
 OUTPUT_DIR = HOME / "outputs"
 OLD_DATA_DIR = PROJECT_DIR / "data"
 OLD_OUTPUT_DIR = PROJECT_DIR / "outputs"
 # what the server prints, written there by the mac app
-LOG_FILE = Path.home() / "Library" / "Logs" / "Boswell.log"
+LOG_FILE = Path.home() / "Library" / "Logs" / "Heron.log"
 # the app reads .env from the library folder, since it runs its own copy of the code rather
 # than this project folder. values already set, as by a script from the project's .env, stay
 ENV_FILE = HOME / ".env"
@@ -77,7 +88,7 @@ def migrate(log=print):
             os.rename(old, new)
         except OSError as err:
             # another disk would mean copying gigabytes, which isn't done behind your back
-            raise RuntimeError(f"couldn't move {old} to {new} ({err}). Move it by hand, or set BOSWELL_HOME "
+            raise RuntimeError(f"couldn't move {old} to {new} ({err}). Move it by hand, or set HERON_HOME "
                                f"in .env to a folder on the same disk") from None
         log(f"moved {old} to {new}")
     if (OLD_DATA_DIR, DATA_DIR) in moves:

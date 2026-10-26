@@ -1,4 +1,4 @@
-"""the anthropic api key, kept in the macos keychain.
+"""the anthropic api key, kept in the macos keychain, and the keychain for the other tokens.
 
 the native app's settings save it here, and the server, the web version and the scripts all
 read it from here. a key still in .env works until it is moved, and the keychain wins when
@@ -14,7 +14,9 @@ from keyring.errors import KeyringError, PasswordDeleteError
 from local_transcription import paths
 
 # config
-SERVICE = "Boswell"
+SERVICE = "Heron"
+# where values were kept while the app was called boswell, copied over when first read
+OLD_SERVICE = "Boswell"
 ACCOUNT = "ANTHROPIC_API_KEY"
 # the library's .env, which the app reads, and the project folder's, which scripts read too
 ENV_FILES = (paths.ENV_FILE, paths.PROJECT_DIR / ".env")
@@ -22,11 +24,35 @@ KEY_SHAPE = re.compile(r"^sk-ant-[A-Za-z0-9_-]{20,}$")
 
 
 # helpers
-def _stored():
+def get(account):
+    """a value from the keychain, or None. one saved under the old name is copied over, and
+    left there for boswell, which may still be open."""
     try:
-        return keyring.get_password(SERVICE, ACCOUNT)
+        value = keyring.get_password(SERVICE, account)
+        if value is None:
+            value = keyring.get_password(OLD_SERVICE, account)
+            if value is not None:
+                keyring.set_password(SERVICE, account, value)
+        return value
     except KeyringError:
         return None
+
+
+def put(account, value):
+    keyring.set_password(SERVICE, account, value)
+
+
+def forget(account):
+    """delete a value, under the old name too, so it can't come back from there."""
+    for service in (SERVICE, OLD_SERVICE):
+        try:
+            keyring.delete_password(service, account)
+        except PasswordDeleteError:
+            pass
+
+
+def _stored():
+    return get(ACCOUNT)
 
 
 # main
@@ -53,16 +79,13 @@ def save(key):
     key = key.strip()
     if not KEY_SHAPE.match(key):
         raise ValueError("that doesn't look like an Anthropic API key, which starts with sk-ant-")
-    keyring.set_password(SERVICE, ACCOUNT, key)
+    put(ACCOUNT, key)
     os.environ[ACCOUNT] = key
 
 
 def remove():
     """forget the keychain's key. a key still in .env is not touched."""
-    try:
-        keyring.delete_password(SERVICE, ACCOUNT)
-    except PasswordDeleteError:
-        pass
+    forget(ACCOUNT)
     os.environ.pop(ACCOUNT, None)
 
 

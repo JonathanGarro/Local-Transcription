@@ -67,7 +67,7 @@ def main():
     # the library moves out of the project folder the first time this version runs
     paths.migrate()
     print(f"serving on http://{HOST}:{PORT}, python {sys.version.split()[0]}, library in {paths.HOME}")
-    if pid := os.environ.get("BOSWELL_APP_PID"):
+    if pid := os.environ.get("HERON_APP_PID"):
         exit_with_app(int(pid))
     uvicorn.run(create_app(), host=HOST, port=PORT, log_level="warning")
 

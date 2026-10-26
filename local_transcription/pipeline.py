@@ -558,10 +558,10 @@ def meeting_title(meta):
 
 
 def transcript_link(out_dir):
-    """a boswell:// link that opens the meeting's transcript in the mac app, or in the iphone
+    """a heron:// link that opens the meeting's transcript in the mac app, or in the iphone
     app, from the note in obsidian. the transcript file itself is outside the vault, where
     obsidian can't open it."""
-    return f"boswell://meeting?id={quote(Path(out_dir).name, safe='')}&tab=transcript"
+    return f"heron://meeting?id={quote(Path(out_dir).name, safe='')}&tab=transcript"
 
 
 def set_frontmatter(note_path, values):

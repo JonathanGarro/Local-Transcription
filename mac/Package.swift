@@ -2,10 +2,10 @@
 import PackageDescription
 
 let package = Package(
-    name: "Boswell",
+    name: "Heron",
     platforms: [.macOS(.v26)],
     targets: [
-        .executableTarget(name: "Boswell", path: "Sources/Boswell"),
+        .executableTarget(name: "Heron", path: "Sources/Heron"),
     ],
     swiftLanguageModes: [.v5]
 )

@@ -104,7 +104,7 @@ Recordings, meeting folders, the database, settings and note templates live in `
 `uv run make_app.py --release` builds a copy to share in `dist/`, leaving the app in `/Applications` alone. It's signed with your Developer ID certificate and the hardened runtime, with the one entitlement Wemmick needs (sending Apple Events, to add to-dos to Things and Reminders). Apple notarizes it, as the app and then as `dist/Wemmick.dmg`, and each is stapled, so it opens on any Mac with only the usual downloaded-from-the-internet question. The Python environment and models it downloads on first launch aren't part of what Apple checks, since they aren't marked as downloaded. It needs, once:
 
 - a **Developer ID Application** certificate, added in Xcode, Settings, Accounts, Manage Certificates
-- the notary credentials saved in the Keychain: `xcrun notarytool store-credentials boswell --apple-id <your Apple ID> --team-id <team ID>`, with an app-specific password from account.apple.com
+- the notary credentials saved in the Keychain: `xcrun notarytool store-credentials wemmick --apple-id <your Apple ID> --team-id <team ID>`, with an app-specific password from account.apple.com
 
 It checks for both before building. A release doesn't copy your `.env` anywhere.
 

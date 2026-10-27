@@ -9,7 +9,7 @@ a release is signed with your developer id certificate and the hardened runtime,
 by apple, and stapled, as an app and then as a dmg, so it opens on any mac without a
 warning. it needs a "Developer ID Application" certificate (xcode, settings, accounts, manage
 certificates) and the notary credentials saved once with:
-    xcrun notarytool store-credentials boswell --apple-id <email> --team-id <team id>
+    xcrun notarytool store-credentials wemmick --apple-id <email> --team-id <team id>
 it leaves the app in /Applications alone.
 
 it needs xcode, whose tools have swiftui's macros. the app goes in /Applications/Wemmick.app,
@@ -51,8 +51,8 @@ MAC_DIR = BASE_DIR / "mac"
 # pyproject.toml and uv.lock are what the python environment is installed from
 SERVER_FILES = ["app.py", "local_transcription", "pyproject.toml", "uv.lock", ".python-version"]
 DIST_DIR = BASE_DIR / "dist"
-# the name the notary credentials are saved under in the keychain, from before the rename
-NOTARY_PROFILE = "boswell"
+# the name the notary credentials are saved under in the keychain
+NOTARY_PROFILE = "wemmick"
 # how many half hours to wait for apple's verdict
 NOTARY_WAITS = 6
 # the hardened runtime blocks sending apple events, which add to-dos to things and reminders,

@@ -164,9 +164,10 @@ def _field(output, name):
                 None)
 
 
-def notarize(path):
-    """send a zip or dmg to apple, wait for its verdict, and staple it. usually a few minutes,
-    though a new developer id's first submissions can take an hour or more."""
+def notarize(path, staple=None):
+    """send a zip or dmg to apple, wait for its verdict, and staple it, or for a zip, which
+    can't be stapled, the app it was made from. usually a few minutes, though a new
+    developer id's first submissions can take an hour or more."""
     print(f"notarizing {path.name}")
     submitted = _notary("submit", str(path))
     submission = _field(submitted.stdout, "id")
@@ -185,16 +186,15 @@ def notarize(path):
     if status != "Accepted":
         log = _notary("log", submission).stdout
         raise SystemExit(f"apple's verdict on {path.name} is {status or 'unknown'}:\n{log}")
-    subprocess.run(["xcrun", "stapler", "staple", str(path)], env=xcode_env(), check=True, capture_output=True)
+    subprocess.run(["xcrun", "stapler", "staple", str(staple or path)], env=xcode_env(), check=True,
+                   capture_output=True)
 
 
 def make_release(app_dir, identity):
     """notarize the app, then put it in a signed, notarized dmg. returns the dmg."""
     archive = DIST_DIR / f"{APP_NAME}.zip"
     subprocess.run(["ditto", "-c", "-k", "--keepParent", str(app_dir), str(archive)], check=True)
-    notarize(archive)
-    # the ticket went to the zip's copy, so the app itself is stapled from apple's records
-    subprocess.run(["xcrun", "stapler", "staple", str(app_dir)], env=xcode_env(), check=True, capture_output=True)
+    notarize(archive, staple=app_dir)
     archive.unlink()
     # unversioned, so the site can link to releases/latest/download/Wemmick.dmg
     dmg = DIST_DIR / f"{APP_NAME}.dmg"

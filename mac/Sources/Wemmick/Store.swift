@@ -66,6 +66,7 @@ final class Store {
     var personSelection: String?
     var people: [Person] = []
     let chat = Chat()
+    let updates = Updates()
     // a moment to show in the transcript of the meeting being opened
     var focusTime: Double?
     // a tab for the open meeting to switch to, such as the transcript from its note
@@ -161,6 +162,7 @@ final class Store {
         }
         if let settings: SettingsState = try? await API.get(["api", "settings"]) { apply(settings) }
         await recoverRecordings()
+        Task { await updates.checkIfDue() }
         polling = Task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(2))

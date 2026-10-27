@@ -25,6 +25,7 @@ struct SettingsView: View {
     @AppStorage(Prefs.plaud) private var plaudEnabled = true
     @AppStorage(Prefs.menuBar) private var showInMenuBar = true
     @AppStorage(Prefs.offerToRecord) private var offerToRecord = true
+    @AppStorage(Prefs.checkUpdates) private var checkUpdates = true
     @State private var plaud: PlaudAccount?
 
     var body: some View {
@@ -296,6 +297,25 @@ struct SettingsView: View {
                         .help("Go through setup again, starting from what's set now")
                     Button("Reset Setup...", role: .destructive) { confirmReset = true }
                         .help("Forget what setup asked for, and show it whenever Wemmick opens until it's finished")
+                }
+                if let current = store.updates.current {
+                    Toggle(isOn: $checkUpdates) {
+                        Text("Check for updates")
+                        Text("Asks GitHub once a day whether there's a newer release. Nothing about you or your meetings is sent.")
+                    }
+                    LabeledContent {
+                        Button("Check Now") { Task { await store.updates.check() } }
+                            .disabled(store.updates.checking)
+                    } label: {
+                        Text("Version \(current)")
+                        if let release = store.updates.available {
+                            Text("Wemmick \(release.version) is out. Download it from the link under the sidebar.")
+                        } else if let error = store.updates.lastError {
+                            Text(error)
+                        } else {
+                            Text("Up to date as of the last check")
+                        }
+                    }
                 }
                 LabeledContent {
                     Button(s.libraryDir) { NSWorkspace.shared.open(URL(fileURLWithPath: s.libraryDir)) }

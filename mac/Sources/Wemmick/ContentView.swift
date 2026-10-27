@@ -142,8 +142,29 @@ struct Sidebar: View {
                 if !store.jobs.isEmpty {
                     JobsView()
                 }
+                if let release = store.updates.available {
+                    UpdateView(release: release)
+                }
             }
         }
+    }
+}
+
+// a newer release on github, under the sidebar, with a link to download it
+struct UpdateView: View {
+    let release: Updates.Release
+
+    var body: some View {
+        HStack {
+            Label("Wemmick \(release.version) is out", systemImage: "arrow.down.circle")
+                .font(.callout)
+                .lineLimit(1)
+            Spacer()
+            Button("Download") { NSWorkspace.shared.open(release.htmlUrl) }
+                .controlSize(.small)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 }
 

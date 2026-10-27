@@ -625,6 +625,8 @@ enum Prefs {
     static let menuBar = "showInMenuBar"
     // a notification offering to record when a call app starts using the mic
     static let offerToRecord = "offerToRecordCalls"
+    // asking github once a day whether there's a newer release
+    static let checkUpdates = "checkForUpdates"
 }
 
 enum NoteMode: String {

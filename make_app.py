@@ -196,7 +196,8 @@ def make_release(app_dir, identity):
     # the ticket went to the zip's copy, so the app itself is stapled from apple's records
     subprocess.run(["xcrun", "stapler", "staple", str(app_dir)], env=xcode_env(), check=True, capture_output=True)
     archive.unlink()
-    dmg = DIST_DIR / f"{APP_NAME}-{version()[0]}.dmg"
+    # unversioned, so the site can link to releases/latest/download/Wemmick.dmg
+    dmg = DIST_DIR / f"{APP_NAME}.dmg"
     dmg.unlink(missing_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
         subprocess.run(["ditto", str(app_dir), str(Path(tmp) / app_dir.name)], check=True)

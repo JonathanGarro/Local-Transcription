@@ -22,7 +22,7 @@ On a 30 minute meeting the whole run takes about 2 to 3 minutes on an M3 Max. ml
 
 ## Setup
 
-From a release: open `Wemmick-<version>.dmg`, drag Wemmick to Applications, and open it. The first launch downloads Python and its packages (about 1.5 GB), then setup takes over. To build it yourself instead, with [uv](https://docs.astral.sh/uv/) and Xcode installed:
+From a release: open `Wemmick.dmg`, drag Wemmick to Applications, and open it. The first launch downloads Python and its packages (about 1.5 GB), then setup takes over. To build it yourself instead, with [uv](https://docs.astral.sh/uv/) and Xcode installed:
 
 ```
 uv sync
@@ -101,7 +101,7 @@ Recordings, meeting folders, the database, settings and note templates live in `
 
 ## Releasing
 
-`uv run make_app.py --release` builds a copy to share in `dist/`, leaving the app in `/Applications` alone. It's signed with your Developer ID certificate and the hardened runtime, with the one entitlement Wemmick needs (sending Apple Events, to add to-dos to Things and Reminders). Apple notarizes it, as the app and then as `dist/Wemmick-<version>.dmg`, and each is stapled, so it opens on any Mac with only the usual downloaded-from-the-internet question. The Python environment and models it downloads on first launch aren't part of what Apple checks, since they aren't marked as downloaded. It needs, once:
+`uv run make_app.py --release` builds a copy to share in `dist/`, leaving the app in `/Applications` alone. It's signed with your Developer ID certificate and the hardened runtime, with the one entitlement Wemmick needs (sending Apple Events, to add to-dos to Things and Reminders). Apple notarizes it, as the app and then as `dist/Wemmick.dmg`, and each is stapled, so it opens on any Mac with only the usual downloaded-from-the-internet question. The Python environment and models it downloads on first launch aren't part of what Apple checks, since they aren't marked as downloaded. It needs, once:
 
 - a **Developer ID Application** certificate, added in Xcode, Settings, Accounts, Manage Certificates
 - the notary credentials saved in the Keychain: `xcrun notarytool store-credentials boswell --apple-id <your Apple ID> --team-id <team ID>`, with an app-specific password from account.apple.com
@@ -272,6 +272,7 @@ Recordings, transcripts, voice profiles and notes stay on the Mac, in the librar
 - **Todoist**: the to-dos you choose to add, with their notes, and reading your project list. Things and Reminders run on the Mac (and sync however you've set them up).
 - **Hugging Face**: downloading Whisper and the speaker detection model, once, with your token for the speaker model.
 - **Python packages**: downloaded by uv on the first launch, and again only when an update changes them.
+- **GitHub**: once a day, whether there's a newer release of the app. Nothing is sent but the request, and Settings, under About, turns it off.
 - **Plaud**: your recording list and the audio you import, through the Plaud CLI, if you use it.
 
 Deleting a person removes their voice entries from the library's database (`data/library.db` in the library folder). Each meeting's `speaker_embeddings.npz` in `outputs/` also holds that meeting's voices, so delete the meeting folder too for a complete removal. To remove Wemmick entirely, delete the app, `~/Library/Application Support/Wemmick`, `~/Library/Caches/Wemmick` and `~/Library/Logs/Wemmick.log`, uv's cache in `~/.cache/uv` if nothing else uses it, and the Wemmick items in Keychain Access.

@@ -162,7 +162,6 @@ final class Store {
         }
         if let settings: SettingsState = try? await API.get(["api", "settings"]) { apply(settings) }
         await recoverRecordings()
-        Task { await updates.checkIfDue() }
         polling = Task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(2))

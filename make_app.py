@@ -10,7 +10,12 @@ by apple, and stapled, as an app and then as a dmg, so it opens on any mac witho
 warning. it needs a "Developer ID Application" certificate (xcode, settings, accounts, manage
 certificates) and the notary credentials saved once with:
     xcrun notarytool store-credentials wemmick --apple-id <email> --team-id <team id>
-it leaves the app in /Applications alone.
+it leaves the app in /Applications alone. it also writes dist/appcast.xml, the feed sparkle in the
+app reads, with the dmg signed by the sparkle key in the keychain, made once with:
+    mac/.build/artifacts/sparkle/Sparkle/bin/generate_keys --account wemmick
+keep a copy of that key (generate_keys --account wemmick -x <file>), since a lost one means the
+apps out there can't take another update. release both files, tagged with pyproject.toml's version:
+    gh release create v<version> dist/Wemmick.dmg dist/appcast.xml
 
 it needs xcode, whose tools have swiftui's macros. the app goes in /Applications/Wemmick.app,
 or is rebuilt where it is if you moved it to ~/Applications. any square png works, 1024x1024
@@ -51,8 +56,15 @@ MAC_DIR = BASE_DIR / "mac"
 # pyproject.toml and uv.lock are what the python environment is installed from
 SERVER_FILES = ["app.py", "local_transcription", "pyproject.toml", "uv.lock", ".python-version"]
 DIST_DIR = BASE_DIR / "dist"
-# the name the notary credentials are saved under in the keychain
+# the name the notary credentials are saved under in the keychain, and the sparkle key too
 NOTARY_PROFILE = "wemmick"
+SPARKLE_ACCOUNT = "wemmick"
+# the app installs only updates signed with the private half of this, which is in the keychain
+SPARKLE_PUBLIC_KEY = "oP8JDWXFPAvYIe3S8gxUhe3W1pXeneUYtvVCAR5ngkE="
+SPARKLE_BIN = MAC_DIR / ".build" / "artifacts" / "sparkle" / "Sparkle" / "bin"
+RELEASES = "https://github.com/JonathanGarro/wemmick/releases"
+# attached to every release, so this always finds the newest
+FEED_URL = f"{RELEASES}/latest/download/appcast.xml"
 # how many half hours to wait for apple's verdict
 NOTARY_WAITS = 6
 # the hardened runtime blocks sending apple events, which add to-dos to things and reminders,
@@ -143,7 +155,7 @@ def check_notary():
                          f"{NOTARY_PROFILE} --apple-id <email> --team-id <team id>")
 
 
-def sign(path, identity, release, entitlements=None):
+def sign(path, identity, release, entitlements=None, keep_entitlements=False):
     """sign one piece of the app. a release adds the hardened runtime and a secure timestamp,
     which notarization requires."""
     cmd = ["codesign", "--force", "--sign", identity]
@@ -151,6 +163,8 @@ def sign(path, identity, release, entitlements=None):
         cmd += ["--options", "runtime", "--timestamp"]
     if entitlements:
         cmd += ["--entitlements", str(entitlements)]
+    if keep_entitlements:
+        cmd += ["--preserve-metadata=entitlements"]
     subprocess.run(cmd + [str(path)], check=True, capture_output=True)
 
 
@@ -210,6 +224,44 @@ def make_release(app_dir, identity):
     return dmg
 
 
+def sign_sparkle(framework, identity, release):
+    """sign sparkle's helpers inside out, as its docs lay out for a developer id app."""
+    version = framework / "Versions" / "B"
+    sign(version / "XPCServices" / "Installer.xpc", identity, release)
+    sign(version / "XPCServices" / "Downloader.xpc", identity, release, keep_entitlements=True)
+    sign(version / "Autoupdate", identity, release)
+    sign(version / "Updater.app", identity, release)
+    sign(framework, identity, release)
+
+
+def write_appcast(dmg):
+    """the feed sparkle reads, naming the dmg on this version's release and its signature."""
+    project, build = version()
+    signed = subprocess.run([str(SPARKLE_BIN / "sign_update"), "--account", SPARKLE_ACCOUNT, str(dmg)],
+                            capture_output=True, text=True)
+    if signed.returncode != 0:
+        raise SystemExit(f"couldn't sign {dmg.name} for sparkle:\n{signed.stderr}")
+    published = time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime())
+    feed = DIST_DIR / "appcast.xml"
+    feed.write_text(f"""<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>{APP_NAME}</title>
+    <item>
+      <title>{APP_NAME} {project}</title>
+      <pubDate>{published}</pubDate>
+      <sparkle:version>{build}</sparkle:version>
+      <sparkle:shortVersionString>{project}</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:fullReleaseNotesLink>{RELEASES}/tag/v{project}</sparkle:fullReleaseNotesLink>
+      <enclosure url="{RELEASES}/download/v{project}/{dmg.name}" {signed.stdout.strip()} type="application/octet-stream"/>
+    </item>
+  </channel>
+</rss>
+""")
+    return feed
+
+
 def signing_identity():
     """the apple development certificate xcode made, if there is one. macos remembers
     permissions like documents folder access by the app's signature, and an ad hoc one
@@ -236,7 +288,7 @@ def copy_env_file():
 
 
 def build_native():
-    """compile the swiftui app in mac/ and return the binary."""
+    """compile the swiftui app in mac/ and return the binary, with Sparkle.framework beside it."""
     env = xcode_env()
     subprocess.run(["swift", "build", "-c", "release"], cwd=MAC_DIR, env=env, check=True)
     path = subprocess.run(["swift", "build", "-c", "release", "--show-bin-path"], cwd=MAC_DIR, env=env,
@@ -298,6 +350,9 @@ def main():
         else:
             shutil.copy2(source, server / name)
     shutil.copy2(binary, contents / "MacOS" / APP_NAME)
+    # ditto keeps the framework's symlinks
+    sparkle = contents / "Frameworks" / "Sparkle.framework"
+    subprocess.run(["ditto", str(binary.parent / "Sparkle.framework"), str(sparkle)], check=True)
     # the uv the app installs python with, the one this project is built with
     shutil.copy2(Path(uv).resolve(), contents / "MacOS" / "uv")
     # ffmpeg reads the recordings. the lgpl asks for its license and how it was built to go along
@@ -325,19 +380,25 @@ def main():
                        "NSHighResolutionCapable": True, "NSAppleEventsUsageDescription": APPLE_EVENTS_USAGE,
                        "NSMicrophoneUsageDescription": MICROPHONE_USAGE, "NSAudioCaptureUsageDescription": AUDIO_CAPTURE_USAGE,
                        "CFBundleURLTypes": [{"CFBundleURLName": f"{BUNDLE_ID}.links",
-                                             "CFBundleURLSchemes": URL_SCHEMES}]}, f)
+                                             "CFBundleURLSchemes": URL_SCHEMES}],
+                       # checks once a day without asking first, and installs updates on quit
+                       "SUFeedURL": FEED_URL, "SUPublicEDKey": SPARKLE_PUBLIC_KEY,
+                       "SUEnableAutomaticChecks": True, "SUAutomaticallyUpdate": True}, f)
     if identity == "-":
         print("no apple development certificate, so macos will ask for folder access again after each rebuild")
     # the helpers are signed first, since the app's signature covers the code inside it
     for helper in ["uv", *build_ffmpeg.BINARIES]:
         sign(contents / "MacOS" / helper, identity, args.release)
+    sign_sparkle(sparkle, identity, args.release)
     with tempfile.NamedTemporaryFile(suffix=".plist") as entitlements:
         plistlib.dump(ENTITLEMENTS, entitlements)
         entitlements.flush()
         sign(app_dir, identity, args.release, entitlements.name)
     if args.release:
         dmg = make_release(app_dir, identity)
-        print(f"built {dmg}, notarized and ready to share")
+        feed = write_appcast(dmg)
+        print(f"built {dmg}, notarized and ready to share, and {feed}. Release them with:")
+        print(f"  gh release create v{version()[0]} {dmg} {feed}")
         return
     # tell finder and the dock to pick up the new icon, and launch services the link type
     subprocess.run(["touch", str(app_dir)], check=False)

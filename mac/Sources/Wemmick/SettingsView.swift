@@ -25,7 +25,6 @@ struct SettingsView: View {
     @AppStorage(Prefs.plaud) private var plaudEnabled = true
     @AppStorage(Prefs.menuBar) private var showInMenuBar = true
     @AppStorage(Prefs.offerToRecord) private var offerToRecord = true
-    @AppStorage(Prefs.checkUpdates) private var checkUpdates = true
     @State private var plaud: PlaudAccount?
 
     var body: some View {
@@ -299,21 +298,21 @@ struct SettingsView: View {
                         .help("Forget what setup asked for, and show it whenever Wemmick opens until it's finished")
                 }
                 if let current = store.updates.current {
-                    Toggle(isOn: $checkUpdates) {
+                    Toggle(isOn: Binding(get: { store.updates.automaticChecks }, set: { store.updates.setAutomaticChecks($0) })) {
                         Text("Check for updates")
                         Text("Asks GitHub once a day whether there's a newer release. Nothing about you or your meetings is sent.")
                     }
+                    Toggle(isOn: Binding(get: { store.updates.automaticInstalls }, set: { store.updates.setAutomaticInstalls($0) })) {
+                        Text("Install updates automatically")
+                        Text("Downloads them in the background and installs them when you quit Wemmick.")
+                    }
+                    .disabled(!store.updates.automaticChecks)
                     LabeledContent {
-                        Button("Check Now") { Task { await store.updates.check() } }
-                            .disabled(store.updates.checking)
+                        Button("Check Now") { store.updates.check() }
                     } label: {
                         Text("Version \(current)")
-                        if let release = store.updates.available {
-                            Text("Wemmick \(release.version) is out. Download it from the link under the sidebar.")
-                        } else if let error = store.updates.lastError {
-                            Text(error)
-                        } else {
-                            Text("Up to date as of the last check")
+                        if let version = store.updates.available {
+                            Text("Wemmick \(version) is out. Update from the link under the sidebar.")
                         }
                     }
                 }

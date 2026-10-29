@@ -142,25 +142,26 @@ struct Sidebar: View {
                 if !store.jobs.isEmpty {
                     JobsView()
                 }
-                if let release = store.updates.available {
-                    UpdateView(release: release)
+                if let version = store.updates.available {
+                    UpdateView(version: version)
                 }
             }
         }
     }
 }
 
-// a newer release on github, under the sidebar, with a link to download it
+// a newer release, under the sidebar, which opens sparkle's window to install it
 struct UpdateView: View {
-    let release: Updates.Release
+    @Environment(Store.self) private var store
+    let version: String
 
     var body: some View {
         HStack {
-            Label("Wemmick \(release.version) is out", systemImage: "arrow.down.circle")
+            Label("Wemmick \(version) is out", systemImage: "arrow.down.circle")
                 .font(.callout)
                 .lineLimit(1)
             Spacer()
-            Button("Download") { NSWorkspace.shared.open(release.download) }
+            Button("Update") { store.updates.check() }
                 .controlSize(.small)
         }
         .padding(.horizontal, 12)

@@ -48,6 +48,10 @@ struct WemmickApp: App {
         .menuBarExtraStyle(.window)
         .commands {
             // the settings page lives in the sidebar
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates...") { store.updates.check() }
+                    .disabled(store.updates.current == nil)
+            }
             CommandGroup(replacing: .appSettings) {
                 Button("Settings...") { store.section = .settings }
                     .keyboardShortcut(",")

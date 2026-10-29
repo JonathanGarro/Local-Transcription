@@ -7,11 +7,25 @@ final class Updates {
     struct Release: Decodable {
         let tagName: String
         let htmlUrl: URL
+        let assets: [Asset]
         var version: String { tagName.hasPrefix("v") ? String(tagName.dropFirst()) : tagName }
+        // the dmg itself, or the release's page if it has none
+        var download: URL { assets.first { $0.name == "Wemmick.dmg" }?.browserDownloadUrl ?? htmlUrl }
 
         enum CodingKeys: String, CodingKey {
             case tagName = "tag_name"
             case htmlUrl = "html_url"
+            case assets
+        }
+    }
+
+    struct Asset: Decodable {
+        let name: String
+        let browserDownloadUrl: URL
+
+        enum CodingKeys: String, CodingKey {
+            case name
+            case browserDownloadUrl = "browser_download_url"
         }
     }
 

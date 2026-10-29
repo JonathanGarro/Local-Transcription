@@ -160,7 +160,7 @@ struct UpdateView: View {
                 .font(.callout)
                 .lineLimit(1)
             Spacer()
-            Button("Download") { NSWorkspace.shared.open(release.htmlUrl) }
+            Button("Download") { NSWorkspace.shared.open(release.download) }
                 .controlSize(.small)
         }
         .padding(.horizontal, 12)

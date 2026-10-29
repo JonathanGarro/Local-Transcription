@@ -362,6 +362,9 @@ struct NoteView: View {
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        // a long title would otherwise ask for a wider pane than the window has room for, and
+        // the to-dos would run off the right. this way they wrap to the pane
+        .frame(minWidth: 0, idealWidth: 0, maxWidth: .infinity)
     }
 
     // writing a note

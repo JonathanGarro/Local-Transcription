@@ -6,6 +6,7 @@ from scipy.optimize import linear_sum_assignment
 
 # config
 THRESHOLD = 0.6
+COLUMNS = ["speaker", "name", "status", "score", "best_name", "best_score", "second_name", "second_score"]
 
 
 # main
@@ -15,12 +16,15 @@ def match_speakers(speaker_vectors, profiles, threshold=THRESHOLD):
     speakers = sorted(speaker_vectors)
     names = sorted(profiles)
     rows = []
+    # no one on the call, as when the owner records only themselves, leaves no speakers
+    if not speakers:
+        return pd.DataFrame(columns=COLUMNS)
     if not names:
         for spk in speakers:
             rows.append({"speaker": spk, "name": None, "status": "unknown", "score": np.nan,
                          "best_name": None, "best_score": np.nan,
                          "second_name": None, "second_score": np.nan})
-        return pd.DataFrame(rows)
+        return pd.DataFrame(rows, columns=COLUMNS)
 
     sims = np.array([[float(speaker_vectors[s] @ profiles[n][0]) for n in names] for s in speakers])
     # one-to-one assignment so two speakers cannot both become the same person
@@ -43,4 +47,4 @@ def match_speakers(speaker_vectors, profiles, threshold=THRESHOLD):
             "second_name": names[second] if second is not None else None,
             "second_score": round(sims[i, second], 3) if second is not None else np.nan,
         })
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows, columns=COLUMNS)

@@ -116,6 +116,8 @@ private final class RecordingSession: @unchecked Sendable {
     private let queue = DispatchQueue(label: "wemmick.recorder", qos: .userInteractive)
     private let control = DispatchQueue(label: "wemmick.recorder.control")
     private let peaks = OSAllocatedUnfairLock(initialState: (mic: Float(0), call: Float(0)))
+    // the loudest each side got over the whole recording, for the log
+    private let loudest = OSAllocatedUnfairLock(initialState: (mic: Float(0), call: Float(0)))
     private let mic = OSAllocatedUnfairLock(initialState: "")
 
     var micName: String { mic.withLock { $0 } }
@@ -140,6 +142,7 @@ private final class RecordingSession: @unchecked Sendable {
             watchInput()
             watchProcesses()
         } catch {
+            Server.log("recorder couldn't start: \(error.localizedDescription)")
             stop()
             throw error
         }
@@ -234,6 +237,8 @@ private final class RecordingSession: @unchecked Sendable {
             self?.write(input, format: format, micChannels: micChannels, micIndex: micIndex)
         }, "Couldn't start the recorder")
         try check(AudioDeviceStart(deviceID, procID), "Couldn't start the recorder")
+        Server.log("recording from \(Self.name(of: micDevice)), \(micChannels) channel\(micChannels == 1 ? "" : "s") at \(Int(rate)) Hz, "
+                   + "mic on the \(micOnRight ? "right" : "left")\(converter == nil ? "" : ", converted to \(Int(fileFormat?.sampleRate ?? 0)) Hz")")
     }
 
     private func disconnect() {
@@ -252,10 +257,14 @@ private final class RecordingSession: @unchecked Sendable {
     private func watchInput() {
         let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
             guard let self, let device = try? Self.defaultInputDevice() else { return }
+            Server.log("the Mac's input changed to \(Self.name(of: device)) during the recording")
             self.disconnect()
-            if (try? self.connect(to: device)) == nil {
+            do {
+                try self.connect(to: device)
+            } catch {
+                Server.log("couldn't switch the recording to it, trying again: \(error.localizedDescription)")
                 self.disconnect()
-                try? self.connect(to: device)
+                do { try self.connect(to: device) } catch { Server.log("couldn't switch again: \(error.localizedDescription)") }
             }
         }
         var address = Self.defaultInputAddress
@@ -297,6 +306,7 @@ private final class RecordingSession: @unchecked Sendable {
         }
         let latest = (mic: micPeak, call: callPeak)
         peaks.withLock { $0 = (max($0.mic, latest.mic), max($0.call, latest.call)) }
+        loudest.withLock { $0 = (max($0.mic, latest.mic), max($0.call, latest.call)) }
         guard let converter, let fileFormat else {
             try? output.write(from: pcm)
             return
@@ -340,7 +350,16 @@ private final class RecordingSession: @unchecked Sendable {
             tapID = AudioObjectID(kAudioObjectUnknown)
         }
         // closing the file finishes its header
-        queue.sync { output = nil }
+        let seconds = queue.sync {
+            defer { output = nil }
+            return output.map { Double($0.length) / $0.processingFormat.sampleRate }
+        }
+        if let seconds {
+            // a side that never got above about -100 db heard nothing at all
+            let (mic, call) = loudest.withLock { $0 }
+            func db(_ peak: Float) -> String { String(format: "%.0f dB", 20 * log10(max(peak, 1e-6))) }
+            Server.log("recording stopped after \(Int(seconds)) s, loudest on the mic \(db(mic)), on the call \(db(call))")
+        }
     }
 
     private func check(_ status: OSStatus, _ message: String) throws {

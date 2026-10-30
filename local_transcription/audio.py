@@ -7,8 +7,9 @@ import numpy as np
 
 # config
 SAMPLE_RATE = 16000
-# a channel this many db quieter than the loudest one is treated as empty
-DEAD_CHANNEL_DB = 20.0
+# a channel this many db quieter than the loudest one is treated as empty. 40 db leaves out
+# silence and hiss but keeps a quiet mic, such as airpods', or someone who mostly listened
+DEAD_CHANNEL_DB = 40.0
 # channels whose waveforms correlate less than this carry different sources, such as
 # audio hijack writing the mic on one side and the zoom app on the other
 SPLIT_MAX_CORR = 0.2
@@ -111,14 +112,20 @@ def clip(src, start, end, channel=None):
     return _run(cmd + ["-ac", "1", "-ar", str(SAMPLE_RATE), "-c:a", "pcm_s16le", "-f", "wav", "-"])
 
 
-def energy_regions(wav, threshold_db=VAD_THRESHOLD_DB):
-    """speech regions on a clean single-speaker channel, found by frame energy."""
+def frame_energy(wav):
+    """the level of each VAD_FRAME_S frame in db, and the duration in seconds."""
     import soundfile as sf
 
     samples, rate = sf.read(str(wav), dtype="float32")
     frame = int(VAD_FRAME_S * rate)
     n = len(samples) // frame
     energy = 10 * np.log10((samples[:n * frame].reshape(n, frame).astype(np.float64) ** 2).mean(axis=1) + 1e-12)
+    return energy, len(samples) / rate
+
+
+def energy_regions(wav, threshold_db=VAD_THRESHOLD_DB):
+    """speech regions on a clean single-speaker channel, found by frame energy."""
+    energy, duration = frame_energy(wav)
     active = np.flatnonzero(energy > threshold_db)
     regions = []
     for i in active:
@@ -127,6 +134,5 @@ def energy_regions(wav, threshold_db=VAD_THRESHOLD_DB):
             regions[-1][1] = end
         else:
             regions.append([start, end])
-    duration = len(samples) / rate
     return [(max(0.0, s - VAD_PAD_S), min(duration, e + VAD_PAD_S))
             for s, e in regions if e - s >= VAD_MIN_SPEECH_S]

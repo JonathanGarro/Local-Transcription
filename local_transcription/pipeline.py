@@ -258,8 +258,9 @@ def run(source, threshold=match.THRESHOLD, num_speakers=None, min_speakers=diari
     # the downmix is kept for playback and is what gets processed outside split mode
     info = audio.normalize(source, wav, info)
     if use_split:
+        levels = ", ".join(f"ch{i} {db:.1f} dB" for i, db in enumerate(info["levels"]))
         _log(progress, f"  {info['duration'] / 60:.1f} min, split mode: ch{mic_channel} is {owner}, "
-                       f"ch{1 - mic_channel} is the call (correlation {info['correlation']})")
+                       f"ch{1 - mic_channel} is the call (correlation {info['correlation']}, {levels})")
         mic_wav, main_wav = out_dir / "mic_16k.wav", out_dir / "remote_16k.wav"
         audio.extract_channel(source, mic_wav, mic_channel)
         audio.extract_channel(source, main_wav, 1 - mic_channel)
@@ -280,6 +281,11 @@ def run(source, threshold=match.THRESHOLD, num_speakers=None, min_speakers=diari
     turns, exclusive, _ = diarize.diarize(main_wav, min_speakers, max_speakers, num_speakers)
 
     mic_regions = audio.energy_regions(mic_wav) if use_split else []
+    if use_split:
+        energy, _ = audio.frame_energy(mic_wav)
+        _log(progress, f"  {len(mic_regions)} stretches of speech on {owner}'s mic, "
+                       f"{sum(e - s for s, e in mic_regions) / 60:.1f} min, loudest {energy.max():.0f} dB "
+                       f"(speech counts above {audio.VAD_THRESHOLD_DB:.0f} dB)")
     if transcript is not None:
         # only who spoke when is needed, the words come with the transcript
         detected = language

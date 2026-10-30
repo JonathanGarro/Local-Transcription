@@ -173,6 +173,8 @@ class Jobs:
             share = _step_share(message.strip())
             if message.startswith("  "):
                 self._update(job, detail=message.strip())
+                # the details, such as each channel's level, go in the log for working out what went wrong
+                print(f"  job {job['job_id']}: {message.strip()}")
             elif share is not None:
                 self._update(job, step=message, progress=share)
 

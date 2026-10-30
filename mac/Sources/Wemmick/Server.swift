@@ -39,8 +39,24 @@ final class Server {
         }
     }
 
-    var logFile: URL {
-        FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Logs/Wemmick.log")
+    static let logURL = FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Logs/Wemmick.log")
+    var logFile: URL { Self.logURL }
+
+    private static let stamp: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
+
+    // a line from the app itself in the log, stamped like the server's, for working out what
+    // went wrong on someone else's mac
+    static func log(_ message: String) {
+        let fd = open(logURL.path, O_WRONLY | O_APPEND | O_CREAT, 0o644)
+        guard fd >= 0 else { return }
+        defer { close(fd) }
+        let line = Array("\(stamp.string(from: Date())) app: \(message)\n".utf8)
+        _ = line.withUnsafeBytes { write(fd, $0.baseAddress, $0.count) }
     }
 
     func isUp() async -> Bool {
@@ -68,8 +84,10 @@ final class Server {
         if !FileManager.default.fileExists(atPath: logFile.path) {
             FileManager.default.createFile(atPath: logFile.path, contents: nil)
         }
-        let log = try FileHandle(forWritingTo: logFile)
-        log.seekToEndOfFile()
+        // appending, so the server's lines and the app's own don't write over each other
+        let fd = open(logFile.path, O_WRONLY | O_APPEND)
+        guard fd >= 0 else { throw ServerError("Couldn't open \(logFile.path)") }
+        let log = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
 
         let p = Process()
         p.executableURL = python

@@ -1,6 +1,6 @@
 [project]
 name = "local-transcription"
-version = "0.1.2"
+version = "0.1.3"
 description = "Offline meeting transcription with speaker diarization and voice profile matching"
 readme = "README.md"
 license = "MIT"

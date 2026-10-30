@@ -11,6 +11,7 @@ two backends: "local" runs an mlx model on this mac and nothing leaves the machi
 "claude" sends the transcript text (never audio or voice profiles) to the anthropic api.
 """
 
+import difflib
 import json
 import os
 import re
@@ -23,6 +24,9 @@ BACKENDS = ["local", "claude"]
 DEFAULT_LOCAL_MODEL = "mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit"
 MAX_OUTPUT_TOKENS = 4000
 LOCAL_TEMPERATURE = 0.2
+# how alike a transcript word and a word of a vocabulary term are for the term to go in the
+# spelling list, so "gal prep" brings in GAL prep but a meeting that never comes near it doesn't
+TERM_MATCH = 0.75
 INSTRUCTIONS = """You write meeting notes from a speaker-labeled transcript. Reply with a single JSON object and nothing else. It has these keys:
 
 {keys}
@@ -30,8 +34,8 @@ INSTRUCTIONS = """You write meeting notes from a speaker-labeled transcript. Rep
 Rules:
 - Plain text only. No bold, italics, headings, or bullet characters inside the strings.
 - Never use em dashes. Use commas, periods, or parentheses instead.
-- Do not invent facts that are not in the transcript.
-- The transcript comes from speech recognition. Fix obvious mis-hearings of names and terms, using the spelling list when one is given.
+- Do not invent facts that are not in the transcript. Write only what was said. A short transcript gets a short note, and a part with nothing in the transcript for it stays empty.
+- The transcript comes from speech recognition. Fix obvious mis-hearings of names and terms, using the spelling list when one is given. The list only shows how words are spelled. Never mention a name or term from it that the transcript doesn't bring up.
 - "Unknown" speakers were not identified. Refer to them by what they said rather than guessing a name."""
 # how each kind of written part is described to the model
 SHAPES = {
@@ -138,12 +142,22 @@ def transcript_lines(segments, speakers):
 
 
 # models
+def relevant_terms(terms, lines):
+    """the vocabulary terms with a word like one in the transcript. the rest would only give
+    a model names to make a meeting out of when the transcript has little in it."""
+    words = set(re.findall(r"[a-z0-9']+", " ".join(lines).lower()))
+    def near(word):
+        return word in words or bool(difflib.get_close_matches(word, words, n=1, cutoff=TERM_MATCH))
+    return [t for t in terms if any(near(w) for w in re.findall(r"[a-z0-9']+", t.lower()))]
+
+
 def build_messages(lines, owner, meeting_date, attendees, terms, template=templates.STANDARD):
     keys = "\n".join(f'"{part["key"]}": ' + SHAPES[part["kind"]].format(part["instructions"]).strip()
                      for part in templates.sections(template))
     system = INSTRUCTIONS.format(keys=keys)
     header = [f"Meeting date: {meeting_date}", f"Attendees: {', '.join(attendees)}",
               f"These notes are written for {owner}."]
+    terms = relevant_terms(terms, lines)
     if terms:
         header.append(f"Spelling list: {', '.join(terms)}")
     user = "\n".join(header) + "\n\nTranscript:\n" + "\n".join(lines)

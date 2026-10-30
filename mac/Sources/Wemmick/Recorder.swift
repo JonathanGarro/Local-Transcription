@@ -23,10 +23,14 @@ final class Recorder {
     private(set) var callLevel: Float = 0
     // the mic being recorded, which can change mid-call
     private(set) var micName = ""
+    // what's wrong when nothing is being heard, such as a permission not given
+    private(set) var problem: String?
     private var session: RecordingSession?
     private var meterTask: Task<Void, Never>?
 
     static let folder = Server.appSupport.appending(path: "recordings")
+    // seconds into a recording before silence counts as a problem
+    private static let grace: TimeInterval = 3
 
     var isRecording: Bool { session != nil }
 
@@ -43,6 +47,14 @@ final class Recorder {
             while let self, let session = self.session, !Task.isCancelled {
                 (self.micLevel, self.callLevel) = session.levels()
                 if self.micName != session.micName { self.micName = session.micName }
+                // a few seconds in, so a permission prompt answered quickly doesn't count
+                if date.timeIntervalSinceNow < -Self.grace {
+                    let problem = session.problem()
+                    if problem != self.problem {
+                        Server.log(problem.map { "while recording: \($0)" } ?? "the recording hears audio now")
+                        self.problem = problem
+                    }
+                }
                 try? await Task.sleep(for: .milliseconds(100))
             }
         }
@@ -56,6 +68,7 @@ final class Recorder {
         session.stop()
         self.session = nil
         startedAt = nil
+        problem = nil
         micLevel = 0
         callLevel = 0
         return session.file
@@ -118,6 +131,8 @@ private final class RecordingSession: @unchecked Sendable {
     private let peaks = OSAllocatedUnfairLock(initialState: (mic: Float(0), call: Float(0)))
     // the loudest each side got over the whole recording, for the log
     private let loudest = OSAllocatedUnfairLock(initialState: (mic: Float(0), call: Float(0)))
+    // whether core audio has delivered anything yet
+    private let received = OSAllocatedUnfairLock(initialState: false)
     private let mic = OSAllocatedUnfairLock(initialState: "")
 
     var micName: String { mic.withLock { $0 } }
@@ -281,6 +296,7 @@ private final class RecordingSession: @unchecked Sendable {
         let frames = Int(first.mDataByteSize) / (MemoryLayout<Float>.size * Int(first.mNumberChannels))
         guard frames > 0, let pcm = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames)),
               let channels = pcm.floatChannelData else { return }
+        received.withLock { $0 = true }
         pcm.frameLength = AVAudioFrameCount(frames)
         let mic = channels[micIndex], call = channels[1 - micIndex]
         mic.update(repeating: 0, count: frames)
@@ -324,6 +340,19 @@ private final class RecordingSession: @unchecked Sendable {
             return pcm
         }
         try? output.write(from: converted)
+    }
+
+    // nothing at all from core audio, or a mic at exact silence, which a working mic never is,
+    // means a permission isn't given or the device isn't working. the call side is often
+    // silent for real, so only the mic is judged
+    func problem() -> String? {
+        guard received.withLock({ $0 }) else {
+            return "Wemmick isn't getting any audio. Check it's allowed under Microphone and under Screen & System Audio Recording in Privacy & Security, then record again."
+        }
+        guard loudest.withLock({ $0.mic }) > 1e-5 else {
+            return "\(micName) is silent. Check Wemmick is allowed under Microphone in Privacy & Security, or choose another input."
+        }
+        return nil
     }
 
     // the loudest each side has been since last asked, from 0 to 1 on a decibel scale

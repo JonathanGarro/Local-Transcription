@@ -278,6 +278,17 @@ struct RecordingView: View {
                 .controlSize(.small)
             LevelMeter(label: "You", level: recorder.micLevel)
             LevelMeter(label: "Call", level: recorder.callLevel)
+            if let problem = recorder.problem {
+                Label(problem, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Open Privacy & Security") {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy")!)
+                }
+                .buttonStyle(.link)
+                .font(.caption2)
+            }
             if !recorder.micName.isEmpty {
                 // it changes when the mac's input does, such as when airpods connect
                 Label(recorder.micName, systemImage: "mic")

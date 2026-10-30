@@ -1,6 +1,7 @@
 """audio normalization and channel handling with ffmpeg."""
 
 import subprocess
+from pathlib import Path
 
 import numpy as np
 
@@ -33,6 +34,9 @@ def probe(src):
                 "-show_entries", "stream=channels,sample_rate:format=duration",
                 "-of", "default=nw=1", str(src)]).decode()
     info = dict(line.split("=", 1) for line in out.splitlines() if "=" in line)
+    # an empty or unfinished file has no audio stream, or a duration of N/A
+    if "channels" not in info or info.get("duration", "N/A") == "N/A":
+        raise ValueError(f"{Path(src).name} has no audio in it")
     return {"channels": int(info["channels"]), "sample_rate": int(info["sample_rate"]),
             "duration": float(info["duration"])}
 

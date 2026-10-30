@@ -245,7 +245,10 @@ final class Store {
                 unique = "\(name) \(n)"
                 n += 1
             }
-            let m4a = try await Task.detached { [unique] in try Recorder.compress(caf, name: unique) }.value
+            guard let m4a = try await Task.detached(operation: { [unique] in try Recorder.compress(caf, name: unique) }).value else {
+                try? FileManager.default.removeItem(at: caf)
+                return show("Nothing was recorded in \(unique)")
+            }
             do {
                 let result = try await API.upload([m4a], sourceType: "zoom")
                 guard !result.queued.isEmpty else {

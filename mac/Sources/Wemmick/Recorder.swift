@@ -62,9 +62,11 @@ final class Recorder {
     }
 
     // the recording as a stereo aac m4a named "<date> - <name>.m4a" beside it, which the
-    // server takes as an upload. a 16-bit caf is about 700 MB an hour, the m4a about 60
-    nonisolated static func compress(_ caf: URL, name: String) throws -> URL {
+    // server takes as an upload. a 16-bit caf is about 700 MB an hour, the m4a about 60.
+    // nil when nothing was recorded, as when the app quit just after a recording started
+    nonisolated static func compress(_ caf: URL, name: String) throws -> URL? {
         let input = try AVAudioFile(forReading: caf)
+        guard input.length > 0 else { return nil }
         let date = caf.lastPathComponent.prefix(10)
         let safe = name.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: ".")
         let m4a = caf.deletingLastPathComponent().appending(path: "\(date) - \(safe).m4a")

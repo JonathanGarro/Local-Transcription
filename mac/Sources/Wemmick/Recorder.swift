@@ -7,12 +7,13 @@ import os
 // audio hijack does, so the server splits it by channel as it does those recordings.
 //
 // the mac's audio comes from a core audio process tap, which asks for the "system audio
-// recording only" permission rather than screen recording. the mic and the tap go into one
-// private aggregate device, so core audio keeps them in step, with drift compensation on the
-// tap. samples are written as they arrive to a 16-bit caf in the library's recordings folder,
-// so a crash or quit loses nothing, then compressed to m4a when the recording stops. when the
-// mac's input changes mid-call, such as airpods connecting, the recording carries on from the
-// new mic.
+// recording only" permission rather than screen recording. the mic and the tap run as two
+// devices, since one holding both stalls, mic included, whenever the tap does: while the
+// permission prompt is up, when it's denied, and with airpods while nothing plays. the mic's
+// io writes the file, taking the call's samples as they've arrived and silence when there are
+// none. samples are written to a 16-bit caf in the library's recordings folder, so a crash or
+// quit loses nothing, then compressed to m4a when the recording stops. when the mac's input
+// or output changes mid-call, such as airpods connecting, the recording carries on with it.
 @Observable @MainActor
 final class Recorder {
     private(set) var startedAt: Date?
@@ -29,8 +30,6 @@ final class Recorder {
     private var meterTask: Task<Void, Never>?
 
     static let folder = Server.appSupport.appending(path: "recordings")
-    // seconds into a recording before silence counts as a problem
-    private static let grace: TimeInterval = 3
 
     var isRecording: Bool { session != nil }
 
@@ -40,20 +39,19 @@ final class Recorder {
         try FileManager.default.createDirectory(at: Self.folder, withIntermediateDirectories: true)
         let date = Date()
         name = "Call at \(date.formatted(date: .omitted, time: .shortened).replacingOccurrences(of: ":", with: "."))"
-        let file = Self.folder.appending(path: "\(date.formatted(.iso8601.year().month().day())) - \(UUID().uuidString.prefix(8)).caf")
+        // the local date, since iso8601 on its own is utc and gives tomorrow's in the evening
+        let day = date.formatted(Date.ISO8601FormatStyle(timeZone: .current).year().month().day())
+        let file = Self.folder.appending(path: "\(day) - \(UUID().uuidString.prefix(8)).caf")
         session = try RecordingSession(file: file, micOnRight: micOnRight)
         startedAt = date
         meterTask = Task { [weak self] in
             while let self, let session = self.session, !Task.isCancelled {
                 (self.micLevel, self.callLevel) = session.levels()
                 if self.micName != session.micName { self.micName = session.micName }
-                // a few seconds in, so a permission prompt answered quickly doesn't count
-                if date.timeIntervalSinceNow < -Self.grace {
-                    let problem = session.problem()
-                    if problem != self.problem {
-                        Server.log(problem.map { "while recording: \($0)" } ?? "the recording hears audio now")
-                        self.problem = problem
-                    }
+                let problem = session.problem(after: -date.timeIntervalSinceNow)
+                if problem != self.problem {
+                    Server.log(problem.map { "while recording: \($0)" } ?? "the recording hears audio now")
+                    self.problem = problem
                 }
                 try? await Task.sleep(for: .milliseconds(100))
             }
@@ -103,14 +101,37 @@ final class Recorder {
     }
 }
 
+// the system audio permission, which has no public way to ask about. tcc's preflight is what
+// apple's process tap sample uses, and if it's ever gone a slow start of the tap stands in for the prompt
+enum CallAudio {
+    case allowed, denied, notAsked
+
+    private typealias Preflight = @convention(c) (CFString, CFDictionary?) -> Int
+    private static let preflight: Preflight? = {
+        guard let tcc = dlopen("/System/Library/PrivateFrameworks/TCC.framework/Versions/A/TCC", RTLD_NOW),
+              let symbol = dlsym(tcc, "TCCAccessPreflight") else { return nil }
+        return unsafeBitCast(symbol, to: Preflight.self)
+    }()
+
+    static func permission() -> CallAudio? {
+        guard let preflight else { return nil }
+        switch preflight("kTCCServiceAudioCapture" as CFString, nil) {
+        case 0: return .allowed
+        case 1: return .denied
+        default: return .notAsked
+        }
+    }
+}
+
 struct RecorderError: LocalizedError {
     let errorDescription: String?
     init(_ message: String) { errorDescription = message }
 }
 
-// one recording's core audio objects and file. the io block runs on its own queue, and the
-// file is only written there. switching mics happens on another queue, since stopping a device
-// waits for its io block to finish
+// one recording's core audio objects and file. each device's io runs on its own queue, and
+// the file is only written on the mic's. starting and switching devices happen on control
+// queues, since stopping a device waits for its io block to finish, and starting the tap waits
+// for the system audio permission prompt to be answered
 private final class RecordingSession: @unchecked Sendable {
     let file: URL
     private let micOnRight: Bool
@@ -118,27 +139,55 @@ private final class RecordingSession: @unchecked Sendable {
     private var tapUID = ""
     private var tapDescription: CATapDescription?
     private var excluded: [AudioObjectID] = []
-    private var deviceID = AudioObjectID(kAudioObjectUnknown)
-    private var procID: AudioDeviceIOProcID?
+    private var micDevice = AudioObjectID(kAudioObjectUnknown)
+    private var micProc: AudioDeviceIOProcID?
+    private var callDevice = AudioObjectID(kAudioObjectUnknown)
+    private var callProc: AudioDeviceIOProcID?
     private var output: AVAudioFile?
-    // the file's format, set by the first mic. a mic at another rate is converted to it
-    private var fileFormat: AVAudioFormat?
-    private var converter: AVAudioConverter?
-    private var listener: AudioObjectPropertyListenerBlock?
+    private var inputListener: AudioObjectPropertyListenerBlock?
+    private var outputListener: AudioObjectPropertyListenerBlock?
     private var processListener: AudioObjectPropertyListenerBlock?
-    private let queue = DispatchQueue(label: "wemmick.recorder", qos: .userInteractive)
-    private let control = DispatchQueue(label: "wemmick.recorder.control")
+    private let micQueue = DispatchQueue(label: "wemmick.recorder.mic", qos: .userInteractive)
+    private let callQueue = DispatchQueue(label: "wemmick.recorder.call", qos: .userInteractive)
+    private let micControl = DispatchQueue(label: "wemmick.recorder.mic-control")
+    private let callControl = DispatchQueue(label: "wemmick.recorder.call-control")
+    // the call's samples at the file's rate, waiting for the mic's io to take them
+    private let callSamples = OSAllocatedUnfairLock(initialState: [Float]())
     private let peaks = OSAllocatedUnfairLock(initialState: (mic: Float(0), call: Float(0)))
     // the loudest each side got over the whole recording, for the log
     private let loudest = OSAllocatedUnfairLock(initialState: (mic: Float(0), call: Float(0)))
-    // whether core audio has delivered anything yet
+    // whether the mic has delivered anything yet
     private let received = OSAllocatedUnfairLock(initialState: false)
+    // false when the mac's audio isn't allowed, and only the mic is recorded
+    private let callOn = OSAllocatedUnfairLock(initialState: true)
+    // when the call side last started, and whether it's delivered anything since. a tap
+    // without the permission delivers nothing at all, which is the only sign of a "don't
+    // allow" at the prompt, since macos keeps saying it hasn't asked. but one with it allowed
+    // delivers nothing either while nothing plays, so it's only a maybe
+    private let answeredPrompt = OSAllocatedUnfairLock(initialState: false)
+    private let callStarted = OSAllocatedUnfairLock<Date?>(initialState: nil)
+    private let callReceived = OSAllocatedUnfairLock(initialState: false)
+    // true while the tap waits on the permission prompt
+    private let callStarting = OSAllocatedUnfairLock(initialState: false)
     private let mic = OSAllocatedUnfairLock(initialState: "")
 
     var micName: String { mic.withLock { $0 } }
 
+    // everything is written at 48 khz, the mic and the call converted to it as needed
+    private static let fileFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 2, interleaved: false)!
+    private static let monoFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 1, interleaved: false)!
+    // the call's samples kept waiting at most, past which the oldest go. the two devices run
+    // on their own clocks, and the mic stops while it switches, so the call runs ahead
+    private static let mostWaiting = 24_000
+    private static let keptWaiting = 4_800
+    // seconds the call side waits for the mic to send sound before starting anyway
+    private static let micWait: TimeInterval = 15
+
     private static let defaultInputAddress = AudioObjectPropertyAddress(
         mSelector: kAudioHardwarePropertyDefaultInputDevice,
+        mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+    private static let defaultOutputAddress = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyDefaultOutputDevice,
         mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
     private static let processListAddress = AudioObjectPropertyAddress(
         mSelector: kAudioHardwarePropertyProcessObjectList,
@@ -151,20 +200,64 @@ private final class RecordingSession: @unchecked Sendable {
     init(file: URL, micOnRight: Bool) throws {
         self.file = file
         self.micOnRight = micOnRight
+        let permission = CallAudio.permission()
+        Server.log("system audio permission: \(permission.map { "\($0)" } ?? "unknown")")
         do {
-            try makeTap()
-            try connect(to: try Self.defaultInputDevice())
-            watchInput()
-            watchProcesses()
+            output = try AVAudioFile(forWriting: file, settings: [
+                AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: Self.fileFormat.sampleRate, AVNumberOfChannelsKey: 2,
+                AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false, AVLinearPCMIsBigEndianKey: false,
+            ], commonFormat: .pcmFormatFloat32, interleaved: false)
+            try connectMic(to: try Self.defaultInputDevice())
         } catch {
             Server.log("recorder couldn't start: \(error.localizedDescription)")
             stop()
             throw error
         }
+        watchInput()
+        guard permission != .denied else {
+            Server.log("not allowed to record the Mac's audio, recording the mic alone")
+            callOn.withLock { $0 = false }
+            return
+        }
+        callControl.async { [self] in
+            // airpods send silence for ten seconds or so when their output starts along with
+            // their mic, rather than a second or two, so the call side waits for the mic's
+            // first sound, or a few seconds of silence
+            let opened = Date()
+            while loudest.withLock({ $0.mic }) <= 1e-5, opened.timeIntervalSinceNow > -Self.micWait {
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+            Server.log(String(format: "the mic's first sound came after %.1f s", -opened.timeIntervalSinceNow))
+            let asked = Date()
+            callStarting.withLock { $0 = true }
+            startCall()
+            callStarting.withLock { $0 = false }
+            // a tap started while the permission prompt was up hears nothing even once it's
+            // allowed, so it's started again. without asking macos, a slow start is the prompt
+            let prompted = permission == .notAsked || (permission == nil && asked.timeIntervalSinceNow < -0.5)
+            guard prompted else { return }
+            // macos takes a moment to note the answer after the prompt closes
+            var answer = CallAudio.permission()
+            for _ in 0..<20 where answer == .notAsked {
+                Thread.sleep(forTimeInterval: 0.1)
+                answer = CallAudio.permission()
+            }
+            if answer == .denied {
+                Server.log("not allowed to record the Mac's audio at the prompt, recording the mic alone")
+                stopCall()
+                callOn.withLock { $0 = false }
+            } else {
+                Server.log("answered the prompt about recording the Mac's audio, starting it again")
+                answeredPrompt.withLock { $0 = true }
+                stopCall()
+                startCall()
+            }
+        }
+        watchOutput()
+        watchProcesses()
     }
 
-    // everything the mac plays, mixed to stereo, and left playing as usual. it outlives a
-    // change of mic
+    // everything the mac plays, mixed to stereo, and left playing as usual
     private func makeTap() throws {
         excluded = Self.excludedProcesses()
         let description = CATapDescription(stereoGlobalTapButExcludeProcesses: excluded)
@@ -192,7 +285,7 @@ private final class RecordingSession: @unchecked Sendable {
             AudioObjectSetPropertyData(self.tapID, &address, 0, nil, UInt32(MemoryLayout<CATapDescription>.size), &value)
         }
         var address = Self.processListAddress
-        if AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, control, block) == noErr {
+        if AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, callControl, block) == noErr {
             processListener = block
         }
     }
@@ -210,125 +303,169 @@ private final class RecordingSession: @unchecked Sendable {
         }.sorted()
     }
 
-    // a private aggregate device of the mic and the tap, and the io block writing from it
-    private func connect(to micDevice: AudioObjectID) throws {
-        let micUID = try Self.uid(of: micDevice)
-        let micChannels = Self.inputChannels(of: micDevice)
-        guard micChannels > 0 else { throw RecorderError("There's no microphone to record from") }
+    // a private aggregate device of the mic alone, and the io block writing the file from it
+    private func connectMic(to device: AudioObjectID) throws {
+        let uid = try Self.uid(of: device)
+        let channels = Self.inputChannels(of: device)
+        guard channels > 0 else { throw RecorderError("There's no microphone to record from") }
         let aggregate: [String: Any] = [
-            kAudioAggregateDeviceNameKey: "Wemmick Recorder",
+            kAudioAggregateDeviceNameKey: "Wemmick Mic",
             kAudioAggregateDeviceUIDKey: UUID().uuidString,
-            kAudioAggregateDeviceMainSubDeviceKey: micUID,
+            kAudioAggregateDeviceMainSubDeviceKey: uid,
+            kAudioAggregateDeviceIsPrivateKey: true,
+            kAudioAggregateDeviceIsStackedKey: false,
+            kAudioAggregateDeviceSubDeviceListKey: [[kAudioSubDeviceUIDKey: uid]],
+        ]
+        try check(AudioHardwareCreateAggregateDevice(aggregate as CFDictionary, &micDevice), "Couldn't set up the recorder")
+        let rate = Self.rate(of: micDevice)
+        guard let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: rate, channels: 1, interleaved: false) else {
+            throw RecorderError("Couldn't set up the recording's format")
+        }
+        let converter = rate == Self.monoFormat.sampleRate ? nil : AVAudioConverter(from: format, to: Self.monoFormat)
+        mic.withLock { $0 = Self.name(of: device) }
+        let micIndex = micOnRight ? 1 : 0
+        try check(AudioDeviceCreateIOProcIDWithBlock(&micProc, micDevice, micQueue) { [weak self] _, input, _, _, _ in
+            self?.writeMic(input, format: format, converter: converter, micIndex: micIndex)
+        }, "Couldn't start the recorder")
+        try check(AudioDeviceStart(micDevice, micProc), "Couldn't start the recorder")
+        Server.log("recording from \(Self.name(of: device)), \(channels) channel\(channels == 1 ? "" : "s") at \(Int(rate)) Hz, "
+                   + "mic on the \(micOnRight ? "right" : "left")")
+    }
+
+    private func disconnectMic() {
+        Self.destroy(&micDevice, &micProc)
+    }
+
+    // a private aggregate device of the mac's output and the tap, as apple's sample has it,
+    // feeding the call's samples to the mic's io
+    private func connectCall() throws {
+        let outputDevice = try Self.defaultOutputDevice()
+        let uid = try Self.uid(of: outputDevice)
+        let aggregate: [String: Any] = [
+            kAudioAggregateDeviceNameKey: "Wemmick Call Audio",
+            kAudioAggregateDeviceUIDKey: UUID().uuidString,
+            kAudioAggregateDeviceMainSubDeviceKey: uid,
             kAudioAggregateDeviceIsPrivateKey: true,
             kAudioAggregateDeviceIsStackedKey: false,
             kAudioAggregateDeviceTapAutoStartKey: true,
-            kAudioAggregateDeviceSubDeviceListKey: [[kAudioSubDeviceUIDKey: micUID]],
+            kAudioAggregateDeviceSubDeviceListKey: [[kAudioSubDeviceUIDKey: uid]],
             kAudioAggregateDeviceTapListKey: [[kAudioSubTapUIDKey: tapUID, kAudioSubTapDriftCompensationKey: true]],
         ]
-        try check(AudioHardwareCreateAggregateDevice(aggregate as CFDictionary, &deviceID), "Couldn't set up the recorder")
-
-        var rate = Float64(48_000)
-        var size = UInt32(MemoryLayout<Float64>.size)
-        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyNominalSampleRate,
-                                                 mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-        AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &rate)
-        guard let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: rate, channels: 2, interleaved: false) else {
+        try check(AudioHardwareCreateAggregateDevice(aggregate as CFDictionary, &callDevice), "Couldn't set up recording the Mac's audio")
+        let rate = Self.rate(of: callDevice)
+        guard let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: rate, channels: 1, interleaved: false) else {
             throw RecorderError("Couldn't set up the recording's format")
         }
-        try queue.sync {
-            if output == nil {
-                // written as 16-bit, from float samples, one channel each for the mic and the call
-                output = try AVAudioFile(forWriting: file, settings: [
-                    AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: rate, AVNumberOfChannelsKey: 2,
-                    AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false, AVLinearPCMIsBigEndianKey: false,
-                ], commonFormat: .pcmFormatFloat32, interleaved: false)
-                fileFormat = format
-            }
-            converter = fileFormat.flatMap { $0.sampleRate == rate ? nil : AVAudioConverter(from: format, to: $0) }
-        }
-        mic.withLock { $0 = Self.name(of: micDevice) }
-        let micIndex = micOnRight ? 1 : 0
-        try check(AudioDeviceCreateIOProcIDWithBlock(&procID, deviceID, queue) { [weak self] _, input, _, _, _ in
-            self?.write(input, format: format, micChannels: micChannels, micIndex: micIndex)
-        }, "Couldn't start the recorder")
-        try check(AudioDeviceStart(deviceID, procID), "Couldn't start the recorder")
-        Server.log("recording from \(Self.name(of: micDevice)), \(micChannels) channel\(micChannels == 1 ? "" : "s") at \(Int(rate)) Hz, "
-                   + "mic on the \(micOnRight ? "right" : "left")\(converter == nil ? "" : ", converted to \(Int(fileFormat?.sampleRate ?? 0)) Hz")")
+        let converter = rate == Self.monoFormat.sampleRate ? nil : AVAudioConverter(from: format, to: Self.monoFormat)
+        try check(AudioDeviceCreateIOProcIDWithBlock(&callProc, callDevice, callQueue) { [weak self] _, input, _, _, _ in
+            self?.writeCall(input, format: format, converter: converter)
+        }, "Couldn't start recording the Mac's audio")
+        callReceived.withLock { $0 = false }
+        try check(AudioDeviceStart(callDevice, callProc), "Couldn't start recording the Mac's audio")
+        callStarted.withLock { $0 = Date() }
+        Server.log("recording the Mac's audio through \(Self.name(of: outputDevice)) at \(Int(rate)) Hz")
     }
 
-    private func disconnect() {
-        guard deviceID != kAudioObjectUnknown else { return }
-        if let procID {
-            AudioDeviceStop(deviceID, procID)
-            AudioDeviceDestroyIOProcID(deviceID, procID)
-            self.procID = nil
+    // a new tap and the device holding it. runs on the call control queue
+    private func startCall() {
+        do {
+            try makeTap()
+            try connectCall()
+        } catch {
+            Server.log("couldn't record the Mac's audio, recording the mic alone: \(error.localizedDescription)")
         }
-        AudioHardwareDestroyAggregateDevice(deviceID)
-        deviceID = AudioObjectID(kAudioObjectUnknown)
     }
 
-    // the recording follows the mac's input to a new mic. if that fails, it goes back to
-    // whatever input there is, so the call side keeps recording
+    private func stopCall() {
+        Self.destroy(&callDevice, &callProc)
+        if tapID != kAudioObjectUnknown {
+            AudioHardwareDestroyProcessTap(tapID)
+            tapID = AudioObjectID(kAudioObjectUnknown)
+            tapDescription = nil
+        }
+        callSamples.withLock { $0.removeAll() }
+    }
+
+    private static func destroy(_ device: inout AudioObjectID, _ proc: inout AudioDeviceIOProcID?) {
+        guard device != kAudioObjectUnknown else { return }
+        if let id = proc {
+            AudioDeviceStop(device, id)
+            AudioDeviceDestroyIOProcID(device, id)
+            proc = nil
+        }
+        AudioHardwareDestroyAggregateDevice(device)
+        device = AudioObjectID(kAudioObjectUnknown)
+    }
+
+    // the recording follows the mac's input to a new mic. if that fails, it tries once more
     private func watchInput() {
         let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
             guard let self, let device = try? Self.defaultInputDevice() else { return }
             Server.log("the Mac's input changed to \(Self.name(of: device)) during the recording")
-            self.disconnect()
+            self.disconnectMic()
             do {
-                try self.connect(to: device)
+                try self.connectMic(to: device)
             } catch {
                 Server.log("couldn't switch the recording to it, trying again: \(error.localizedDescription)")
-                self.disconnect()
-                do { try self.connect(to: device) } catch { Server.log("couldn't switch again: \(error.localizedDescription)") }
+                self.disconnectMic()
+                do { try self.connectMic(to: device) } catch { Server.log("couldn't switch again: \(error.localizedDescription)") }
             }
         }
         var address = Self.defaultInputAddress
-        if AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, control, block) == noErr {
-            listener = block
+        if AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, micControl, block) == noErr {
+            inputListener = block
         }
     }
 
-    // the input holds the mic's channels first, then the tap's two. the mic and the call are
-    // each mixed to one channel
-    private func write(_ input: UnsafePointer<AudioBufferList>, format: AVAudioFormat, micChannels: Int, micIndex: Int) {
+    // and the call side follows its output, since the device it's in goes with the old one
+    private func watchOutput() {
+        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            guard let self, self.callOn.withLock({ $0 }), self.callDevice != kAudioObjectUnknown else { return }
+            Server.log("the Mac's output changed during the recording")
+            self.stopCall()
+            self.startCall()
+        }
+        var address = Self.defaultOutputAddress
+        if AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, callControl, block) == noErr {
+            outputListener = block
+        }
+    }
+
+    // every channel in a buffer list mixed to one, into a mono buffer at the device's rate.
+    // from is the first channel to take
+    private static func mix(_ input: UnsafePointer<AudioBufferList>, from first: (Int) -> Int, format: AVAudioFormat) -> (AVAudioPCMBuffer, Float)? {
         let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input))
-        guard let output, let first = buffers.first, first.mNumberChannels > 0 else { return }
-        let frames = Int(first.mDataByteSize) / (MemoryLayout<Float>.size * Int(first.mNumberChannels))
+        guard let head = buffers.first, head.mNumberChannels > 0 else { return nil }
+        let frames = Int(head.mDataByteSize) / (MemoryLayout<Float>.size * Int(head.mNumberChannels))
         guard frames > 0, let pcm = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames)),
-              let channels = pcm.floatChannelData else { return }
-        received.withLock { $0 = true }
+              let out = pcm.floatChannelData?[0] else { return nil }
         pcm.frameLength = AVAudioFrameCount(frames)
-        let mic = channels[micIndex], call = channels[1 - micIndex]
-        mic.update(repeating: 0, count: frames)
-        call.update(repeating: 0, count: frames)
-        var micCount = 0, callCount = 0
+        out.update(repeating: 0, count: frames)
+        let total = buffers.reduce(0) { $0 + Int($1.mNumberChannels) }
+        let start = first(total)
+        var channel = 0, mixed = 0
         for buffer in buffers {
-            guard let data = buffer.mData?.assumingMemoryBound(to: Float.self) else { continue }
             let n = Int(buffer.mNumberChannels)
+            defer { channel += n }
+            guard let data = buffer.mData?.assumingMemoryBound(to: Float.self) else { continue }
             let count = min(frames, Int(buffer.mDataByteSize) / (MemoryLayout<Float>.size * max(n, 1)))
-            for c in 0..<n {
-                let toMic = micCount < micChannels
-                let target = toMic ? mic : call
-                for f in 0..<count { target[f] += data[f * n + c] }
-                if toMic { micCount += 1 } else { callCount += 1 }
+            for c in 0..<n where channel + c >= start {
+                for f in 0..<count { out[f] += data[f * n + c] }
+                mixed += 1
             }
         }
-        var micPeak = Float(0), callPeak = Float(0)
+        var peak = Float(0)
         for f in 0..<frames {
-            if micCount > 1 { mic[f] /= Float(micCount) }
-            if callCount > 1 { call[f] /= Float(callCount) }
-            micPeak = max(micPeak, abs(mic[f]))
-            callPeak = max(callPeak, abs(call[f]))
+            if mixed > 1 { out[f] /= Float(mixed) }
+            peak = max(peak, abs(out[f]))
         }
-        let latest = (mic: micPeak, call: callPeak)
-        peaks.withLock { $0 = (max($0.mic, latest.mic), max($0.call, latest.call)) }
-        loudest.withLock { $0 = (max($0.mic, latest.mic), max($0.call, latest.call)) }
-        guard let converter, let fileFormat else {
-            try? output.write(from: pcm)
-            return
-        }
-        let capacity = AVAudioFrameCount(Double(frames) * fileFormat.sampleRate / format.sampleRate) + 32
-        guard let converted = AVAudioPCMBuffer(pcmFormat: fileFormat, frameCapacity: capacity) else { return }
+        return (pcm, peak)
+    }
+
+    private static func convert(_ pcm: AVAudioPCMBuffer, with converter: AVAudioConverter?) -> AVAudioPCMBuffer? {
+        guard let converter else { return pcm }
+        let capacity = AVAudioFrameCount(Double(pcm.frameLength) * monoFormat.sampleRate / pcm.format.sampleRate) + 32
+        guard let converted = AVAudioPCMBuffer(pcmFormat: monoFormat, frameCapacity: capacity) else { return nil }
         var given = false
         converter.convert(to: converted, error: nil) { _, status in
             if given {
@@ -339,18 +476,68 @@ private final class RecordingSession: @unchecked Sendable {
             status.pointee = .haveData
             return pcm
         }
-        try? output.write(from: converted)
+        return converted
     }
 
-    // nothing at all from core audio, or a mic at exact silence, which a working mic never is,
-    // means a permission isn't given or the device isn't working. the call side is often
-    // silent for real, so only the mic is judged
-    func problem() -> String? {
+    // the mic mixed to one channel, written beside as many of the call's samples as have
+    // arrived, and silence for the rest
+    private func writeMic(_ input: UnsafePointer<AudioBufferList>, format: AVAudioFormat, converter: AVAudioConverter?, micIndex: Int) {
+        guard let output, let (raw, peak) = Self.mix(input, from: { _ in 0 }, format: format),
+              let mono = Self.convert(raw, with: converter), let micData = mono.floatChannelData?[0] else { return }
+        received.withLock { $0 = true }
+        let frames = Int(mono.frameLength)
+        guard frames > 0, let pcm = AVAudioPCMBuffer(pcmFormat: Self.fileFormat, frameCapacity: AVAudioFrameCount(frames)),
+              let channels = pcm.floatChannelData else { return }
+        pcm.frameLength = AVAudioFrameCount(frames)
+        channels[micIndex].update(from: micData, count: frames)
+        let call = channels[1 - micIndex]
+        call.update(repeating: 0, count: frames)
+        callSamples.withLockUnchecked { samples in
+            let n = min(frames, samples.count)
+            guard n > 0 else { return }
+            samples.withUnsafeBufferPointer { call.update(from: $0.baseAddress!, count: n) }
+            samples.removeFirst(n)
+        }
+        peaks.withLock { $0.mic = max($0.mic, peak) }
+        loudest.withLock { $0.mic = max($0.mic, peak) }
+        try? output.write(from: pcm)
+    }
+
+    // the tap's two channels, after any of the output device's own, mixed to one and left
+    // for the mic's io
+    private func writeCall(_ input: UnsafePointer<AudioBufferList>, format: AVAudioFormat, converter: AVAudioConverter?) {
+        guard let (raw, peak) = Self.mix(input, from: { max(0, $0 - 2) }, format: format),
+              let mono = Self.convert(raw, with: converter), let data = mono.floatChannelData?[0] else { return }
+        callReceived.withLock { $0 = true }
+        let frames = Int(mono.frameLength)
+        callSamples.withLockUnchecked { samples in
+            samples.append(contentsOf: UnsafeBufferPointer(start: data, count: frames))
+            if samples.count > Self.mostWaiting { samples.removeFirst(samples.count - Self.keptWaiting) }
+        }
+        peaks.withLock { $0.call = max($0.call, peak) }
+        loudest.withLock { $0.call = max($0.call, peak) }
+    }
+
+    // after a few seconds, a mic delivering nothing, or at exact silence, which a working mic
+    // never is, means a permission isn't given or the device isn't working. the call side is
+    // often silent for real, so only the mic is judged
+    func problem(after seconds: TimeInterval) -> String? {
+        if seconds > 1, callStarting.withLock({ $0 }) {
+            return "Answer the prompt about recording the Mac's audio to record the call. Your mic is recording."
+        }
+        guard seconds > 5 else { return nil }
         guard received.withLock({ $0 }) else {
-            return "Wemmick isn't getting any audio. Check it's allowed under Microphone and under Screen & System Audio Recording in Privacy & Security, then record again."
+            return "No audio is coming in from the mic. Check Microphone in Privacy & Security."
         }
         guard loudest.withLock({ $0.mic }) > 1e-5 else {
-            return "\(micName) is silent. Check Wemmick is allowed under Microphone in Privacy & Security, or choose another input."
+            return "\(micName) is silent. Check Microphone in Privacy & Security, or choose another input."
+        }
+        guard callOn.withLock({ $0 }) else {
+            return "Recording only your mic. To record the call too, allow Wemmick under Screen & System Audio Recording."
+        }
+        let callSilent = !callReceived.withLock({ $0 }) && (callStarted.withLock({ $0 })?.timeIntervalSinceNow ?? 0) < -3
+        if callSilent, answeredPrompt.withLock({ $0 }) {
+            return "Nothing from the Mac's audio yet. If you chose Don't Allow, allow Wemmick under Screen & System Audio Recording to record the call."
         }
         return nil
     }
@@ -362,24 +549,30 @@ private final class RecordingSession: @unchecked Sendable {
         return (scale(mic), scale(call))
     }
 
+    // the mic stops and the file closes now. the call side stops once it's done starting,
+    // which waits on the permission prompt if it's still up
     func stop() {
-        if let listener {
-            var address = Self.defaultInputAddress
-            AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, control, listener)
-            self.listener = nil
+        micControl.sync {
+            if let inputListener {
+                var address = Self.defaultInputAddress
+                AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, micControl, inputListener)
+                self.inputListener = nil
+            }
+            disconnectMic()
         }
-        if let processListener {
-            var address = Self.processListAddress
-            AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, control, processListener)
-            self.processListener = nil
-        }
-        control.sync { disconnect() }
-        if tapID != kAudioObjectUnknown {
-            AudioHardwareDestroyProcessTap(tapID)
-            tapID = AudioObjectID(kAudioObjectUnknown)
+        callControl.async { [self] in
+            for (listener, address) in [(outputListener, Self.defaultOutputAddress), (processListener, Self.processListAddress)] {
+                guard let listener else { continue }
+                var address = address
+                AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, callControl, listener)
+            }
+            outputListener = nil
+            processListener = nil
+            callOn.withLock { $0 = false }
+            stopCall()
         }
         // closing the file finishes its header
-        let seconds = queue.sync {
+        let seconds = micQueue.sync {
             defer { output = nil }
             return output.map { Double($0.length) / $0.processingFormat.sampleRate }
         }
@@ -387,7 +580,8 @@ private final class RecordingSession: @unchecked Sendable {
             // a side that never got above about -100 db heard nothing at all
             let (mic, call) = loudest.withLock { $0 }
             func db(_ peak: Float) -> String { String(format: "%.0f dB", 20 * log10(max(peak, 1e-6))) }
-            Server.log("recording stopped after \(Int(seconds)) s, loudest on the mic \(db(mic)), on the call \(db(call))")
+            Server.log("recording stopped after \(Int(seconds)) s, loudest on the mic \(db(mic)), on the call \(db(call))"
+                       + (callReceived.withLock { $0 } ? "" : ", and the Mac's audio sent nothing"))
         }
     }
 
@@ -402,6 +596,24 @@ private final class RecordingSession: @unchecked Sendable {
         let status = AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &device)
         guard status == noErr, device != kAudioObjectUnknown else { throw RecorderError("There's no microphone to record from") }
         return device
+    }
+
+    private static func defaultOutputDevice() throws -> AudioObjectID {
+        var device = AudioObjectID(kAudioObjectUnknown)
+        var size = UInt32(MemoryLayout<AudioObjectID>.size)
+        var address = defaultOutputAddress
+        let status = AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &device)
+        guard status == noErr, device != kAudioObjectUnknown else { throw RecorderError("There's no audio output") }
+        return device
+    }
+
+    private static func rate(of device: AudioObjectID) -> Float64 {
+        var rate = Float64(48_000)
+        var size = UInt32(MemoryLayout<Float64>.size)
+        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyNominalSampleRate,
+                                                 mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        AudioObjectGetPropertyData(device, &address, 0, nil, &size, &rate)
+        return rate
     }
 
     private static func string(_ selector: AudioObjectPropertySelector, of device: AudioObjectID) -> String? {

@@ -929,6 +929,8 @@ def write_note(out_dir, backend=None, project=None, owner=None, progress=print, 
     note template to write it in, or None for the one chosen in settings."""
     out_dir = Path(out_dir)
     meta, segments, speakers, _ = load_run(out_dir)
+    if not len(segments):
+        raise ValueError("No one says anything in this recording, so there's nothing to write a note from")
     speakers = link_people(speakers)
     backend = backend or notes.default_backend()
     owner = owner or meta.get("owner") or settings.owner() or DEFAULT_OWNER

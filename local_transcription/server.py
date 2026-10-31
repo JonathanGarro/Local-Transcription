@@ -217,6 +217,9 @@ class Jobs:
         if any(j.get("kind") == "note" and j["meeting_id"] == meeting_id and j["status"] in ("queued", "processing")
                for j in self.snapshot()):
             return None
+        # nothing was said, as when the mic was silent
+        if not len(pipeline.load_run(out_dir)[1]):
+            return None
         return self.add_note(meeting_id, notes.default_backend(), None)
 
     def _note(self, job):

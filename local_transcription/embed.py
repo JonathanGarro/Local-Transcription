@@ -17,6 +17,8 @@ EDGE_TRIM_S = 0.2
 CHUNK_S = 10.0
 # cap the work per speaker by using only the longest turns
 MAX_TURNS = 40
+# the least audio the model can embed is one 25 ms frame, so a shorter clip is widened to this
+SHORTEST_CROP_S = 0.5
 # turns stop this short of the end of the audio, pyannote works out its length a hair
 # differently and refuses a crop that ends exactly there
 END_MARGIN_S = 0.01
@@ -103,9 +105,14 @@ class Embedder:
             spans = [(s + trim, e - trim) for s, e in zip(usable["start"], usable["end"])]
             vector, seconds = self.embed_spans(audio, spans)
             if vector is None:
-                # very short speakers: embed whatever exists, even under the minimum
+                # very short speakers: embed whatever exists, even under the minimum. a blip of a
+                # few milliseconds is widened around its middle, since the model needs a frame
                 from pyannote.core import Segment
                 s, e = spans[0]
+                if e - s < SHORTEST_CROP_S:
+                    middle = (s + e) / 2
+                    s = max(0.0, min(middle - SHORTEST_CROP_S / 2, duration - SHORTEST_CROP_S))
+                    e = min(duration, s + SHORTEST_CROP_S)
                 vector, seconds = normalize(self.inference.crop(audio, Segment(s, e))), e - s
             result[speaker] = (vector, seconds)
         return result

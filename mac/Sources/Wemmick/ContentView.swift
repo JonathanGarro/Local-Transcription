@@ -41,6 +41,8 @@ struct ContentView: View {
                         } else {
                             ContentUnavailableView("No Person Selected", systemImage: "person.2")
                         }
+                    } else if store.picked.count > 1 {
+                        PickedView()
                     } else if let id = store.selection, store.meeting(id) != nil {
                         MeetingView(meetingId: id)
                             .id(id)
@@ -282,7 +284,7 @@ struct RecordingView: View {
                 Label(problem, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption2)
                     .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Button("Open Privacy & Security") {
                     NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy")!)
                 }
@@ -368,7 +370,7 @@ struct MeetingList: View {
     @State private var search = ""
     @State private var renaming: Meeting?
     @State private var newName = ""
-    @State private var deleting: Meeting?
+    @State private var deleting: Set<String> = []
     @State private var todoFilter = TodoFilter.all
 
     private var shown: [Meeting] {
@@ -389,35 +391,34 @@ struct MeetingList: View {
 
     var body: some View {
         @Bindable var store = store
-        List(shown, selection: $store.selection) { m in
+        List(shown, selection: $store.picked) { m in
             MeetingRow(meeting: m)
                 .tag(m.meetingId)
-                .contextMenu {
-                    Button("Rename...") { newName = m.name; renaming = m }
-                    Button("Show in Finder") { Task { await store.reveal(m.meetingId) } }
-                    if m.sentPath != nil {
-                        Button("Open in Obsidian") { Task { await store.openInObsidian(m.meetingId) } }
-                    }
-                    if m.archived != nil {
-                        Divider()
-                        Button("Move to Inbox") { Task { await store.moveToInbox(m.meetingId) } }
-                    }
-                    Divider()
-                    Button("Delete...", role: .destructive) { deleting = m }
+        }
+        // right-clicking a picked meeting acts on all of them
+        .contextMenu(forSelectionType: String.self) { ids in
+            if ids.count == 1, let id = ids.first, let m = store.meeting(id) {
+                Button("Rename...") { newName = m.name; renaming = m }
+                Button("Show in Finder") { Task { await store.reveal(m.meetingId) } }
+                if m.sentPath != nil {
+                    Button("Open in Obsidian") { Task { await store.openInObsidian(m.meetingId) } }
                 }
-        }
-        // the delete key, or cmd-delete, on the selected meeting
-        .onDeleteCommand { deleting = shown.first { $0.meetingId == store.selection } }
-        .confirmationDialog("Delete \u{201C}\(deleting?.name ?? "")\u{201D}?",
-                            isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
-            Button("Delete", role: .destructive) {
-                if let m = deleting { Task { await store.delete(m.meetingId) } }
+                if m.archived != nil {
+                    Divider()
+                    Button("Move to Inbox") { Task { await store.moveToInbox(m.meetingId) } }
+                }
+                Divider()
+                Button("Delete...", role: .destructive) { deleting = ids }
+            } else if ids.count > 1 {
+                Button("Delete \(ids.count) Meetings...", role: .destructive) { deleting = ids }
             }
-        } message: {
-            Text(deleting?.sentPath != nil
-                 ? "The recording, transcript and note move to the Trash, and voices learned from this meeting are forgotten. The note in Obsidian stays."
-                 : "The recording, transcript and note move to the Trash, and voices learned from this meeting are forgotten.")
         }
+        // a row added at the top, as a new recording is, keeps the height of a bare row and the
+        // next row draws over it, so the list is built afresh when its meetings change
+        .id(shown.map(\.meetingId))
+        // the delete key, or cmd-delete, on the picked meetings
+        .onDeleteCommand { deleting = store.picked }
+        .deleteMeetings($deleting)
         .overlay {
             if shown.isEmpty {
                 if !search.isEmpty {
@@ -467,6 +468,50 @@ struct MeetingList: View {
             Button("Cancel", role: .cancel) {}
         }
         .onChange(of: store.section) { search = "" }
+    }
+}
+
+// more than one meeting picked, in place of the meeting's pane
+struct PickedView: View {
+    @Environment(Store.self) private var store
+    @State private var deleting: Set<String> = []
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("\(store.picked.count) Meetings Selected", systemImage: "square.stack")
+        } actions: {
+            Button("Delete \(store.picked.count) Meetings...", role: .destructive) { deleting = store.picked }
+        }
+        .deleteMeetings($deleting)
+    }
+}
+
+extension View {
+    // asks before moving the meetings to the trash
+    func deleteMeetings(_ ids: Binding<Set<String>>) -> some View {
+        modifier(DeleteMeetings(ids: ids))
+    }
+}
+
+private struct DeleteMeetings: ViewModifier {
+    @Environment(Store.self) private var store
+    @Binding var ids: Set<String>
+
+    func body(content: Content) -> some View {
+        let meetings = ids.compactMap { store.meeting($0) }
+        let title = meetings.count == 1 ? "Delete \u{201C}\(meetings[0].name)\u{201D}?" : "Delete \(ids.count) meetings?"
+        let what = meetings.count == 1 ? "The recording, transcript and note move" : "The recordings, transcripts and notes move"
+        let these = meetings.count == 1 ? "this meeting" : "these meetings"
+        let obsidian = meetings.count == 1 ? "The note in Obsidian stays." : "Notes in Obsidian stay."
+        content.confirmationDialog(title, isPresented: Binding(get: { !ids.isEmpty }, set: { if !$0 { ids = [] } })) {
+            Button("Delete", role: .destructive) {
+                let chosen = ids
+                Task { await store.delete(chosen) }
+            }
+        } message: {
+            Text("\(what) to the Trash, and voices learned from \(these) are forgotten."
+                 + (meetings.contains { $0.sentPath != nil } ? " \(obsidian)" : ""))
+        }
     }
 }
 

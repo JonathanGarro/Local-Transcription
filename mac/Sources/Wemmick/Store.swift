@@ -62,7 +62,20 @@ final class Store {
     var section: Place = ProcessInfo.processInfo.environment["WEMMICK_PAGE"]
         .flatMap { page in Place.allCases.first { $0.rawValue.lowercased() == page.lowercased() } } ?? .inbox
     // WEMMICK_MEETING=<meeting id> selects that meeting at launch, with WEMMICK_PAGE=archive say
-    var selection: String? = ProcessInfo.processInfo.environment["WEMMICK_MEETING"]
+    var selection: String? = ProcessInfo.processInfo.environment["WEMMICK_MEETING"] {
+        didSet {
+            if let selection, picked != [selection] { picked = [selection] }
+            if selection == nil, picked.count == 1 { picked = [] }
+        }
+    }
+    // the meetings picked in the list, with cmd or shift for more than one. one alone opens,
+    // as the selection
+    var picked: Set<String> = Set([ProcessInfo.processInfo.environment["WEMMICK_MEETING"]].compactMap { $0 }) {
+        didSet {
+            let one = picked.count == 1 ? picked.first : nil
+            if selection != one { selection = one }
+        }
+    }
     var personSelection: String?
     var people: [Person] = []
     let chat = Chat()
@@ -305,12 +318,14 @@ final class Store {
         await run { let _: Ok = try await API.post(API.meeting(id, "open-obsidian")) }
     }
 
-    func delete(_ id: String) async {
+    func delete(_ ids: Set<String>) async {
         await run {
-            let _: Ok = try await API.post(API.meeting(id, "delete"))
-            if selection == id { selection = nil }
+            for id in ids {
+                let _: Ok = try await API.post(API.meeting(id, "delete"))
+                picked.remove(id)
+            }
             await refresh()
-            show("Moved to the Trash")
+            show(ids.count == 1 ? "Moved to the Trash" : "Moved \(ids.count) meetings to the Trash")
         }
     }
 

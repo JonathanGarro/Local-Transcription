@@ -46,6 +46,10 @@ struct ContentView: View {
                     } else if let id = store.selection, store.meeting(id) != nil {
                         MeetingView(meetingId: id)
                             .id(id)
+                            // a small least width, so opening the to-dos or changes beside it
+                            // narrows the meeting rather than pushing the list and the panel
+                            // off either side of the window
+                            .navigationSplitViewColumnWidth(min: 380, ideal: 700)
                     } else {
                         ContentUnavailableView("No Meeting Selected", systemImage: "waveform",
                                                description: Text("Drop a recording here to transcribe it."))
